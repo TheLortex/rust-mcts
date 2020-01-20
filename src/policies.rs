@@ -3,39 +3,39 @@ use std::collections::HashMap;
 use std::f64;
 use std::iter::*;
 
-use super::game::*;
+use super::game::Game;
 
-const N_PLAYOUTS: usize = 100;
-pub trait Policy {
-    fn new(color: Color) -> Self;
-    fn play(&mut self, board: &Board) -> Option<Move>;
+const N_PLAYOUTS: usize = 1000;
+pub trait Policy<T: Game> {
+    fn new(color: T::Player) -> Self;
+    fn play(&mut self, board: &T) -> Option<T::Move>;
 }
 
-pub struct RandomPolicy {
-    color: Color,
+pub struct RandomPolicy<G: Game> {
+    color: G::Player,
 }
 
-impl Policy for RandomPolicy {
-    fn new(color: Color) -> RandomPolicy {
+impl<G: Game> Policy<G> for RandomPolicy<G> {
+    fn new(color: G::Player) -> RandomPolicy<G> {
         RandomPolicy { color }
     }
 
-    fn play(self: &mut RandomPolicy, board: &Board) -> Option<Move> {
+    fn play(self: &mut RandomPolicy<G>, board: &G) -> Option<G::Move> {
         let moves = board.possible_moves();
         moves.choose(&mut rand::thread_rng()).map(|x| *x)
     }
 }
 
-pub struct FlatMonteCarloPolicy {
-    color: Color,
+pub struct FlatMonteCarloPolicy<G: Game> {
+    color: G::Player,
 }
 
-impl Policy for FlatMonteCarloPolicy {
-    fn new(color: Color) -> FlatMonteCarloPolicy {
+impl<G: Game> Policy<G> for FlatMonteCarloPolicy<G> {
+    fn new(color: G::Player) -> FlatMonteCarloPolicy<G> {
         FlatMonteCarloPolicy { color }
     }
 
-    fn play(self: &mut FlatMonteCarloPolicy, board: &Board) -> Option<Move> {
+    fn play(self: &mut FlatMonteCarloPolicy<G>, board: &G) -> Option<G::Move> {
         const FLAT_PLAYOUTS: usize = N_PLAYOUTS;
 
         let moves = board.possible_moves();
@@ -51,7 +51,7 @@ impl Policy for FlatMonteCarloPolicy {
                 b_after_move.play(&m);
                 let mut success = 0;
                 for _ in 0..n_playouts_per_move {
-                    if b_after_move.playout(false) == self.color {
+                    if b_after_move.playout() == self.color {
                         success += 1;
                     }
                 }
@@ -69,16 +69,16 @@ impl Policy for FlatMonteCarloPolicy {
     }
 }
 
-pub struct FlatUCBMonteCarloPolicy {
-    color: Color,
+pub struct FlatUCBMonteCarloPolicy<G: Game> {
+    color: G::Player,
 }
 
-impl Policy for FlatUCBMonteCarloPolicy {
-    fn new(color: Color) -> FlatUCBMonteCarloPolicy {
+impl<G: Game> Policy<G> for FlatUCBMonteCarloPolicy<G> {
+    fn new(color: G::Player) -> FlatUCBMonteCarloPolicy<G> {
         FlatUCBMonteCarloPolicy { color }
     }
 
-    fn play(self: &mut FlatUCBMonteCarloPolicy, board: &Board) -> Option<Move> {
+    fn play(self: &mut FlatUCBMonteCarloPolicy<G>, board: &G) -> Option<G::Move> {
         const UCB_WEIGHT: f64 = 0.4;
         const UCB_PLAYOUTS: usize = N_PLAYOUTS;
 
@@ -90,7 +90,7 @@ impl Policy for FlatUCBMonteCarloPolicy {
         for m in moves.iter() {
             let mut b_after_move = *board;
             b_after_move.play(&m);
-            if b_after_move.playout(false) == self.color {
+            if b_after_move.playout() == self.color {
                 move_success.insert(m, 1);
             } else {
                 move_success.insert(m, 0);
@@ -117,7 +117,7 @@ impl Policy for FlatUCBMonteCarloPolicy {
 
             if let Some(max_move) = max_move {
                 *move_count.get_mut(&max_move).unwrap() += 1;
-                if move_board.get(&max_move).unwrap().playout(false) == self.color {
+                if move_board.get(&max_move).unwrap().playout() == self.color {
                     *move_success.get_mut(&max_move).unwrap() += 1;
                 }
             }
@@ -145,31 +145,27 @@ struct MoveInfo {
 }
 
 #[derive(Debug)]
-struct NodeInfo {
+struct NodeInfo<G: Game> {
     count: f64,
-    moves: HashMap<Move, MoveInfo>,
+    moves: HashMap<G::Move, MoveInfo>,
 }
 
-pub struct UCTPolicy {
-    color: Color,
-    tree: HashMap<usize, NodeInfo>,
+pub struct UCTPolicy<G: Game> {
+    color: G::Player,
+    tree: HashMap<usize, NodeInfo<G>>,
 }
 
 const UCT_WEIGHT: f64 = 0.4;
 
-impl UCTPolicy {
-    fn simulate(self: &mut UCTPolicy, board: &Board) {
+impl<G: Game> UCTPolicy<G> {
+    fn simulate(self: &mut UCTPolicy<G>, board: &G) {
         let mut b = *board; // COPY BOARD
         let history = self.sim_tree(&mut b);
-        let z = b.playout(false);
+        let z = b.playout();
         self.update(history, z);
     }
 
-    pub fn debug(self: &UCTPolicy, board: &Board) {
-        println!("{:?}", self.tree.get(&board.hash()));
-    }
-
-    fn update(self: &mut UCTPolicy, history: Vec<(usize, Option<Move>)>, winner: Color) {
+    fn update(self: &mut UCTPolicy<G>, history: Vec<(usize, Option<G::Move>)>, winner: G::Player) {
         let z = if winner == self.color { 1. } else { 0. };
         for (state, action) in history.iter() {
             let mut node = self.tree.get_mut(state).unwrap();
@@ -182,8 +178,8 @@ impl UCTPolicy {
         }
     }
 
-    fn sim_tree(self: &mut UCTPolicy, b: &mut Board) -> Vec<(usize, Option<Move>)> {
-        let mut history: Vec<(usize, Option<Move>)> = Vec::new();
+    fn sim_tree(self: &mut UCTPolicy<G>, b: &mut G) -> Vec<(usize, Option<G::Move>)> {
+        let mut history: Vec<(usize, Option<G::Move>)> = Vec::new();
 
         while { b.winner() == None } {
             let s_t = b.hash();
@@ -208,7 +204,7 @@ impl UCTPolicy {
         history
     }
 
-    fn select_move(self: &UCTPolicy, board: &Board) -> Option<Move> {
+    fn select_move(self: &UCTPolicy<G>, board: &G) -> Option<G::Move> {
         let moves = board.possible_moves();
         let node_info = self.tree.get(&board.hash()).unwrap();
 
@@ -249,7 +245,7 @@ impl UCTPolicy {
         }
     }
 
-    fn new_node(self: &mut UCTPolicy, board: &Board) {
+    fn new_node(self: &mut UCTPolicy<G>, board: &G) {
         let moves = HashMap::from_iter(
             board
                 .possible_moves()
@@ -260,8 +256,8 @@ impl UCTPolicy {
         self.tree
             .insert(board.hash(), NodeInfo { count: 0., moves });
     }
-
-    fn show_tree(self: &UCTPolicy, board: &Board, rec: usize) {
+/*
+    fn show_tree(self: &UCTPolicy<G>, board: &G, rec: usize) {
         if let Some (entry) = self.tree.get(&board.hash()) {
             println!("Count: {}", entry.count);
             board.show();
@@ -277,23 +273,23 @@ impl UCTPolicy {
                 self.show_tree(&b, rec+1)
             };
         }
-    }
+    }*/
 }
 
-impl Policy for UCTPolicy {
-    fn new(color: Color) -> UCTPolicy {
+impl<G: Game> Policy<G> for UCTPolicy<G> {
+    fn new(color: G::Player) -> UCTPolicy<G> {
         UCTPolicy {
             color,
             tree: HashMap::new(),
         }
     }
 
-    fn play(self: &mut UCTPolicy, board: &Board) -> Option<Move> {
+    fn play(self: &mut UCTPolicy<G>, board: &G) -> Option<G::Move> {
         for _ in 0..N_PLAYOUTS {
             self.simulate(board)
         }
         
-        let info: &NodeInfo = self.tree.get(&board.hash()).unwrap();
+        let info: &NodeInfo<G> = self.tree.get(&board.hash()).unwrap();
 
         let mut best_move = None;
         let mut max_visited = 0.;

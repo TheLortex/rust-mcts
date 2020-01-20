@@ -7,17 +7,18 @@ use rayon::prelude::*;
 pub mod game;
 pub mod policies;
 
-use self::game::{Board, Color};
+use self::game::breakthrough::*;
+use self::game::Game;
 use self::policies::*;
 
-fn monte_carlo_duel<T1: Policy, T2: Policy>(start: Color) -> Color {
-    let mut b = Board::new(start);
+fn monte_carlo_duel<G: Game, P1: Policy<G>, P2: Policy<G>>(start: G::Player) -> G::Player {
+    let mut b = G::new(start);
 
-    let mut p1 = T1::new(Color::White);
-    let mut p2 = T2::new(Color::Black);
+    let mut p1 = P1::new(G::players()[0]);
+    let mut p2 = P2::new(G::players()[1]);
 
     while {
-        let action = if b.turn() == Color::White {
+        let action = if b.turn() == G::players()[0] {
             p1.play(&b)
         } else {
             p2.play(&b)
@@ -40,8 +41,12 @@ fn main() {
         .into_par_iter()
         .map(|_| {
             bar.inc(1);
-            if monte_carlo_duel::<FlatUCBMonteCarloPolicy, UCTPolicy>(Color::random())
-                == Color::Black
+            if monte_carlo_duel::<
+                Breakthrough,
+                FlatUCBMonteCarloPolicy<Breakthrough>,
+                UCTPolicy<Breakthrough>,
+            >(Color::random())
+                == Breakthrough::players()[1]
             {
                 1
             } else {
