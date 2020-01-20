@@ -1,30 +1,33 @@
+#![allow(dead_code)]
+#![allow(non_snake_case)]
+
 use indicatif::ProgressBar;
 use rayon::prelude::*;
 
-
-pub mod policies;
 pub mod game;
+pub mod policies;
 
-use self::game::{Color, Board};
+use self::game::{Board, Color};
 use self::policies::*;
 
 fn monte_carlo_duel<T1: Policy, T2: Policy>(start: Color) -> Color {
-    let mut turn = start;
-    let mut b = Board::new();
+    let mut b = Board::new(start);
 
-    let p1 = T1::new(Color::Black);
-    let p2 = T2::new(Color::White);
+    let mut p1 = T1::new(Color::White);
+    let mut p2 = T2::new(Color::Black);
 
     while {
-        let action = if turn == Color::Black {
+        let action = if b.turn() == Color::White {
             p1.play(&b)
         } else {
             p2.play(&b)
         };
+        //b.show();
         if let Some(action) = action {
             b.play(&action);
+        } else {
+            b.pass();
         }
-        turn = turn.adv();
         b.winner() == None
     } {}
     b.winner().unwrap()
@@ -33,11 +36,13 @@ fn monte_carlo_duel<T1: Policy, T2: Policy>(start: Color) -> Color {
 fn main() {
     let n = 100;
     let bar = ProgressBar::new(n);
-    let count_victory_ucb: usize = (0..n)
+    let count_victory: usize = (0..n)
         .into_par_iter()
         .map(|_| {
             bar.inc(1);
-            if monte_carlo_duel::<FlatMonteCarloPolicy,FlatUCBMonteCarloPolicy>(Color::random()) == Color::White {
+            if monte_carlo_duel::<FlatUCBMonteCarloPolicy, UCTPolicy>(Color::random())
+                == Color::Black
+            {
                 1
             } else {
                 0
@@ -46,5 +51,5 @@ fn main() {
         .sum();
 
     bar.finish();
-    println!("Result: {}", count_victory_ucb);
+    println!("Result: {}", count_victory);
 }

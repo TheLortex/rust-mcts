@@ -2,15 +2,18 @@ use ansi_term::Colour::{Black, White};
 use ansi_term::Style;
 use rand::seq::SliceRandom;
 use std::fmt;
+use rand::Rng;
 
+use std::hash::*;
 use unwrap::*;
 
 const K: usize = 5;
 
-#[derive(Clone, Copy, PartialEq)]
+
+#[derive(Clone, Copy, PartialEq, Eq)]
 pub enum Color {
-    Black,
-    White,
+    Black = 0,
+    White = 1,
 }
 
 impl Color {
@@ -39,7 +42,7 @@ impl fmt::Debug for Color {
     }
 }
 
-#[derive(Clone, Copy, PartialEq)]
+#[derive(Clone, Copy, PartialEq, Eq)]
 pub enum Cell {
     Empty,
     C(Color),
@@ -75,13 +78,12 @@ impl Move {
             return None;
         }
         let delta_y = if c == Cell::C(Color::Black) { 1 } else { -1 };
-        let delta_x = if self.direction == MoveDirection::Front {
-            0
-        } else if self.direction == MoveDirection::FrontLeft {
-            delta_y
-        } else {
-            -delta_y
+        let delta_x = match self.direction {
+            MoveDirection::Front => 0,
+            MoveDirection::FrontLeft => delta_y,
+            MoveDirection::FrontRight => -delta_y,
         };
+        
         let px = (self.x as i32 + delta_x) as usize;
         let py = (self.y as i32 + delta_y) as usize;
         if px < K && py < K {
@@ -106,59 +108,102 @@ impl Move {
     }
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, PartialEq, Eq)]
 pub struct Board {
     content: [[Cell; K]; K],
+    transposition: [[[usize; K]; K]; 2],
+    hash: usize,
+    turn: Color
+}
+
+impl fmt::Debug for Board {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "Turn: {:?}\n", self.turn)?;
+        write!(f, "╔{}══╗\n", "══╤".repeat(K - 1))?;
+        for y in 0..K {
+            if y != 0 {
+                write!(f, "╟{}──╢\n", "──┼".repeat(K - 1))?;
+            }
+            write!(f, "║")?;
+            for x in 0..K {
+                if x == 0 {
+                    write!(f, "{:?}", self.content[x][y])?;
+                } else {
+                    write!(f, "│{:?}", self.content[x][y])?;
+                }
+            }
+            write!(f, "║\n")?;
+        }
+        write!(f, "╚{}══╝\n", "══╧".repeat(K - 1))
+    }
+
 }
 
 impl Board {
-    pub fn new() -> Board {
+    pub fn new(turn: Color) -> Board {
+        let mut rng = rand::thread_rng();
+
         let mut content = [[Cell::Empty; K]; K];
+        let mut transposition = [[[0; K]; K]; 2];
         for x in 0..K {
             content[x][0] = Cell::C(Color::Black);
             content[x][1] = Cell::C(Color::Black);
             content[x][K - 2] = Cell::C(Color::White);
             content[x][K - 1] = Cell::C(Color::White);
+
+            for y in 0..K {
+                transposition[Color::Black as usize][x][y] = rng.gen::<usize>();
+                transposition[Color::White as usize][x][y] = rng.gen::<usize>()
+            }
         }
 
-        Board { content }
+        Board { turn, content, transposition, hash: 0 }
     }
 
     pub fn play(&mut self, m: &Move) {
         match m.is_valid(&self) {
             None => panic!("Wait. This is illegal. "),
             Some((px, py)) => {
+                let mut c_hash = 0;
+                if let Cell::C(color) = self.content[m.x][m.y] {
+                    // remove cell from initial position
+                    c_hash ^= self.transposition[color as usize][m.x][m.y];
+                    // add cell to new position
+                    c_hash ^= self.transposition[color as usize][px][py];
+                }
+                if let Cell::C(color) = self.content[px][py] {
+                    // eat the other cell
+                    c_hash ^= self.transposition[color as usize][px][py];
+                }
+                
+                self.hash ^= c_hash;
+                assert_eq!(self.content[m.x][m.y], Cell::C(self.turn));
+                assert_ne!(self.content[px][py], Cell::C(self.turn));
                 self.content[px][py] = self.content[m.x][m.y];
                 self.content[m.x][m.y] = Cell::Empty;
+                self.turn = self.turn.adv();
             }
         }
+    }
+
+    pub fn turn(&self) -> Color {
+        self.turn
+    }
+
+    pub fn hash(&self) -> usize {
+        2 * self.hash + (self.turn as usize)
     }
 
     pub fn show(&self) {
-        println!("╔{}══╗", "══╤".repeat(K - 1));
-        for y in 0..K {
-            if y != 0 {
-                println!("╟{}──╢", "──┼".repeat(K - 1));
-            }
-            print!("║");
-            for x in 0..K {
-                if x == 0 {
-                    print!("{:?}", self.content[x][y]);
-                } else {
-                    print!("│{:?}", self.content[x][y]);
-                }
-            }
-            println!("║");
-        }
-        println!("╚{}══╝", "══╧".repeat(K - 1));
+        println!("{:?}", self);
     }
 
-    pub fn possible_moves(&self, c: Color) -> Vec<Move> {
+    pub fn possible_moves(&self) -> Vec<Move> {
         let mut result = vec![];
 
         for y in 0..K {
             for x in 0..K {
-                if self.content[x][y] == Cell::C(c) {
+                if self.content[x][y] == Cell::C(self.turn) {
                     for direction in vec![
                         MoveDirection::Front,
                         MoveDirection::FrontLeft,
@@ -188,27 +233,28 @@ impl Board {
         return None;
     }
 
-    pub fn playout(&self, c: Color, debug: bool) -> Color {
+    pub fn pass(&mut self) {
+        self.turn = self.turn.adv()
+    }
+
+    pub fn playout(&self, debug: bool) -> Color {
         let mut b: Board = *self;
-        let mut turn = c;
+        
         while {
-            let actions = b.possible_moves(turn);
+            let actions = b.possible_moves();
             match actions.choose(&mut rand::thread_rng()) {
                 None => {
-                    turn = turn.adv();
+                    b.pass();
                     true
                 }
                 Some(action) => {
                     b.play(&action);
                     if debug {
-                        println!("Turn: {:?}", turn);
+                        println!("Turn: {:?}", b.turn());
                         b.show();
                     }
                     match b.winner() {
-                        None => {
-                            turn = turn.adv();
-                            true
-                        }
+                        None => true,
                         _ => false,
                     }
                 }
