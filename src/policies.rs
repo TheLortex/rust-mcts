@@ -5,7 +5,8 @@ use std::iter::*;
 
 use super::game::Game;
 
-const N_PLAYOUTS: usize = 1000;
+pub const N_PLAYOUTS: usize = 1000;
+
 pub trait Policy<T: Game> {
     fn new(color: T::Player) -> Self;
     fn play(&mut self, board: &T) -> Option<T::Move>;
@@ -152,7 +153,7 @@ struct NodeInfo<G: Game> {
 
 pub struct UCTPolicy<G: Game> {
     color: G::Player,
-    tree: HashMap<usize, NodeInfo<G>>,
+    tree: HashMap<G::GameHash, NodeInfo<G>>,
 }
 
 const UCT_WEIGHT: f64 = 0.4;
@@ -165,7 +166,7 @@ impl<G: Game> UCTPolicy<G> {
         self.update(history, z);
     }
 
-    fn update(self: &mut UCTPolicy<G>, history: Vec<(usize, Option<G::Move>)>, winner: G::Player) {
+    fn update(self: &mut UCTPolicy<G>, history: Vec<(G::GameHash, Option<G::Move>)>, winner: G::Player) {
         let z = if winner == self.color { 1. } else { 0. };
         for (state, action) in history.iter() {
             let mut node = self.tree.get_mut(state).unwrap();
@@ -178,8 +179,8 @@ impl<G: Game> UCTPolicy<G> {
         }
     }
 
-    fn sim_tree(self: &mut UCTPolicy<G>, b: &mut G) -> Vec<(usize, Option<G::Move>)> {
-        let mut history: Vec<(usize, Option<G::Move>)> = Vec::new();
+    fn sim_tree(self: &mut UCTPolicy<G>, b: &mut G) -> Vec<(G::GameHash, Option<G::Move>)> {
+        let mut history: Vec<(G::GameHash, Option<G::Move>)> = Vec::new();
 
         while { b.winner() == None } {
             let s_t = b.hash();
@@ -256,13 +257,13 @@ impl<G: Game> UCTPolicy<G> {
         self.tree
             .insert(board.hash(), NodeInfo { count: 0., moves });
     }
-/*
+    /*
     fn show_tree(self: &UCTPolicy<G>, board: &G, rec: usize) {
         if let Some (entry) = self.tree.get(&board.hash()) {
             println!("Count: {}", entry.count);
             board.show();
             let moves = board.possible_moves();
-    
+
             for m in moves.iter() {
                 for _ in 0..rec {
                     print!("#")
@@ -288,7 +289,7 @@ impl<G: Game> Policy<G> for UCTPolicy<G> {
         for _ in 0..N_PLAYOUTS {
             self.simulate(board)
         }
-        
+
         let info: &NodeInfo<G> = self.tree.get(&board.hash()).unwrap();
 
         let mut best_move = None;
@@ -297,7 +298,7 @@ impl<G: Game> Policy<G> for UCTPolicy<G> {
             let x: &MoveInfo = info.moves.get(m).unwrap();
             if x.N_a >= max_visited {
                 max_visited = x.N_a;
-                best_move = Some (*m);
+                best_move = Some(*m);
             }
         }
         best_move

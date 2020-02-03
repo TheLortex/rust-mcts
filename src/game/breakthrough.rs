@@ -7,7 +7,7 @@ use std::hash::*;
 
 use super::Game;
 
-const K: usize = 7;
+const K: usize = 5;
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum Color {
@@ -140,6 +140,8 @@ impl Game for Breakthrough {
     type Player = Color;
     type Move = Move;
 
+    type GameHash = usize;
+
     fn new(turn: Color) -> Breakthrough {
         let mut rng = rand::thread_rng();
 
@@ -199,7 +201,7 @@ impl Game for Breakthrough {
     }
 
     fn hash(&self) -> usize {
-        2 * self.hash + (self.turn as usize)
+        (self.hash << 1) + (self.turn as usize)
     }
 
     fn possible_moves(&self) -> Vec<Move> {
