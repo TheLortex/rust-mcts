@@ -1,8 +1,9 @@
+
 use std::f64;
 use std::iter::*;
 
-use super::game::Game;
-use super::policies::{Policy, PolicyBuilder};
+use super::super::game::Game;
+use super::{Policy, PolicyBuilder, N_PLAYOUTS};
 
 pub struct NMCSPolicy<G: Game> {
     color: G::Player,
@@ -21,11 +22,11 @@ impl<G: Game> NMCSPolicy<G> {
         } else {
             let mut best_score = 0.0;
             let mut best_sequence = Vec::new();
-            let mut state = *board;
+            let mut state = board.clone();
             let mut played_sequence = Vec::new();
             while board.winner() == None {
                 for m in board.possible_moves() {
-                    let mut new_board = *board;
+                    let mut new_board = board.clone();
                     new_board.play(&m);
                     let (score, history) = self.nested(&new_board, level - 1);
                     if score > best_score {
@@ -53,11 +54,11 @@ impl<G: Game> NMCSPolicy<G> {
 }
 
 impl<G: Game> Policy<G> for NMCSPolicy<G> {
-    fn play(self: &mut NMCSPolicy<G>, board: &G) -> Option<G::Move> {
+    fn play(self: &mut NMCSPolicy<G>, board: &G) -> G::Move {
         let mut best_move = None;
         let mut max_visited = 0.;
         for m in board.possible_moves().iter() {
-            let mut new_board = *board;
+            let mut new_board = board.clone();
             new_board.play(&m);
             let (value, _) = self.nested(&new_board, self.s.level);
 
@@ -66,7 +67,7 @@ impl<G: Game> Policy<G> for NMCSPolicy<G> {
                 best_move = Some(*m);
             }
         }
-        best_move
+        best_move.unwrap()
     }
 }
 
@@ -99,9 +100,9 @@ pub struct MultiNMCSPolicy<G: Game> {
 impl<G: Game> MultiNMCSPolicy<G> {
     fn nested(self: &MultiNMCSPolicy<G>, board: &G, level: usize, depth: f64, bound: f64) -> f64 {
         let mut d = depth;
-        let mut s = *board;
+        let mut s = board.clone();
         while s.winner() == None {
-            let mut s_star = s;
+            let mut s_star = s.clone();
             s_star.random_move();
             let mut l_star = if s.turn() == self.color {
                 -1. / d
@@ -119,7 +120,7 @@ impl<G: Game> MultiNMCSPolicy<G> {
 
             if depth > 0. {
                 for m in s.possible_moves() {
-                    let mut new_s = s;
+                    let mut new_s = s.clone();
                     new_s.play(&m);
                     let l = self.nested(&new_s, level - 1, d + 1., l_star);
                     if (s.turn() == self.color && l > l_star)
@@ -147,11 +148,11 @@ impl<G: Game> MultiNMCSPolicy<G> {
 }
 
 impl<G: Game> Policy<G> for MultiNMCSPolicy<G> {
-    fn play(self: &mut MultiNMCSPolicy<G>, board: &G) -> Option<G::Move> {
+    fn play(self: &mut MultiNMCSPolicy<G>, board: &G) -> G::Move {
         let mut best_move = None;
         let mut max_visited = 0.;
         for m in board.possible_moves().iter() {
-            let mut new_board = *board;
+            let mut new_board = board.clone();
             new_board.play(&m);
             let value = self.nested(&new_board, self.s.level, 0., self.s.bound);
 
@@ -160,7 +161,7 @@ impl<G: Game> Policy<G> for MultiNMCSPolicy<G> {
                 best_move = Some(*m);
             }
         }
-        best_move
+        best_move.unwrap()
     }
 }
 

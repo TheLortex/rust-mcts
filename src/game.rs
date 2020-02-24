@@ -5,8 +5,9 @@ use std::hash::Hash;
 
 pub mod breakthrough;
 pub mod misere_breakthrough;
+pub mod weak_schur;
 
-pub trait Game: Sized + Copy + Clone + Debug {
+pub trait Game: Sized + Clone + Debug {
     type Player: PartialEq + Eq + Copy + Clone + Debug;
     type Move: PartialEq + Eq + Copy + Clone + Hash + Debug;
     type GameHash: PartialEq + Eq + Copy + Clone + Hash + Debug;
@@ -37,7 +38,7 @@ pub trait Game: Sized + Copy + Clone + Debug {
     }
 
     fn playout_board_history(&self) -> (Self, Vec<(Self::GameHash, Option<Self::Move>)>) {
-        let mut s = *self;
+        let mut s = self.clone();
         let mut hist = Vec::new();
 
         while {

@@ -2,8 +2,8 @@ use std::collections::HashMap;
 use std::f64;
 use std::iter::*;
 
-use super::game::Game;
-use super::policies::{Policy, PolicyBuilder, N_PLAYOUTS};
+use super::super::game::Game;
+use super::{Policy, PolicyBuilder, N_PLAYOUTS};
 
 
 
@@ -11,15 +11,15 @@ use super::policies::{Policy, PolicyBuilder, N_PLAYOUTS};
 /* UCT */
 
 #[derive(Debug)]
-struct UCTMoveInfo {
-    Q: f64,
-    N_a: f64,
+pub struct UCTMoveInfo {
+    pub Q: f64,
+    pub N_a: f64,
 }
 
 #[derive(Debug)]
-struct UCTNodeInfo<G: Game> {
-    count: f64,
-    moves: HashMap<G::Move, UCTMoveInfo>,
+pub struct UCTNodeInfo<G: Game> {
+    pub count: f64,
+    pub moves: HashMap<G::Move, UCTMoveInfo>,
 }
 
 pub struct UCTPolicy<G: Game> {
@@ -31,7 +31,7 @@ pub struct UCTPolicy<G: Game> {
 
 impl<G: Game> UCTPolicy<G> {
     fn simulate(self: &mut UCTPolicy<G>, board: &G) {
-        let mut b = *board; // COPY BOARD
+        let mut b = board.clone(); // COPY BOARD
         let history = self.sim_tree(&mut b);
         let z = b.playout();
         self.update(history, z);
@@ -132,29 +132,11 @@ impl<G: Game> UCTPolicy<G> {
         self.tree
             .insert(board.hash(), UCTNodeInfo { count: 0., moves });
     }
-    /*
-    fn show_tree(self: &UCTPolicy<G>, board: &G, rec: usize) {
-        if let Some (entry) = self.tree.get(&board.hash()) {
-            println!("Count: {}", entry.count);
-            board.show();
-            let moves = board.possible_moves();
-
-            for m in moves.iter() {
-                for _ in 0..rec {
-                    print!("#")
-                }
-                println!("{:?}", entry.moves.get(&m).unwrap());
-                let mut b = *board;
-                b.play(&m);
-                self.show_tree(&b, rec+1)
-            };
-        }
-    }*/
 }
 
 impl<G: Game> Policy<G> for UCTPolicy<G> {
 
-    fn play(self: &mut UCTPolicy<G>, board: &G) -> Option<G::Move> {
+    fn play(self: &mut UCTPolicy<G>, board: &G) -> G::Move {
         for _ in 0..N_PLAYOUTS {
             self.simulate(board)
         }
@@ -170,7 +152,7 @@ impl<G: Game> Policy<G> for UCTPolicy<G> {
                 best_move = Some(*m);
             }
         }
-        best_move
+        best_move.unwrap()
     }
 }
 
@@ -222,7 +204,7 @@ pub struct RAVEPolicy<G: Game> {
 
 impl<G: Game> RAVEPolicy<G> {
     fn simulate(self: &mut RAVEPolicy<G>, board: &G) {
-        let mut b = *board; // COPY BOARD
+        let mut b = board.clone(); // COPY BOARD
         let history = self.sim_tree(&mut b);
         let (z, history_default) = b.playout_history();
         self.update(history, history_default, z);
@@ -356,7 +338,7 @@ impl<G: Game> RAVEPolicy<G> {
 }
 
 impl<G: Game> Policy<G> for RAVEPolicy<G> {
-    fn play(self: &mut RAVEPolicy<G>, board: &G) -> Option<G::Move> {
+    fn play(self: &mut RAVEPolicy<G>, board: &G) -> G::Move {
         self.tree.clear();
         for _ in 0..N_PLAYOUTS {
             self.simulate(board)
@@ -364,24 +346,21 @@ impl<G: Game> Policy<G> for RAVEPolicy<G> {
 
         let mut best_move = None;
         let mut max_visited = 0.;
-        let mut max_beta = 0.;
+        let mut _max_beta = 0.;
         for m in board.possible_moves().iter() {
             let value = self.eval(&board.hash(), &m, true);
 
             let node_info = self.tree.get(&board.hash()).unwrap();
             let v = node_info.moves.get(&m).unwrap();
             let beta = Self::beta(v);
-            println!("{:?} => {:?}", m, v);
 
             if value >= max_visited {
                 max_visited = value;
                 best_move = Some(*m);
-                max_beta = beta;
+                _max_beta = beta;
             }
         };
-        println!("Starting play:");
-        println!("Beta value of best move: {}", max_beta);
-        best_move
+        best_move.unwrap()
     }
 }
 

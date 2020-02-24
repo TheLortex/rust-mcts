@@ -7,9 +7,9 @@ use std::hash::*;
 
 use super::{Game, InteractiveGame};
 
-const K: usize = 5;
+const K: usize = 8;
 
-#[derive(Clone, Copy, PartialEq, Eq)]
+#[derive(Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Color {
     Black = 0,
     White = 1,
@@ -80,6 +80,7 @@ impl MoveDirection {
 
 #[derive(Hash, Eq, PartialEq, Copy, Clone, Debug)]
 pub struct Move {
+    color: Color,
     x: usize,
     y: usize,
     direction: MoveDirection,
@@ -103,7 +104,7 @@ impl Move {
 
     fn is_valid(&self, b: &Breakthrough) -> Option<(usize, usize)> {
         let c = b.content[self.x][self.y];
-        if c == Cell::Empty {
+        if c != Cell::C(self.color) {
             return None;
         }
         let (px, py) = self.target(b);
@@ -228,6 +229,9 @@ impl Game for Breakthrough {
     }
 
     fn play(&mut self, m: &Move) {
+        if m.color != self.turn() {
+            panic!("Wait. Not your turn.");
+        }
         match m.is_valid(&self) {
             None => panic!("Wait. This is illegal. "),
             Some((px, py)) => {
@@ -261,27 +265,7 @@ impl Game for Breakthrough {
     }
 
     fn possible_moves(&self) -> Vec<Move> {
-        let mut result = vec![];
-
-        for y in 0..K {
-            for x in 0..K {
-                if self.content[x][y] == Cell::C(self.turn) {
-                    for direction in vec![
-                        MoveDirection::Front,
-                        MoveDirection::FrontLeft,
-                        MoveDirection::FrontRight,
-                    ] {
-                        let m = Move { x, y, direction };
-                        match m.is_valid(self) {
-                            None => (),
-                            Some(_) => result.push(m),
-                        }
-                    }
-                }
-            }
-        }
-
-        return result;
+        self.possible_moves_for(self.turn)
     }
 
     fn winner(&self) -> Option<Color> {
@@ -291,6 +275,11 @@ impl Game for Breakthrough {
             } else if self.content[i][0] == Cell::C(Color::White) {
                 return Some(Color::White);
             }
+        }
+        if self.possible_moves_for(Color::Black).len() == 0 {
+            return Some(Color::White);
+        } else if self.possible_moves_for(Color::White).len() == 0 {
+            return Some(Color::Black);
         }
         return None;
     }
@@ -303,6 +292,30 @@ impl Game for Breakthrough {
 impl Breakthrough {
     pub fn show(&self) {
         println!("{:?}", self);
+    }
+
+    fn possible_moves_for(&self, color: Color) -> Vec<Move> {
+        let mut result = vec![];
+
+        for y in 0..K {
+            for x in 0..K {
+                if self.content[x][y] == Cell::C(color) {
+                    for direction in vec![
+                        MoveDirection::Front,
+                        MoveDirection::FrontLeft,
+                        MoveDirection::FrontRight,
+                    ] {
+                        let m = Move { color, x, y, direction };
+                        match m.is_valid(self) {
+                            None => (),
+                            Some(_) => result.push(m),
+                        }
+                    }
+                }
+            }
+        }
+
+        return result;
     }
 }
 
@@ -357,6 +370,7 @@ impl IBreakthrough {
                         let new_m = MoveDirection::all()
                             .iter()
                             .map(|d| Move {
+                                color: self.game.turn(),
                                 direction: *d,
                                 x: m.x,
                                 y: m.y,
@@ -453,7 +467,7 @@ impl cursive::view::View for IBreakthrough {
                     MoveDirection::FrontLeft,
                     MoveDirection::FrontRight,
                 ] {
-                    let m = Move { x, y, direction };
+                    let m = Move { color: self.game.turn(), x, y, direction };
                     match m.is_valid(&self.game) {
                         None => (),
                         Some((px, py)) => {
