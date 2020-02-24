@@ -4,6 +4,8 @@ use std::hash::*;
 use std::collections::hash_map::DefaultHasher;
 use std::hash::Hasher;
 
+use std::cmp::Ordering;
+
 use super::Game;
 
 const K: usize = 9;
@@ -16,9 +18,9 @@ pub struct WeakSchurNumber {
 
 impl fmt::Debug for WeakSchurNumber {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "Partitions\n")?;
+        writeln!(f, "Partitions")?;
         for i in 0..K {
-            write!(f, "{:?}\n", self.partitions[i])?;
+            writeln!(f, "{:?}", self.partitions[i])?;
         }
         write!(f, "")
     }
@@ -26,25 +28,23 @@ impl fmt::Debug for WeakSchurNumber {
 
 impl WeakSchurNumber {
     /* assumes values is in increasing order. */
-    fn is_valid(&self, values: &Vec<usize>) -> bool {
+    fn is_valid(&self, values: &[usize]) -> bool {
         let mut begin = 0;
         let mut end = values.len() as isize - 1;
         let target = self.last_value + 1;
 
         while begin < end {
             let sum = values[begin as usize] + values[end as usize];
-            if sum == target {
-                return false;
-            } else if sum < target {
-                begin += 1;
-            } else {
-                end -= 1;
-            }
+            match sum.cmp(&target) {
+                Ordering::Equal => return false,
+                Ordering::Less =>  begin += 1,
+                Ordering::Greater =>  end -= 1,
+            };
         }
         true
     }
 
-    fn best_sequence(values: &Vec<usize>) -> usize {
+    fn best_sequence(values: &[usize]) -> usize {
         let mut best_length = 0;
         let mut cur_length = 0;
 
@@ -109,7 +109,7 @@ impl Game for WeakSchurNumber {
     }
 
     fn winner(&self) -> Option<Self::Player> {
-        if self.possible_moves().len() != 0 {
+        if !self.possible_moves().is_empty() {
             None
         } else {
             Some(())

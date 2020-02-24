@@ -13,7 +13,7 @@ pub struct RandomPolicy<G: Game> {
 impl<G: Game> Policy<G> for RandomPolicy<G> {
     fn play(self: &mut RandomPolicy<G>, board: &G) -> G::Move {
         let moves = board.possible_moves();
-        moves.choose(&mut rand::thread_rng()).map(|x| *x).unwrap()
+        moves.choose(&mut rand::thread_rng()).copied().unwrap()
     }
 }
 
@@ -61,7 +61,7 @@ impl<G: Game> Policy<G> for FlatMonteCarloPolicy<G> {
             }
         }
 
-        best_move.map(|x| *x).unwrap()
+        best_move.copied().unwrap()
     }
 }
 
@@ -137,7 +137,7 @@ impl<G: Game> Policy<G> for FlatUCBMonteCarloPolicy<G> {
                 max_count = count;
             }
         }
-        max_move.map(|x| *x).unwrap()
+        max_move.copied().unwrap()
     }
 }
 

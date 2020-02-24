@@ -16,15 +16,15 @@ use cursive::Vec2;
 use atomic_counter::{AtomicCounter, RelaxedCounter};
 
 use std::collections::hash_map::DefaultHasher;
+use std::convert::TryFrom;
 use std::hash::{Hash, Hasher};
 use std::mem;
-use std::convert::TryFrom;
 
 use std::cell::RefCell;
 use std::rc::Rc;
 use std::sync::Arc;
 
-use indicatif::{ProgressBar, MultiProgress, ProgressStyle};
+use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
 use rayon::prelude::*;
 
 pub mod game;
@@ -37,7 +37,7 @@ use self::game::breakthrough::*;
 use self::game::misere_breakthrough::*;
 use self::game::weak_schur::*;
 use self::game::{Game, InteractiveGame};
-use self::policies::{Policy, PolicyBuilder, flat::*, mcts::*, nmcs::*, nrpa::*, ppa::*};
+use self::policies::{flat::*, mcts::*, nmcs::*, nrpa::*, ppa::*, Policy, PolicyBuilder};
 
 fn game_solo<G: Game, P: PolicyBuilder<G>>(pb: &P) -> f64 {
     let player = G::players()[0];
@@ -49,7 +49,7 @@ fn game_solo<G: Game, P: PolicyBuilder<G>>(pb: &P) -> f64 {
         b.play(&action);
         println!("{:?}", b);
         println!("Score: {}", b.score(player));
-    };
+    }
     println!("{:?}", b);
     b.score(player)
 }
@@ -85,10 +85,12 @@ pub fn monte_carlo_match<G: Game, P1: PolicyBuilder<G> + Sync, P2: PolicyBuilder
     pb1: &P1,
     pb2: &P2,
 ) -> usize {
-    let bar = ProgressBar::new(n as u64);
-    bar.set_style(ProgressStyle::default_bar()
-        .template("{spinner:.green} [{elapsed_precise}] [{bar:70.cyan/blue}] {msg} (ETA {eta})"));
-
+    let pb = ProgressBar::new(n as u64);
+    pb.set_style(
+        ProgressStyle::default_bar().template(
+            "{spinner:.green} [{elapsed_precise}] [{bar:70.cyan/blue}] {msg} (ETA {eta})",
+        ),
+    );
 
     let c1 = Arc::new(RelaxedCounter::new(0));
     let c2 = Arc::new(RelaxedCounter::new(0));
@@ -103,18 +105,25 @@ pub fn monte_carlo_match<G: Game, P1: PolicyBuilder<G> + Sync, P2: PolicyBuilder
             let mut p2 = pb2.create(G::players()[1]);
 
             let result = if game_duel(G::players()[0], &mut p1, &mut p2) == G::players()[0] {
-                c1.inc(); 1
+                c1.inc();
+                1
             } else {
-                c2.inc(); 0
+                c2.inc();
+                0
             };
-            bar.inc(1);
+            pb.inc(1);
             let v1 = c1.get();
             let v2 = c2.get();
-            bar.set_message(&format!("{}/{} ({:.2}%)", v1, v2, (v1 as f64)*100./((v1 + v2) as f64)));
+            pb.set_message(&format!(
+                "{}/{} ({:.2}%)",
+                v1,
+                v2,
+                (v1 as f64) * 100. / ((v1 + v2) as f64)
+            ));
             result
         })
         .sum();
-    bar.finish();
+    pb.finish();
     count_victory
 }
 
@@ -152,7 +161,6 @@ impl GameDuelUI {
 type G = Breakthrough;
 
 fn main_ui() {
-
     let mut siv = Cursive::default();
 
     let pb1 = Random::default();
@@ -187,7 +195,10 @@ fn main() {
     let p1 = UCT::default();
     let p2 = PPA::<_, BTNoFeatures>::default();
 
-    println!("Result: {}", monte_carlo_match::<Breakthrough, _, _>(50, &p1, &p2));
+    println!(
+        "Result: {}",
+        monte_carlo_match::<Breakthrough, _, _>(1, &p1, &p2)
+    );
     //main_ui();
 
     /*let pb = NRPA::default();

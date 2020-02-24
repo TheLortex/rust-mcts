@@ -1,4 +1,3 @@
-
 use std::f64;
 use std::iter::*;
 
@@ -15,10 +14,10 @@ impl<G: Game> NMCSPolicy<G> {
         if level == 0 {
             let (board, mut history) = board.playout_board_history();
             history.reverse();
-            return (
+            (
                 board.score(self.color),
                 history.into_iter().map(|(_, b)| b).collect(),
-            );
+            )
         } else {
             let mut best_score = 0.0;
             let mut best_sequence = Vec::new();
@@ -110,12 +109,11 @@ impl<G: Game> MultiNMCSPolicy<G> {
                 1. / d
             };
 
-            if self.s.d_pruning {
-                if (s.turn() == self.color && -l_star < bound)
-                    || (s.turn() != self.color && -l_star > bound)
-                {
-                    return bound;
-                }
+            if self.s.d_pruning
+                && ((s.turn() == self.color && -l_star < bound)
+                    || (s.turn() != self.color && -l_star > bound))
+            {
+                return bound;
             }
 
             if depth > 0. {
@@ -136,13 +134,13 @@ impl<G: Game> MultiNMCSPolicy<G> {
             }
 
             s = s_star;
-            d = d + 1.;
+            d += 1.;
         }
 
         if self.s.discounting {
-            return board.score(self.color) / d;
+            board.score(self.color) / d
         } else {
-            return board.score(self.color);
+            board.score(self.color)
         }
     }
 }

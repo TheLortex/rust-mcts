@@ -27,9 +27,7 @@ impl<G: Game, M: MoveCode<G>> PPAPolicy<G, M> {
     fn ensure_exists(self: &mut PPAPolicy<G, M>, board: &G) {
         for m in board.possible_moves() {
             let code = M::code(&board, &m);
-            if !self.playout_policy.contains_key(&code) {
-                self.playout_policy.insert(code, 0.);
-            }
+            self.playout_policy.entry(code).or_insert(0.);
         }
     }
 
@@ -61,7 +59,7 @@ impl<G: Game, M: MoveCode<G>> PPAPolicy<G, M> {
         
     }
 
-    fn adapt(self: &mut PPAPolicy<G,M>, board: &G, history_uct: &Vec<(G::GameHash, G::Move)>, history_playout: &Vec<G::Move>, winner: G::Player) {
+    fn adapt(self: &mut PPAPolicy<G,M>, board: &G, history_uct: &[(G::GameHash, G::Move)], history_playout: &[G::Move], winner: G::Player) {
         let mut board = board.clone();
         for (_, action) in history_uct {
             if board.turn() == winner {
@@ -97,7 +95,7 @@ impl<G: Game, M: MoveCode<G>> PPAPolicy<G, M> {
 
     fn update(
         self: &mut PPAPolicy<G, M>,
-        history: &Vec<(G::GameHash, G::Move)>,
+        history: &[(G::GameHash, G::Move)],
         winner: G::Player,
     ) {
         let z = if winner == self.color { 1. } else { 0. };

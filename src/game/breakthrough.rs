@@ -16,7 +16,7 @@ pub enum Color {
 }
 
 impl Color {
-    pub fn adv(&self) -> Color {
+    pub fn adv(self) -> Color {
         match self {
             Color::Black => Color::White,
             Color::White => Color::Black,
@@ -34,8 +34,8 @@ impl Color {
 
 impl fmt::Debug for Color {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let b = Fixed(009);
-        let w = Fixed(015);
+        let b = Fixed(9);
+        let w = Fixed(15);
 
         match self {
             Color::Black => write!(f, "{}", b.paint("▓▓")),
@@ -111,21 +111,17 @@ impl Move {
         if px < K && py < K {
             if self.direction == MoveDirection::Front {
                 if b.content[px][py] == Cell::Empty {
-                    return Some((px, py));
+                    Some((px, py))
                 } else {
-                    return None;
+                    None
                 }
+            } else if b.content[px][py] == Cell::Empty || b.content[px][py] != c {
+                Some((px, py))
             } else {
-                if b.content[px][py] == Cell::Empty {
-                    return Some((px, py));
-                } else if b.content[px][py] != c {
-                    return Some((px, py));
-                } else {
-                    return None;
-                }
+                None
             }
         } else {
-            return None;
+            None
         }
     }
 }
@@ -147,19 +143,19 @@ pub struct Breakthrough {
 impl fmt::Debug for Breakthrough {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let style = Style::new().on(Fixed(0));
-        write!(f, "Turn: {:?}\n", self.turn)?;
-        write!(
+        writeln!(f, "Turn: {:?}", self.turn)?;
+        writeln!(
             f,
-            "{}{}{}\n",
+            "{}{}{}",
             style.paint("╔"),
             style.paint("══╤".repeat(K - 1)),
             style.paint("══╗")
         )?;
         for y in 0..K {
             if y != 0 {
-                write!(
+                writeln!(
                     f,
-                    "{}{}{}\n",
+                    "{}{}{}",
                     style.paint("╟"),
                     style.paint("──┼".repeat(K - 1)),
                     style.paint("──╢")
@@ -173,11 +169,11 @@ impl fmt::Debug for Breakthrough {
                     write!(f, "{}{:?}", style.paint("│"), self.content[x][y])?;
                 }
             }
-            write!(f, "║\n")?;
+            writeln!(f, "║")?;
         }
-        write!(
+        writeln!(
             f,
-            "{}{}{}\n",
+            "{}{}{}",
             style.paint("╚"),
             style.paint("══╧".repeat(K - 1)),
             style.paint("══╝")
@@ -196,11 +192,11 @@ impl Game for Breakthrough {
 
         let mut content = [[Cell::Empty; K]; K];
         let mut transposition = [[[0; K]; K]; 2];
-        for x in 0..K {
-            content[x][0] = Cell::C(Color::Black);
-            content[x][1] = Cell::C(Color::Black);
-            content[x][K - 2] = Cell::C(Color::White);
-            content[x][K - 1] = Cell::C(Color::White);
+        for (x, column) in content.iter_mut().enumerate() {
+            column[0] = Cell::C(Color::Black);
+            column[1] = Cell::C(Color::Black);
+            column[K - 2] = Cell::C(Color::White);
+            column[K - 1] = Cell::C(Color::White);
 
             for y in 0..K {
                 transposition[Color::Black as usize][x][y] = rng.gen::<usize>();
@@ -276,12 +272,13 @@ impl Game for Breakthrough {
                 return Some(Color::White);
             }
         }
-        if self.possible_moves_for(Color::Black).len() == 0 {
-            return Some(Color::White);
-        } else if self.possible_moves_for(Color::White).len() == 0 {
-            return Some(Color::Black);
+        if self.possible_moves_for(Color::Black).is_empty() {
+            Some(Color::White)
+        } else if self.possible_moves_for(Color::White).is_empty() {
+            Some(Color::Black)
+        } else {
+            None
         }
-        return None;
     }
 
     fn pass(&mut self) {
@@ -300,12 +297,17 @@ impl Breakthrough {
         for y in 0..K {
             for x in 0..K {
                 if self.content[x][y] == Cell::C(color) {
-                    for direction in vec![
+                    for direction in &[
                         MoveDirection::Front,
                         MoveDirection::FrontLeft,
                         MoveDirection::FrontRight,
                     ] {
-                        let m = Move { color, x, y, direction };
+                        let m = Move {
+                            color,
+                            x,
+                            y,
+                            direction: *direction,
+                        };
                         match m.is_valid(self) {
                             None => (),
                             Some(_) => result.push(m),
@@ -315,7 +317,7 @@ impl Breakthrough {
             }
         }
 
-        return result;
+        result
     }
 }
 
@@ -353,12 +355,12 @@ impl IBreakthrough {
                             let a = m.x as isize - x as isize;
                             let b = m.y as isize - y as isize;
                             if dx == 0 {
-                                (b*dy, a.abs())
+                                (b * dy, a.abs())
                             } else {
-                                (a*dx, b.abs())
+                                (a * dx, b.abs())
                             }
                         })
-                        .map(|x| *x);
+                        .cloned();
                     if let Some(new_m) = new_m {
                         self.choosing_move = Some(PendingMove::SelectingPosition(new_m.x, new_m.y))
                     }
@@ -375,13 +377,7 @@ impl IBreakthrough {
                                 x: m.x,
                                 y: m.y,
                             })
-                            .filter(|m| {
-                                if let Some(_) = m.is_valid(&self.game) {
-                                    true
-                                } else {
-                                    false
-                                }
-                            })
+                            .filter(|m| m.is_valid(&self.game).is_some())
                             .filter(|m2| {
                                 let m2_t = m2.target(&self.game);
                                 let m_t = m.target(&self.game);
@@ -390,12 +386,10 @@ impl IBreakthrough {
                             .min_by_key(|m2| {
                                 let m2_t = m2.target(&self.game);
                                 let m_t = m.target(&self.game);
-                                let a = (m2_t.0 as isize - m_t.0 as isize) * dx;
-                                a
+                                (m2_t.0 as isize - m_t.0 as isize) * dx
                             });
                         if let Some(new_m) = new_m {
-                            self.choosing_move =
-                                Some(PendingMove::SelectingMove(new_m))
+                            self.choosing_move = Some(PendingMove::SelectingMove(new_m))
                         }
                     }
                 }
@@ -462,16 +456,21 @@ impl cursive::view::View for IBreakthrough {
             });
 
             if let PendingMove::SelectingMove(mv) = m {
-                for direction in vec![
+                for direction in &[
                     MoveDirection::Front,
                     MoveDirection::FrontLeft,
                     MoveDirection::FrontRight,
                 ] {
-                    let m = Move { color: self.game.turn(), x, y, direction };
+                    let m = Move {
+                        color: self.game.turn(),
+                        x,
+                        y,
+                        direction: *direction,
+                    };
                     match m.is_valid(&self.game) {
                         None => (),
                         Some((px, py)) => {
-                            let (px, py, color) = if direction == mv.direction {
+                            let (px, py, color) = if *direction == mv.direction {
                                 (
                                     px,
                                     py,
@@ -516,7 +515,9 @@ impl cursive::view::View for IBreakthrough {
                 if let Some(m) = self.choosing_move {
                     match m {
                         PendingMove::SelectingMove(m) => {
-                            self.choosing_move_cb.take().map(|f| f(m, self));
+                            if let Some(f) = self.choosing_move_cb.take() {
+                                f(m, self);
+                            }
                             self.choosing_move = None;
                             EventResult::Consumed(None)
                         }
@@ -526,8 +527,7 @@ impl cursive::view::View for IBreakthrough {
                                     .game
                                     .possible_moves()
                                     .iter()
-                                    .filter(|m| m.x == x && m.y == y)
-                                    .next()
+                                    .find(|m| m.x == x && m.y == y)
                                     .unwrap(),
                             ));
                             EventResult::Consumed(None)

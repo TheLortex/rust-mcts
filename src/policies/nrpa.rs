@@ -50,7 +50,7 @@ impl<G: Game> NRPAPolicy<G> {
             let mut board = board.clone();
 
             let mut history = vec![];
-            while { board.possible_moves().len() > 0 } {
+            while { !board.possible_moves().is_empty() } {
                 self.ensure_exists(&board);
                 let branch = self.tree.get(&board.hash());
 
@@ -70,7 +70,7 @@ impl<G: Game> NRPAPolicy<G> {
                 board.play(chosen_move);
                 history.push(*chosen_move);
             }
-            return (board.score(self.color), history);
+            (board.score(self.color), history)
         } else {
             let mut best_score = 0.;
             let mut best_hist = vec![];
@@ -82,7 +82,7 @@ impl<G: Game> NRPAPolicy<G> {
                 }
                 self.adapt(board, &best_hist);
             }
-            return (best_score, best_hist);
+            (best_score, best_hist)
         }
     }
     /*
@@ -96,7 +96,7 @@ impl<G: Game> NRPAPolicy<G> {
     28   node = child(node,seq[ply])
     29  RETURN pol’
     */
-    fn adapt(self: &mut NRPAPolicy<G>, board: &G, history: &Vec<G::Move>) {
+    fn adapt(self: &mut NRPAPolicy<G>, board: &G, history: &[G::Move]) {
         let mut board = board.clone();
         for action in history {
             self.ensure_exists(&board);
@@ -122,15 +122,15 @@ impl<G: Game> NRPAPolicy<G> {
     }
 
     fn ensure_exists(self: &mut NRPAPolicy<G>, board: &G) {
-        if !self.tree.contains_key(&board.hash()) {
+        self.tree.entry(board.hash()).or_insert({
             let mut node = NodeInfo {
                 moves: HashMap::new(),
             };
             for m in board.possible_moves() {
                 node.moves.insert(m, MoveInfo { weight: 0. });
-            }
-            self.tree.insert(board.hash(), node);
-        }
+            };
+            node
+        });
     }
 }
 

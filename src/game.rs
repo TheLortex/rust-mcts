@@ -12,6 +12,7 @@ pub trait Game: Sized + Clone + Debug {
     type Move: PartialEq + Eq + Copy + Clone + Hash + Debug;
     type GameHash: PartialEq + Eq + Copy + Clone + Hash + Debug;
 
+
     fn new(turn: Self::Player) -> Self;
 
     fn players() -> Vec<Self::Player>;
@@ -34,7 +35,7 @@ pub trait Game: Sized + Clone + Debug {
             None => self.pass(),
             Some(action) => self.play(action),
         };
-        (gh, chosen_action.map(|x| *x))
+        (gh, chosen_action.copied())
     }
 
     fn playout_board_history(&self) -> (Self, Vec<(Self::GameHash, Option<Self::Move>)>) {
@@ -44,10 +45,7 @@ pub trait Game: Sized + Clone + Debug {
         while {
             let v = s.random_move();
             hist.push(v);
-            match s.winner() {
-                None => true,
-                Some(_) => false,
-            }
+            s.winner().is_none()
         } {}
         (s, hist)
     }
@@ -67,8 +65,6 @@ pub trait Game: Sized + Clone + Debug {
         s.winner().unwrap()
     }
 }
-
-use cursive;
 
 pub trait InteractiveGame: cursive::view::View {
     type G: Game;

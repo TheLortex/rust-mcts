@@ -303,8 +303,7 @@ impl<G: Game> RAVEPolicy<G> {
         if div == 0. {
             div = 1.
         };
-        let beta = v.count_AMAF / div;
-        beta
+        v.count_AMAF / div
     }
 
     fn eval(self: &RAVEPolicy<G>, state: &G::GameHash, action: &G::Move, optimistic: bool) -> f64 {
@@ -316,7 +315,7 @@ impl<G: Game> RAVEPolicy<G> {
         let v_AMAF = v.wins_AMAF;
 
         let beta = Self::beta(v);
-        return (1. - beta) * v_mean + beta * v_AMAF;
+        (1. - beta) * v_mean + beta * v_AMAF
     }
 
     pub fn new_node(self: &mut RAVEPolicy<G>, board: &G) {
