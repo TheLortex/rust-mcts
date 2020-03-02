@@ -5,7 +5,7 @@ use super::breakthrough::{Breakthrough, Color, Move};
 
 const K: usize = 5;
 
-#[derive(Clone, Copy, PartialEq, Eq)]
+#[derive(Clone, PartialEq, Eq)]
 pub struct MisereBreakthrough {
     game: Breakthrough,
 }
@@ -44,7 +44,7 @@ impl Game for MisereBreakthrough {
         self.game.hash()
     }
 
-    fn possible_moves(&self) -> Vec<Move> {
+    fn possible_moves(&self) -> &Vec<Move> {
         self.game.possible_moves()
     }
 

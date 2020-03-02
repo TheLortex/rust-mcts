@@ -2,7 +2,7 @@ use rand::seq::SliceRandom;
 use std::f64;
 use std::iter::*;
 
-use super::super::game::Game;
+use super::super::game::{Game, MoveCode};
 use super::{Policy, PolicyBuilder, N_PLAYOUTS};
 use super::mcts::{UCTMoveInfo, UCTNodeInfo};
 
@@ -19,38 +19,30 @@ pub struct PPAPolicy<G: Game, M: MoveCode<G>> {
     _m: PhantomData<M>,
 }
 
-pub trait MoveCode<G: Game> {
-    fn code(game: &G, action: &G::Move) -> usize;
-} 
-
 impl<G: Game, M: MoveCode<G>> PPAPolicy<G, M> {
-    fn ensure_exists(self: &mut PPAPolicy<G, M>, board: &G) {
-        for m in board.possible_moves() {
-            let code = M::code(&board, &m);
-            self.playout_policy.entry(code).or_insert(0.);
-        }
+    pub fn next_move(self: &mut PPAPolicy<G, M>, board: &G) -> G::Move {
+        let moves = board.possible_moves();
+
+        let chosen_move = moves
+            .choose_weighted(&mut rand::thread_rng(), |item| {
+                let code = M::code(board, item);
+                self.playout_policy.get(&code).unwrap_or(&0.).exp()
+            })
+            .unwrap();
+        *chosen_move
     }
 
-    fn simulate(self: &mut PPAPolicy<G, M>, root_board: &G) {
+    pub fn simulate(self: &mut PPAPolicy<G, M>, root_board: &G) {
         let mut board = root_board.clone(); // COPY BOARD
         let history_uct = self.sim_tree(&mut board);
 
         let mut history_playout = vec![];
 
         while {board.winner() == None} {
-            
-            self.ensure_exists(&board);
+            let chosen_move = self.next_move(&board);
 
-            let moves = board.possible_moves();
-
-            let chosen_move = moves
-                .choose_weighted(&mut rand::thread_rng(), |item| {
-                    self.playout_policy.get(&M::code(&board, item)).unwrap().exp()
-                })
-                .unwrap();
-
-            board.play(chosen_move);
-            history_playout.push(*chosen_move);
+            board.play(&chosen_move);
+            history_playout.push(chosen_move);
         }
         
         let z = board.winner().unwrap();
@@ -77,17 +69,17 @@ impl<G: Game, M: MoveCode<G>> PPAPolicy<G, M> {
     }
 
     fn policy_update(self: &mut PPAPolicy<G,M>, board: &G, action: &G::Move) {
-        let node = self.playout_policy.get_mut(&M::code(board, action)).unwrap();
+        let node = self.playout_policy.entry(M::code(board, action)).or_insert(0.);
         *node += self.s.alpha;
 
         let z: f64 = board
             .possible_moves()
             .iter()
-            .map(|m| self.playout_policy.get(&M::code(board, &m)).unwrap().exp())
+            .map(|m| self.playout_policy.get(&M::code(board, &m)).unwrap_or(&0.).exp())
             .sum();
                 
         for m in board.possible_moves() {
-            let move_node = self.playout_policy.get_mut(&M::code(board, &m)).unwrap();
+            let move_node = self.playout_policy.entry(M::code(board, &m)).or_insert(0.);
             let v = move_node.exp();
             *move_node -= self.s.alpha * v / z;
         }
@@ -180,7 +172,7 @@ impl<G: Game, M: MoveCode<G>> PPAPolicy<G, M> {
             board
                 .possible_moves()
                 .into_iter()
-                .map(|m| (m, UCTMoveInfo { Q: 0., N_a: 0. })),
+                .map(|m| (*m, UCTMoveInfo { Q: 0., N_a: 0. })),
         );
 
         self.tree

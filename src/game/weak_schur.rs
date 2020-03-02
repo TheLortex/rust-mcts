@@ -9,11 +9,13 @@ use std::cmp::Ordering;
 use super::Game;
 
 const K: usize = 9;
+const WS_RULE: bool = true;
 
 #[derive(Clone, PartialEq, Eq)]
 pub struct WeakSchurNumber {
     partitions: [Vec<usize>; K],
     last_value: usize,
+    possible_moves: Vec<usize>,
 }
 
 impl fmt::Debug for WeakSchurNumber {
@@ -28,17 +30,17 @@ impl fmt::Debug for WeakSchurNumber {
 
 impl WeakSchurNumber {
     /* assumes values is in increasing order. */
-    fn is_valid(&self, values: &[usize]) -> bool {
+    fn is_valid(last_value: usize, values: &[usize]) -> bool {
         let mut begin = 0;
         let mut end = values.len() as isize - 1;
-        let target = self.last_value + 1;
+        let target = last_value + 1;
 
         while begin < end {
             let sum = values[begin as usize] + values[end as usize];
             match sum.cmp(&target) {
                 Ordering::Equal => return false,
-                Ordering::Less =>  begin += 1,
-                Ordering::Greater =>  end -= 1,
+                Ordering::Less => begin += 1,
+                Ordering::Greater => end -= 1,
             };
         }
         true
@@ -60,6 +62,26 @@ impl WeakSchurNumber {
         }
         best_length
     }
+
+    fn compute_possible_moves(last_value: usize, partitions: &[Vec<usize>; K]) -> Vec<usize> {
+        let valid_moves: Vec<(usize, &Vec<usize>)> = partitions
+            .iter()
+            .enumerate()
+            .filter(|(_, partition)| WeakSchurNumber::is_valid(last_value + 1, partition))
+            .collect();
+
+        if WS_RULE {
+            if let Some((idx, _)) = valid_moves
+                .iter()
+                .filter(|(_, partition)| partition.last() == Some(&last_value))
+                .collect::<Vec<&(usize, &Vec<usize>)>>()
+                .first()
+            {
+                return vec![*idx];
+            }
+        }
+        valid_moves.iter().map(|(i, _)| *i).collect()
+    }
 }
 
 impl Game for WeakSchurNumber {
@@ -68,9 +90,14 @@ impl Game for WeakSchurNumber {
     type GameHash = usize;
 
     fn new(_: Self::Player) -> WeakSchurNumber {
+        let partitions = Default::default();
+        let last_value = 0;
+        let possible_moves = WeakSchurNumber::compute_possible_moves(last_value, &partitions);
+
         WeakSchurNumber {
-            partitions: Default::default(),
-            last_value: 0,
+            partitions,
+            last_value,
+            possible_moves,
         }
     }
 
@@ -89,6 +116,8 @@ impl Game for WeakSchurNumber {
     fn play(&mut self, m: &Self::Move) {
         self.last_value += 1;
         self.partitions[*m].push(self.last_value);
+        self.possible_moves =
+            WeakSchurNumber::compute_possible_moves(self.last_value, &self.partitions);
     }
 
     fn turn(&self) -> Self::Player {}
@@ -99,13 +128,8 @@ impl Game for WeakSchurNumber {
         hasher.finish() as usize
     }
 
-    fn possible_moves(&self) -> Vec<Self::Move> {
-        self.partitions
-            .iter()
-            .enumerate()
-            .filter(|(_, partition)| self.is_valid(partition))
-            .map(|(i, _)| i)
-            .collect()
+    fn possible_moves(&self) -> &Vec<Self::Move> {
+        &self.possible_moves
     }
 
     fn winner(&self) -> Option<Self::Player> {

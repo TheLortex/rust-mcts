@@ -1,37 +1,100 @@
 use super::*;
+extern crate test;
+use test::Bencher;
+use super::game::*;
 
 type G = Breakthrough;
 
-
-#[test]
-fn test_random_vs_flat_breaktrough() {
-    let p1 = Random {};
-    let p2 = FlatMonteCarlo {};
-
-    assert!(monte_carlo_match::<G, _, _>(10, &p1, &p2) > 5)
+#[bench]
+#[ignore]
+fn bench_game_winner(b: &mut Bencher) {
+    let game = G::new(G::players()[0]);
+    b.iter(|| game.winner());
 }
 
-#[test]
-fn test_flat_vs_flatucb_breaktrough() {
-    let p1 = FlatMonteCarlo {};
-    let p2 = FlatUCBMonteCarlo {};
-
-    assert!(monte_carlo_match::<G, _, _>(10, &p1, &p2) > 5)
+#[bench]
+fn bench_game_possible_moves(b: &mut Bencher) {
+    let game = G::new(G::players()[0]);
+    b.iter(|| game.possible_moves());
 }
 
-#[test]
-fn test_flatucb_vs_uct_breaktrough() {
-    let p1 = FlatUCBMonteCarlo {};
-    let p2 = UCT::default();
-
-    assert!(monte_carlo_match::<G, _, _>(10, &p1, &p2) > 5)
+#[bench]
+fn bench_random_playout(b: &mut Bencher) {
+    let game = G::new(G::players()[0]);
+    b.iter(|| game.playout());
 }
 
-#[test]
-fn test_uct_vs_rave_breaktrough() {
-    let p1 = UCT::default();
-    let p2 = RAVE::default();
-
-    assert!(monte_carlo_match::<G, _, _>(10, &p1, &p2) > 5)
+#[bench]
+#[ignore]
+fn bench_game_clone(b: &mut Bencher) {
+    let game = G::new(G::players()[0]);
+    b.iter(|| game.clone());
 }
 
+
+#[bench]
+fn bench_random_move(b: &mut Bencher) {
+    let game = G::new(G::players()[0]);
+    b.iter(|| {
+        let mut g = game.clone();
+        g.random_move();
+    });
+}
+
+#[bench]
+fn bench_play(b: &mut Bencher) {
+    let game = G::new(G::players()[0]);
+    let actions = game.possible_moves();
+    let chosen_action = actions.choose(&mut rand::thread_rng()).copied().unwrap();
+
+    b.iter(|| {
+        let mut g = game.clone();
+        g.play(&chosen_action)
+    });
+}
+
+#[bench]
+fn bench_is_valid(b: &mut Bencher) {
+    let game = G::new(G::players()[0]);
+    let actions = game.possible_moves();
+    let chosen_action = actions.choose(&mut rand::thread_rng()).copied().unwrap();
+
+    b.iter(|| {
+        chosen_action.is_valid(&game.content)
+    });
+}
+
+#[bench]
+fn bench_ppa_simulate(b: &mut Bencher) {
+    let game = G::new(G::players()[0]);
+    let pb = PPA::<_, NoFeatures>::default();
+
+    b.iter(|| {
+        let mut policy = pb.create(G::players()[0]);
+        policy.simulate(&game)
+    });
+}
+
+#[bench]
+fn bench_ppa_next_move(b: &mut Bencher) {
+    let game = G::new(G::players()[0]);
+    let pb = PPA::<_, NoFeatures>::default();
+
+    b.iter(|| {
+        let mut policy = pb.create(G::players()[0]);
+        policy.next_move(&game)
+    });
+}
+
+
+/*
+#[bench]
+fn bench_ppa_policy(b: &mut Bencher) {
+    let game = G::new(G::players()[0]);
+    let pb = PPA::<_, BTNoFeatures>::default();
+
+    b.iter(|| {
+        let mut policy = pb.create(G::players()[0]);
+        policy.play(&game)
+    })
+}*/

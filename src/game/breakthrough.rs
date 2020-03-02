@@ -3,13 +3,16 @@ use ansi_term::Style;
 use rand::Rng;
 use std::fmt;
 
+use num_derive::{FromPrimitive, ToPrimitive};
+use num_traits::{FromPrimitive, ToPrimitive};
+
 use std::hash::*;
 
 use super::{Game, InteractiveGame};
 
 const K: usize = 8;
-
-#[derive(Clone, Copy, PartialEq, Eq, Hash)]
+/* PLAYERS */
+#[derive(Clone, Copy, PartialEq, Eq, Hash, FromPrimitive, ToPrimitive)]
 pub enum Color {
     Black = 0,
     White = 1,
@@ -44,6 +47,7 @@ impl fmt::Debug for Color {
     }
 }
 
+/* CELL */
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum Cell {
     Empty,
@@ -61,7 +65,9 @@ impl fmt::Debug for Cell {
     }
 }
 
-#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
+/* MOVE */
+
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug, FromPrimitive, ToPrimitive)]
 pub enum MoveDirection {
     Front,
     FrontLeft,
@@ -87,8 +93,8 @@ pub struct Move {
 }
 
 impl Move {
-    fn target(&self, b: &Breakthrough) -> (usize, usize) {
-        let c = b.content[self.x][self.y];
+    pub fn target(&self, content: &[[Cell; K]; K]) -> (usize, usize) {
+        let c = content[self.x][self.y];
         assert_ne!(c, Cell::Empty);
 
         let delta_y = if c == Cell::C(Color::Black) { 1 } else { -1 };
@@ -102,20 +108,20 @@ impl Move {
         (px, py)
     }
 
-    fn is_valid(&self, b: &Breakthrough) -> Option<(usize, usize)> {
-        let c = b.content[self.x][self.y];
+    pub fn is_valid(&self, content: &[[Cell; K]; K]) -> Option<(usize, usize)> {
+        let c = content[self.x][self.y];
         if c != Cell::C(self.color) {
             return None;
         }
-        let (px, py) = self.target(b);
+        let (px, py) = self.target(content);
         if px < K && py < K {
             if self.direction == MoveDirection::Front {
-                if b.content[px][py] == Cell::Empty {
+                if content[px][py] == Cell::Empty {
                     Some((px, py))
                 } else {
                     None
                 }
-            } else if b.content[px][py] == Cell::Empty || b.content[px][py] != c {
+            } else if content[px][py] == Cell::Empty || content[px][py] != c {
                 Some((px, py))
             } else {
                 None
@@ -132,9 +138,11 @@ pub enum PendingMove {
     SelectingMove(Move),
 }
 
-#[derive(Clone, Copy, PartialEq, Eq)]
+#[derive(Clone, PartialEq, Eq)]
 pub struct Breakthrough {
-    content: [[Cell; K]; K],
+    pub content: [[Cell; K]; K],
+    possible_moves_black: Vec<Move>,
+    possible_moves_white: Vec<Move>,
     transposition: [[[usize; K]; K]; 2],
     hash: usize,
     turn: Color,
@@ -204,9 +212,13 @@ impl Game for Breakthrough {
             }
         }
 
+        let (possible_moves_black, possible_moves_white) = Breakthrough::compute_possible_moves(&content);
+
         Breakthrough {
             turn,
             content,
+            possible_moves_black,
+            possible_moves_white,
             transposition,
             hash: 0,
         }
@@ -228,7 +240,7 @@ impl Game for Breakthrough {
         if m.color != self.turn() {
             panic!("Wait. Not your turn.");
         }
-        match m.is_valid(&self) {
+        match m.is_valid(&self.content) {
             None => panic!("Wait. This is illegal. "),
             Some((px, py)) => {
                 let mut c_hash = 0;
@@ -245,8 +257,16 @@ impl Game for Breakthrough {
                 self.hash ^= c_hash;
                 assert_eq!(self.content[m.x][m.y], Cell::C(self.turn));
                 assert_ne!(self.content[px][py], Cell::C(self.turn));
+
                 self.content[px][py] = self.content[m.x][m.y];
                 self.content[m.x][m.y] = Cell::Empty;
+
+                // update possible moves state
+                let (pmb, pmw) = Breakthrough::compute_possible_moves(&self.content);
+                self.possible_moves_black = pmb;
+                self.possible_moves_white = pmw;
+
+
                 self.turn = self.turn.adv();
             }
         }
@@ -260,8 +280,12 @@ impl Game for Breakthrough {
         (self.hash << 1) + (self.turn as usize)
     }
 
-    fn possible_moves(&self) -> Vec<Move> {
-        self.possible_moves_for(self.turn)
+    fn possible_moves(&self) -> &Vec<Move> {
+        if self.turn == Color::Black {
+            &self.possible_moves_black
+        } else {
+            &self.possible_moves_white
+        }
     }
 
     fn winner(&self) -> Option<Color> {
@@ -272,9 +296,9 @@ impl Game for Breakthrough {
                 return Some(Color::White);
             }
         }
-        if self.possible_moves_for(Color::Black).is_empty() {
+        if self.possible_moves_black.is_empty() {
             Some(Color::White)
-        } else if self.possible_moves_for(Color::White).is_empty() {
+        } else if self.possible_moves_white.is_empty() {
             Some(Color::Black)
         } else {
             None
@@ -291,12 +315,13 @@ impl Breakthrough {
         println!("{:?}", self);
     }
 
-    fn possible_moves_for(&self, color: Color) -> Vec<Move> {
-        let mut result = vec![];
+    fn compute_possible_moves(content: &[[Cell; K]; K]) -> (Vec<Move>, Vec<Move>) {
+        let mut result_black = vec![];
+        let mut result_white = vec![];
 
-        for y in 0..K {
-            for x in 0..K {
-                if self.content[x][y] == Cell::C(color) {
+        for x in 0..K {
+            for y in 0..K {
+                if let Cell::C(color) = content[x][y] {
                     for direction in &[
                         MoveDirection::Front,
                         MoveDirection::FrontLeft,
@@ -308,16 +333,18 @@ impl Breakthrough {
                             y,
                             direction: *direction,
                         };
-                        match m.is_valid(self) {
-                            None => (),
-                            Some(_) => result.push(m),
+                        if m.is_valid(content).is_some() {
+                            if color == Color::Black {
+                                result_black.push(m)
+                            } else {
+                                result_white.push(m)
+                            }
                         }
                     }
                 }
             }
         }
-
-        result
+        (result_black, result_white)
     }
 }
 
@@ -377,15 +404,15 @@ impl IBreakthrough {
                                 x: m.x,
                                 y: m.y,
                             })
-                            .filter(|m| m.is_valid(&self.game).is_some())
+                            .filter(|m| m.is_valid(&self.game.content).is_some())
                             .filter(|m2| {
-                                let m2_t = m2.target(&self.game);
-                                let m_t = m.target(&self.game);
+                                let m2_t = m2.target(&self.game.content);
+                                let m_t = m.target(&self.game.content);
                                 (m2_t.0 as isize - m_t.0 as isize) * dx > 0
                             })
                             .min_by_key(|m2| {
-                                let m2_t = m2.target(&self.game);
-                                let m_t = m.target(&self.game);
+                                let m2_t = m2.target(&self.game.content);
+                                let m_t = m.target(&self.game.content);
                                 (m2_t.0 as isize - m_t.0 as isize) * dx
                             });
                         if let Some(new_m) = new_m {
@@ -467,7 +494,7 @@ impl cursive::view::View for IBreakthrough {
                         y,
                         direction: *direction,
                     };
-                    match m.is_valid(&self.game) {
+                    match m.is_valid(&self.game.content) {
                         None => (),
                         Some((px, py)) => {
                             let (px, py, color) = if *direction == mv.direction {

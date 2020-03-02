@@ -2,7 +2,7 @@ use std::f64;
 use std::iter::*;
 
 use super::super::game::Game;
-use super::{Policy, PolicyBuilder, N_PLAYOUTS};
+use super::{Policy, PolicyBuilder, SinglePolicy, SinglePolicyBuilder, N_PLAYOUTS};
 
 pub struct NMCSPolicy<G: Game> {
     color: G::Player,
@@ -10,7 +10,7 @@ pub struct NMCSPolicy<G: Game> {
 }
 
 impl<G: Game> NMCSPolicy<G> {
-    fn nested(self: &NMCSPolicy<G>, board: &G, level: usize) -> (f64, Vec<Option<G::Move>>) {
+    fn nested(self: &NMCSPolicy<G>, board: &G, level: usize) -> (f64, Vec<G::Move>) {
         if level == 0 {
             let (board, mut history) = board.playout_board_history();
             history.reverse();
@@ -23,28 +23,21 @@ impl<G: Game> NMCSPolicy<G> {
             let mut best_sequence = Vec::new();
             let mut state = board.clone();
             let mut played_sequence = Vec::new();
-            while board.winner() == None {
-                for m in board.possible_moves() {
-                    let mut new_board = board.clone();
-                    new_board.play(&m);
+
+            while state.winner() == None {
+                for m in state.possible_moves() {
+                    let mut new_board = state.clone();
+                    new_board.play(m);
                     let (score, history) = self.nested(&new_board, level - 1);
-                    if score > best_score {
+                    if score >= best_score {
                         best_sequence = history;
-                        best_sequence.push(Some(m));
+                        best_sequence.push(*m);
                         best_score = score;
                     }
                 }
-                match best_sequence.pop() {
-                    None => state.pass(),
-                    Some(None) => {
-                        state.pass();
-                        played_sequence.push(None);
-                    }
-                    Some(Some(a)) => {
-                        state.play(&a);
-                        played_sequence.push(Some(a));
-                    }
-                }
+                let next_action = best_sequence.pop().unwrap();
+                state.play(&next_action);
+                played_sequence.push(next_action);
             }
             played_sequence.reverse();
             (best_score, played_sequence)
@@ -52,21 +45,11 @@ impl<G: Game> NMCSPolicy<G> {
     }
 }
 
-impl<G: Game> Policy<G> for NMCSPolicy<G> {
-    fn play(self: &mut NMCSPolicy<G>, board: &G) -> G::Move {
-        let mut best_move = None;
-        let mut max_visited = 0.;
-        for m in board.possible_moves().iter() {
-            let mut new_board = board.clone();
-            new_board.play(&m);
-            let (value, _) = self.nested(&new_board, self.s.level);
-
-            if value >= max_visited {
-                max_visited = value;
-                best_move = Some(*m);
-            }
-        }
-        best_move.unwrap()
+impl<G: Game> SinglePolicy<G> for NMCSPolicy<G> {
+    fn solve(self: &mut NMCSPolicy<G>, board: &G) -> Vec<G::Move> {
+        let (_, mut sequence) = self.nested(&board, self.s.level);
+        sequence.reverse();
+        sequence
     }
 }
 
@@ -81,7 +64,7 @@ impl Default for NMCS {
     }
 }
 
-impl<G: Game> PolicyBuilder<G> for NMCS {
+impl<G: Game> SinglePolicyBuilder<G> for NMCS {
     type P = NMCSPolicy<G>;
 
     fn create(&self, color: G::Player) -> Self::P {

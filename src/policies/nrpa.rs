@@ -1,29 +1,34 @@
 use rand::seq::SliceRandom;
 use std::f64;
 use std::iter::*;
+use std::marker::PhantomData;
 
-use super::super::game::Game;
-use super::{Policy, PolicyBuilder, N_PLAYOUTS};
+use super::super::game::{Game, MoveCode};
+use super::{SinglePolicy, SinglePolicyBuilder, N_PLAYOUTS};
 
 use std::collections::HashMap;
 
-#[derive(Debug)]
-struct MoveInfo {
-    weight: f64,
-}
-
-#[derive(Debug)]
-struct NodeInfo<G: Game> {
-    moves: HashMap<G::Move, MoveInfo>,
-}
-
-pub struct NRPAPolicy<G: Game> {
+pub struct NRPAPolicy<G: Game, M: MoveCode<G>> {
     color: G::Player,
-    s: NRPA,
-    tree: HashMap<G::GameHash, NodeInfo<G>>,
+    s: NRPA<G,M>,
+    
+    _m: PhantomData<M>,
 }
 
-impl<G: Game> NRPAPolicy<G> {
+impl<G: Game, M: MoveCode<G>> NRPAPolicy<G, M> {
+
+    fn next_move(playout_policy: &HashMap<usize, f64>, board: &G) -> G::Move {
+        let moves = board.possible_moves();
+        let chosen_move = moves
+            .choose_weighted(&mut rand::thread_rng(), |item| {
+                let code = M::code(board, item);
+                playout_policy.get(&code).unwrap_or(&0.).exp()
+            })
+            .unwrap();
+        *chosen_move
+    }
+
+
     /*
     1 NRPA(level,pol):
     2   IF level==0: // base rollout policy
@@ -44,43 +49,29 @@ impl<G: Game> NRPAPolicy<G> {
     18       pol = Adapt(pol,seq)
     19    RETURN (best_score,seq)
     */
-    fn nested(self: &mut NRPAPolicy<G>, board: &G, level: usize) -> (f64, Vec<G::Move>) {
+    fn nested(self: &mut NRPAPolicy<G, M>, board: &G, level: usize, mut playout_policy: HashMap<usize, f64>) -> (f64, Vec<G::Move>) {
 
         if level == 0 {
             let mut board = board.clone();
 
             let mut history = vec![];
-            while { !board.possible_moves().is_empty() } {
-                self.ensure_exists(&board);
-                let branch = self.tree.get(&board.hash());
+            while { board.winner() == None } {
+                let chosen_move = Self::next_move(&playout_policy, &board);
 
-                let moves = board.possible_moves();
-
-                let chosen_move = moves
-                    .choose_weighted(&mut rand::thread_rng(), |item| {
-                        branch
-                            .and_then(|branch| branch.moves.get(item).map(|node| node.weight.exp()))
-                            .unwrap_or_else(||{ 
-                                println!("Board: {:?}", board);
-                                println!("Possible moves: {:?}", moves);
-                                panic!("{:?} => {:?}", item, branch.unwrap().moves)
-                            })
-                    })
-                    .unwrap_or_else(|_| panic!("{:?}", branch));
-                board.play(chosen_move);
-                history.push(*chosen_move);
+                board.play(&chosen_move);
+                history.push(chosen_move);
             }
             (board.score(self.color), history)
         } else {
             let mut best_score = 0.;
             let mut best_hist = vec![];
             for _ in 0..self.s.N {
-                let (result, history) = self.nested(board, level - 1);
+                let (result, history) = self.nested(board, level - 1, playout_policy.clone());
                 if result > best_score {
                     best_score = result;
                     best_hist = history;
                 }
-                self.adapt(board, &best_hist);
+                self.adapt(board, &best_hist, &mut playout_policy);
             }
             (best_score, best_hist)
         }
@@ -96,77 +87,73 @@ impl<G: Game> NRPAPolicy<G> {
     28   node = child(node,seq[ply])
     29  RETURN pol’
     */
-    fn adapt(self: &mut NRPAPolicy<G>, board: &G, history: &[G::Move]) {
+    fn adapt(self: &mut NRPAPolicy<G, M>, board: &G, history: &[G::Move], playout_policy: &mut HashMap<usize, f64>) {
         let mut board = board.clone();
         for action in history {
-            self.ensure_exists(&board);
-            let board_node = self.tree.get_mut(&board.hash()).unwrap();
-
-            let move_node = board_node.moves.get_mut(action).unwrap();
-            move_node.weight += self.s.alpha;
+            let move_node = playout_policy.entry(M::code(&board, action)).or_insert(0.);
+            *move_node += self.s.alpha;
 
             let z: f64 = board
                 .possible_moves()
                 .iter()
-                .map(|m| board_node.moves.get(&m).unwrap().weight.exp())
+                .map(|m| playout_policy.get(&M::code(&board, &m)).unwrap_or(&0.).exp())
                 .sum();
 
             for m in board.possible_moves() {
-                let move_node = board_node.moves.get_mut(&m).unwrap();
-                let v = move_node.weight.exp();
-                move_node.weight -= self.s.alpha * v / z;
+                let move_node = playout_policy.entry(M::code(&board, &m)).or_insert(0.);
+                let v = move_node.exp();
+                *move_node -= self.s.alpha * v / z;
             }
 
             board.play(action);
         }
     }
+}
 
-    fn ensure_exists(self: &mut NRPAPolicy<G>, board: &G) {
-        self.tree.entry(board.hash()).or_insert({
-            let mut node = NodeInfo {
-                moves: HashMap::new(),
-            };
-            for m in board.possible_moves() {
-                node.moves.insert(m, MoveInfo { weight: 0. });
-            };
-            node
-        });
+impl<G: Game, M: MoveCode<G>> SinglePolicy<G> for NRPAPolicy<G, M> {
+    fn solve(self: &mut NRPAPolicy<G, M>, board: &G) -> Vec<G::Move> {
+        let (_, policy) = self.nested(board, self.s.level, HashMap::new());
+        policy
     }
 }
 
-impl<G: Game> Policy<G> for NRPAPolicy<G> {
-    fn play(self: &mut NRPAPolicy<G>, board: &G) -> G::Move {
-        let (_, policy) = self.nested(board, self.s.level);
-        policy[0]
-    }
-}
-
-#[derive(Copy, Clone)]
-pub struct NRPA {
+pub struct NRPA<G: Game, M: MoveCode<G>>  {
     N: usize,
     level: usize,
     alpha: f64,
+    _m: PhantomData<M>,
+    _g: PhantomData<G>
 }
 
-impl Default for NRPA {
-    fn default() -> NRPA {
-        NRPA {
+impl<G: Game, M: MoveCode<G>> Copy for NRPA<G, M> {}
+
+impl<G: Game, M: MoveCode<G>> Clone for NRPA<G, M> {
+    fn clone(&self) -> Self {
+        *self
+    }
+}
+
+impl<G: Game, M: MoveCode<G>>  Default for NRPA<G,M> {
+    fn default() -> NRPA<G,M> {
+        NRPA::<G,M> {
             N: 10,
-            alpha: 0.5,
+            alpha: 1.0,
             level: 3,
+            _m: PhantomData,
+            _g: PhantomData,
         }
     }
 }
 
-impl<G: Game> PolicyBuilder<G> for NRPA {
-    type P = NRPAPolicy<G>;
+impl<G: Game, M: MoveCode<G>> SinglePolicyBuilder<G> for NRPA<G,M> {
+    type P = NRPAPolicy<G, M>;
 
     fn create(&self, color: G::Player) -> Self::P {
         assert_eq!(G::players().len(), 1);
-        NRPAPolicy {
+        NRPAPolicy::<G,M> {
             color,
             s: *self,
-            tree: HashMap::new(),
+            _m: PhantomData
         }
     }
 }

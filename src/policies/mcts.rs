@@ -5,9 +5,6 @@ use std::iter::*;
 use super::super::game::Game;
 use super::{Policy, PolicyBuilder, N_PLAYOUTS};
 
-
-
-
 /* UCT */
 
 #[derive(Debug)]
@@ -27,7 +24,6 @@ pub struct UCTPolicy<G: Game> {
     tree: HashMap<G::GameHash, UCTNodeInfo<G>>,
     UCT_WEIGHT: f64,
 }
-
 
 impl<G: Game> UCTPolicy<G> {
     fn simulate(self: &mut UCTPolicy<G>, board: &G) {
@@ -126,7 +122,7 @@ impl<G: Game> UCTPolicy<G> {
             board
                 .possible_moves()
                 .into_iter()
-                .map(|m| (m, UCTMoveInfo { Q: 0., N_a: 0. })),
+                .map(|m| (*m, UCTMoveInfo { Q: 0., N_a: 0. })),
         );
 
         self.tree
@@ -135,7 +131,6 @@ impl<G: Game> UCTPolicy<G> {
 }
 
 impl<G: Game> Policy<G> for UCTPolicy<G> {
-
     fn play(self: &mut UCTPolicy<G>, board: &G) -> G::Move {
         for _ in 0..N_PLAYOUTS {
             self.simulate(board)
@@ -157,18 +152,16 @@ impl<G: Game> Policy<G> for UCTPolicy<G> {
 }
 
 pub struct UCT {
-    UCT_WEIGHT: f64
+    UCT_WEIGHT: f64,
 }
 
 impl Default for UCT {
     fn default() -> UCT {
-        UCT {
-            UCT_WEIGHT: 0.4
-        }
+        UCT { UCT_WEIGHT: 0.4 }
     }
 }
 
-impl<G: Game> PolicyBuilder<G> for UCT { 
+impl<G: Game> PolicyBuilder<G> for UCT {
     type P = UCTPolicy<G>;
 
     fn create(&self, color: G::Player) -> Self::P {
@@ -212,8 +205,8 @@ impl<G: Game> RAVEPolicy<G> {
 
     fn update(
         self: &mut RAVEPolicy<G>,
-        history: Vec<(G::GameHash, Option<G::Move>)>,
-        history_default: Vec<(G::GameHash, Option<G::Move>)>,
+        history: Vec<(G::GameHash, G::Move)>,
+        history_default: Vec<(G::GameHash, G::Move)>,
         winner: G::Player,
     ) {
         let z = if winner == self.color { 1. } else { 0. };
@@ -221,32 +214,29 @@ impl<G: Game> RAVEPolicy<G> {
         for (t, (state, action)) in history.iter().enumerate() {
             let mut node = self.tree.get_mut(state).unwrap();
             node.count += 1.;
-            if let Some(action) = action {
-                let mut v = node.moves.get_mut(action).unwrap();
-                (*v).count += 1.;
-                (*v).wins += (z - (*v).wins) / (*v).count;
 
-                // compute AMAF statistics
-                for u in (t + 2..whole_history.len()).step_by(2) {
-                    if let (_, Some(action_u)) = whole_history[u] {
-                        if (t..u)
-                            .step_by(2)
-                            .all(|i| Some(action_u) != whole_history[i].1)
-                        {
-                            if let Some(mut v_amaf) = node.moves.get_mut(&action_u) {
-                                (*v_amaf).count_AMAF += 1.;
-                                (*v_amaf).wins_AMAF +=
-                                    (z - (*v_amaf).wins_AMAF) / (*v_amaf).count_AMAF;
-                            }
-                        }
+            let mut v = node.moves.get_mut(action).unwrap();
+            (*v).count += 1.;
+            (*v).wins += (z - (*v).wins) / (*v).count;
+
+            // compute AMAF statistics
+            for u in (t + 2..whole_history.len()).step_by(2) {
+                let (_, action_u) = whole_history[u];
+                if (t..u)
+                    .step_by(2)
+                    .all(|i| action_u != whole_history[i].1)
+                {
+                    if let Some(mut v_amaf) = node.moves.get_mut(&action_u) {
+                        (*v_amaf).count_AMAF += 1.;
+                        (*v_amaf).wins_AMAF += (z - (*v_amaf).wins_AMAF) / (*v_amaf).count_AMAF;
                     }
                 }
             }
         }
     }
 
-    fn sim_tree(self: &mut RAVEPolicy<G>, b: &mut G) -> Vec<(G::GameHash, Option<G::Move>)> {
-        let mut history: Vec<(G::GameHash, Option<G::Move>)> = Vec::new();
+    fn sim_tree(self: &mut RAVEPolicy<G>, b: &mut G) -> Vec<(G::GameHash, G::Move)> {
+        let mut history: Vec<(G::GameHash, G::Move)> = Vec::new();
 
         while { b.winner() == None } {
             let s_t = b.hash();
@@ -256,20 +246,17 @@ impl<G: Game> RAVEPolicy<G> {
                     return history;
                 }
                 Some(_node) => {
-                    if let Some(a) = self.select_move(&b) {
-                        history.push((s_t, Some(a)));
-                        b.play(&a)
-                    } else {
-                        history.push((s_t, None));
-                        return history;
-                    }
+                    let a = self.select_move(&b);
+                    history.push((s_t, a));
+                    b.play(&a)
                 }
             };
         }
         history
     }
 
-    fn select_move(self: &RAVEPolicy<G>, board: &G) -> Option<G::Move> {
+    /*assumes there's at least one move to play */
+    fn select_move(self: &RAVEPolicy<G>, board: &G) -> G::Move {
         let moves = board.possible_moves();
 
         if board.turn() == self.color {
@@ -282,7 +269,7 @@ impl<G: Game> RAVEPolicy<G> {
                     max_move = Some(*_move);
                 }
             }
-            max_move
+            max_move.unwrap()
         } else {
             let mut min_move = None;
             let mut min_value = 1.;
@@ -293,7 +280,7 @@ impl<G: Game> RAVEPolicy<G> {
                     min_move = Some(*_move);
                 }
             }
-            min_move
+            min_move.unwrap()
         }
     }
 
@@ -311,7 +298,8 @@ impl<G: Game> RAVEPolicy<G> {
         let v = node_info.moves.get(action).unwrap();
 
         let multiplier = if optimistic { 1. } else { -1. };
-        let v_mean = v.wins + multiplier * self.UCT_WEIGHT * (node_info.count.ln() / (1. + v.count)).sqrt();
+        let v_mean =
+            v.wins + multiplier * self.UCT_WEIGHT * (node_info.count.ln() / (1. + v.count)).sqrt();
         let v_AMAF = v.wins_AMAF;
 
         let beta = Self::beta(v);
@@ -321,7 +309,7 @@ impl<G: Game> RAVEPolicy<G> {
     pub fn new_node(self: &mut RAVEPolicy<G>, board: &G) {
         let moves = HashMap::from_iter(board.possible_moves().into_iter().map(|m| {
             (
-                m,
+                *m,
                 MoveInfo {
                     wins: 0.,
                     wins_AMAF: 0.,
@@ -358,7 +346,7 @@ impl<G: Game> Policy<G> for RAVEPolicy<G> {
                 best_move = Some(*m);
                 _max_beta = beta;
             }
-        };
+        }
         best_move.unwrap()
     }
 }

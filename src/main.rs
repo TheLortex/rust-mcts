@@ -4,6 +4,7 @@
 #![feature(test)]
 #![allow(unused_imports)]
 #![feature(fn_traits)]
+#![feature(drain_filter)]
 
 use cursive::direction::Direction;
 use cursive::event::{Event, EventResult, MouseButton, MouseEvent};
@@ -20,6 +21,8 @@ use std::convert::TryFrom;
 use std::hash::{Hash, Hasher};
 use std::mem;
 
+use rand::seq::SliceRandom;
+use rand::Rng;
 use std::cell::RefCell;
 use std::rc::Rc;
 use std::sync::Arc;
@@ -36,19 +39,21 @@ mod tests;
 use self::game::breakthrough::*;
 use self::game::misere_breakthrough::*;
 use self::game::weak_schur::*;
-use self::game::{Game, InteractiveGame};
-use self::policies::{flat::*, mcts::*, nmcs::*, nrpa::*, ppa::*, Policy, PolicyBuilder};
+use self::game::{Game, InteractiveGame, MoveCode, NoFeatures};
+use self::policies::{
+    flat::*, mcts::*, nmcs::*, nrpa::*, ppa::*, Policy, PolicyBuilder, SinglePolicy, SinglePolicyBuilder,
+};
 
-fn game_solo<G: Game, P: PolicyBuilder<G>>(pb: &P) -> f64 {
+fn game_solo<G: Game, P: SinglePolicyBuilder<G>>(pb: &P) -> f64 {
     let player = G::players()[0];
 
     let mut p = pb.create(player);
     let mut b = G::new(player);
-    while b.winner() == None {
-        let action = p.play(&b);
-        b.play(&action);
-        println!("{:?}", b);
-        println!("Score: {}", b.score(player));
+    let actions = p.solve(&b);
+    for a in actions {
+        b.play(&a);
+     //   println!("{:?}", b);
+     //   println!("Score: {}", b.score(player));
     }
     println!("{:?}", b);
     b.score(player)
@@ -104,7 +109,12 @@ pub fn monte_carlo_match<G: Game, P1: PolicyBuilder<G> + Sync, P2: PolicyBuilder
             let mut p1 = pb1.create(G::players()[0]);
             let mut p2 = pb2.create(G::players()[1]);
 
-            let result = if game_duel(G::players()[0], &mut p1, &mut p2) == G::players()[0] {
+            let result = if game_duel(
+                *G::players().choose(&mut rand::thread_rng()).unwrap(),
+                &mut p1,
+                &mut p2,
+            ) == G::players()[0]
+            {
                 c1.inc();
                 1
             } else {
@@ -181,27 +191,35 @@ fn main_ui() {
     siv.run();
 }
 
-pub struct BTNoFeatures {}
-
-impl MoveCode<Breakthrough> for BTNoFeatures {
-    fn code(_: &Breakthrough, action: &<Breakthrough as Game>::Move) -> usize {
+pub struct BTCapture {}
+impl MoveCode<Breakthrough> for BTCapture {
+    fn code(game: &Breakthrough, action: &game::breakthrough::Move) -> usize {
         let mut s = DefaultHasher::new();
         action.hash(&mut s);
+        let capture = {
+            let (tx, ty) = action.target(&game.content);
+            if game.content[tx][ty] == game::breakthrough::Cell::Empty {
+                0
+            } else {
+                1
+            }
+        };
+        capture.hash(&mut s);
         usize::try_from(s.finish()).unwrap()
     }
 }
 
 fn main() {
-    let p1 = UCT::default();
-    let p2 = PPA::<_, BTNoFeatures>::default();
+    /*let p1 = RAVE::default();
+    let p2 = PPA::<_, BTCapture>::default();
 
     println!(
         "Result: {}",
-        monte_carlo_match::<Breakthrough, _, _>(1, &p1, &p2)
-    );
+        monte_carlo_match::<Breakthrough, _, _>(100, &p1, &p2)
+    );*/
     //main_ui();
 
-    /*let pb = NRPA::default();
+    let pb = NRPA::<_, NoFeatures>::default();
     let res = game_solo::<WeakSchurNumber, _>(&pb);
-    println!("=> {} ", res);*/
+    println!("=> {} ", res);
 }
