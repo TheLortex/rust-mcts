@@ -2,8 +2,8 @@ use std::collections::HashMap;
 use std::f32;
 use std::iter::*;
 
-use super::super::game::Game;
-use super::{Policy, PolicyBuilder, N_PLAYOUTS};
+use super::super::game::MultiplayerGame;
+use super::{MultiplayerPolicy, MultiplayerPolicyBuilder, N_PLAYOUTS};
 
 /* UCT */
 
@@ -14,31 +14,31 @@ pub struct UCTMoveInfo {
 }
 
 #[derive(Debug)]
-pub struct UCTNodeInfo<G: Game> {
+pub struct UCTNodeInfo<G: MultiplayerGame> {
     pub count: f32,
     pub moves: HashMap<G::Move, UCTMoveInfo>,
 }
 
-pub struct UCTPolicy<G: Game> {
+pub struct UCTPolicy<G: MultiplayerGame> {
     color: G::Player,
-    tree: HashMap<G::GameHash, UCTNodeInfo<G>>,
+    tree: HashMap<usize, UCTNodeInfo<G>>,
     UCT_WEIGHT: f32,
 }
 
-impl<G: Game> UCTPolicy<G> {
+impl<G: MultiplayerGame> UCTPolicy<G> {
     fn simulate(self: &mut UCTPolicy<G>, board: &G) {
         let mut b = board.clone(); // COPY BOARD
         let history = self.sim_tree(&mut b);
-        let z = b.playout();
+        let z = b.playout_board().has_won(self.color);
         self.update(history, z);
     }
 
     fn update(
         self: &mut UCTPolicy<G>,
-        history: Vec<(G::GameHash, Option<G::Move>)>,
-        winner: G::Player,
+        history: Vec<(usize, Option<G::Move>)>,
+        has_won: bool,
     ) {
-        let z = if winner == self.color { 1. } else { 0. };
+        let z = if has_won { 1. } else { 0. };
         for (state, action) in history.iter() {
             let mut node = self.tree.get_mut(state).unwrap();
             node.count += 1.;
@@ -50,10 +50,10 @@ impl<G: Game> UCTPolicy<G> {
         }
     }
 
-    fn sim_tree(self: &mut UCTPolicy<G>, b: &mut G) -> Vec<(G::GameHash, Option<G::Move>)> {
-        let mut history: Vec<(G::GameHash, Option<G::Move>)> = Vec::new();
+    fn sim_tree(self: &mut UCTPolicy<G>, b: &mut G) -> Vec<(usize, Option<G::Move>)> {
+        let mut history: Vec<(usize, Option<G::Move>)> = Vec::new();
 
-        while { b.winner() == None } {
+        while { !b.is_finished()} {
             let s_t = b.hash();
             match self.tree.get(&s_t) {
                 None => {
@@ -130,7 +130,7 @@ impl<G: Game> UCTPolicy<G> {
     }
 }
 
-impl<G: Game> Policy<G> for UCTPolicy<G> {
+impl<G: MultiplayerGame> MultiplayerPolicy<G> for UCTPolicy<G> {
     fn play(self: &mut UCTPolicy<G>, board: &G) -> G::Move {
         for _ in 0..N_PLAYOUTS {
             self.simulate(board)
@@ -161,7 +161,7 @@ impl Default for UCT {
     }
 }
 
-impl<G: Game> PolicyBuilder<G> for UCT {
+impl<G: MultiplayerGame> MultiplayerPolicyBuilder<G> for UCT {
     type P = UCTPolicy<G>;
 
     fn create(&self, color: G::Player) -> Self::P {
@@ -184,32 +184,32 @@ struct MoveInfo {
 }
 
 #[derive(Debug)]
-struct NodeInfo<G: Game> {
+struct NodeInfo<G: MultiplayerGame> {
     count: f32,
     moves: HashMap<G::Move, MoveInfo>,
 }
 
-pub struct RAVEPolicy<G: Game> {
+pub struct RAVEPolicy<G: MultiplayerGame> {
     color: G::Player,
-    tree: HashMap<G::GameHash, NodeInfo<G>>,
+    tree: HashMap<usize, NodeInfo<G>>,
     UCT_WEIGHT: f32,
 }
 
-impl<G: Game> RAVEPolicy<G> {
+impl<G: MultiplayerGame> RAVEPolicy<G> {
     fn simulate(self: &mut RAVEPolicy<G>, board: &G) {
         let mut b = board.clone(); // COPY BOARD
         let history = self.sim_tree(&mut b);
-        let (z, history_default) = b.playout_history();
-        self.update(history, history_default, z);
+        let (s, history_default) = b.playout_board_history();
+        self.update(history, history_default, s.has_won(self.color));
     }
 
     fn update(
         self: &mut RAVEPolicy<G>,
-        history: Vec<(G::GameHash, G::Move)>,
-        history_default: Vec<(G::GameHash, G::Move)>,
-        winner: G::Player,
+        history: Vec<(usize, G::Move)>,
+        history_default: Vec<(usize, G::Move)>,
+        has_won: bool,
     ) {
-        let z = if winner == self.color { 1. } else { 0. };
+        let z = if has_won { 1. } else { 0. };
         let whole_history = [history.to_vec(), history_default].concat();
         for (t, (state, action)) in history.iter().enumerate() {
             let mut node = self.tree.get_mut(state).unwrap();
@@ -235,10 +235,10 @@ impl<G: Game> RAVEPolicy<G> {
         }
     }
 
-    fn sim_tree(self: &mut RAVEPolicy<G>, b: &mut G) -> Vec<(G::GameHash, G::Move)> {
-        let mut history: Vec<(G::GameHash, G::Move)> = Vec::new();
+    fn sim_tree(self: &mut RAVEPolicy<G>, b: &mut G) -> Vec<(usize, G::Move)> {
+        let mut history: Vec<(usize, G::Move)> = Vec::new();
 
-        while { b.winner() == None } {
+        while { !b.is_finished() } {
             let s_t = b.hash();
             match self.tree.get(&s_t) {
                 None => {
@@ -293,7 +293,7 @@ impl<G: Game> RAVEPolicy<G> {
         v.count_AMAF / div
     }
 
-    fn eval(self: &RAVEPolicy<G>, state: &G::GameHash, action: &G::Move, optimistic: bool) -> f32 {
+    fn eval(self: &RAVEPolicy<G>, state: &usize, action: &G::Move, optimistic: bool) -> f32 {
         let node_info = self.tree.get(state).unwrap();
         let v = node_info.moves.get(action).unwrap();
 
@@ -324,7 +324,7 @@ impl<G: Game> RAVEPolicy<G> {
     }
 }
 
-impl<G: Game> Policy<G> for RAVEPolicy<G> {
+impl<G: MultiplayerGame> MultiplayerPolicy<G> for RAVEPolicy<G> {
     fn play(self: &mut RAVEPolicy<G>, board: &G) -> G::Move {
         for _ in 0..N_PLAYOUTS {
             self.simulate(board)
@@ -360,7 +360,7 @@ impl Default for RAVE {
     }
 }
 
-impl<G: Game> PolicyBuilder<G> for RAVE {
+impl<G: MultiplayerGame> MultiplayerPolicyBuilder<G> for RAVE {
     type P = RAVEPolicy<G>;
 
     fn create(&self, color: G::Player) -> Self::P {

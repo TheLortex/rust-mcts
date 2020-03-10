@@ -1,7 +1,7 @@
 use super::game::breakthrough::{Breakthrough, Color, Move};
-use super::game::Game;
+use super::game::BaseGame;
 use super::policies::puct::PUCTPolicy;
-use super::policies::Policy;
+use super::policies::MultiplayerPolicy;
 
 use std::collections::HashMap;
 use std::iter::FromIterator;

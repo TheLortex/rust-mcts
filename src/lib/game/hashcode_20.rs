@@ -1,4 +1,4 @@
-use super::Game;
+use super::{SingleplayerGame, BaseGame, SingleplayerGameBuilder};
 
 use std::collections::hash_map::DefaultHasher;
 use std::collections::{BTreeSet, BTreeMap};
@@ -60,7 +60,7 @@ impl Hashcode20Settings {
 }
 
 #[derive(Clone)]
-pub struct Hashcode20<'a> {
+pub struct Hashcode20 {
     pending_sign_up: Option<(usize, usize)>, // Library / days left
 
     scanned_books: BTreeSet<usize>,
@@ -72,12 +72,12 @@ pub struct Hashcode20<'a> {
     n_books_scanned: BTreeMap<usize, usize>,
 
     pub day: usize,
-    rules: &'a Hashcode20Settings,
+    rules: Hashcode20Settings,
 
     possible_moves: Vec<Move>,
 }
 
-impl<'a> fmt::Debug for Hashcode20<'a> {
+impl fmt::Debug for Hashcode20 {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         writeln!(f, "Day: {}", self.day)?;
         writeln!(f, "Scanned books: {:?}", self.scanned_books)?;
@@ -96,7 +96,7 @@ pub enum Move {
     Skip,
 }
 
-impl<'a> Hashcode20<'a> {
+impl Hashcode20 {
     fn compute_possible_moves(&self) -> Vec<Move> {
         let mut result = vec![];
 
@@ -127,17 +127,12 @@ impl<'a> Hashcode20<'a> {
     }
 }
 
-impl<'a> Game for Hashcode20<'a> {
-    type Player = ();
-    type Move = Move;
-    type GameHash = usize;
-    type Settings = &'a Hashcode20Settings;
-
-    fn new(_: Self::Player, rules: &'a Hashcode20Settings) -> Hashcode20<'a> {
+impl SingleplayerGameBuilder<Hashcode20> for Hashcode20Settings {
+    fn create(&self) -> Hashcode20 {
         let scanned_books = BTreeSet::new();
         let signedup_libraries = BTreeSet::new();
-        let unscanned_books = BTreeSet::from_iter(0..rules.B);
-        let unsignedup_libraries = BTreeSet::from_iter(0..rules.L);
+        let unscanned_books = BTreeSet::from_iter(0..self.B);
+        let unsignedup_libraries = BTreeSet::from_iter(0..self.L);
         let n_books_scanned = BTreeMap::new();
 
         let mut res = Hashcode20 {
@@ -148,23 +143,25 @@ impl<'a> Game for Hashcode20<'a> {
             unsignedup_libraries,
             n_books_scanned,
             day: 0,
-            rules,
+            rules: self.clone(),
             possible_moves: vec![]
         };
         res.possible_moves = res.compute_possible_moves();
         res
     }
+}
 
-    fn players() -> Vec<()> {
-        vec![()]
-    }
-
-    fn score(&self, _: Self::Player) -> f32 {
+impl SingleplayerGame for Hashcode20 {
+    fn score(&self) -> f32 {
         let score: usize = self.scanned_books.iter().map(|book| self.rules.books[*book]).sum();
         score as f32
     }
+}
 
-    fn possible_moves(&self) -> &Vec<Self::Move> {
+impl BaseGame for Hashcode20 {
+    type Move = Move;
+
+    fn possible_moves(&self) -> &[Self::Move] {
         &self.possible_moves
     }
 
@@ -196,11 +193,7 @@ impl<'a> Game for Hashcode20<'a> {
         self.possible_moves = self.compute_possible_moves()
     }
 
-    fn turn(&self) -> Self::Player {
-        ()
-    }
-
-    fn hash(&self) -> Self::GameHash {
+    fn hash(&self) -> usize {
         let mut hasher = DefaultHasher::new();
         self.scanned_books.hash(&mut hasher);
         self.pending_sign_up.hash(&mut hasher);
@@ -208,17 +201,5 @@ impl<'a> Game for Hashcode20<'a> {
         self.n_books_scanned.hash(&mut hasher);
         self.day.hash(&mut hasher);
         hasher.finish() as usize
-    }
-
-    fn winner(&self) -> Option<Self::Player> {
-        if self.day == self.rules.D {
-            Some(())
-        } else {
-            None
-        }
-    }
-
-    fn pass(&mut self) {
-        panic!("")
     }
 }

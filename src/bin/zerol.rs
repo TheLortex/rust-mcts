@@ -11,18 +11,19 @@ use tensorflow::{Code, Graph, Session, SessionOptions, Status};
 
 const MODEL_PATH: &str = "models/sample";
 
-use zerol::game::breakthrough::{Breakthrough, Color, Move};
-use zerol::game::Game;
+use zerol::game::breakthrough::{Breakthrough, BreakthroughBuilder, Color, Move};
+use zerol::game::{BaseGame, MultiplayerGame, MultiplayerGameBuilder};
 use zerol::policies::puct::PUCTPolicy;
-use zerol::policies::Policy;
+use zerol::policies::MultiplayerPolicy;
 
 use nix::unistd::mkfifo;
 use std::io::SeekFrom;
 
 fn self_play_match<F: Fn(&Breakthrough) -> (HashMap<Move, f32>, f32)>(
     evaluate: &F,
+    gb: &BreakthroughBuilder
 ) -> (Color, Vec<(Breakthrough, HashMap<Move, f32>)>) {
-    let mut game: Breakthrough = Breakthrough::new(Color::Black, ());
+    let mut game: Breakthrough = gb.create(Color::Black);
     let mut p1 = PUCTPolicy {
         C_PUCT: 4.,
         color: Color::Black,
@@ -173,10 +174,12 @@ fn run() -> Result<(), Box<dyn Error>> {
         .watch(MODEL_PATH, RecursiveMode::NonRecursive)
         .unwrap();
 
+    let gb = BreakthroughBuilder {};
+
     loop {
         let (winner,history) = {
             let (ref graph, ref session) = *graph_and_session.lock().unwrap();
-            self_play_match(&(|board| evaluator(session, graph, board)))
+            self_play_match(&(|board| evaluator(session, graph, board)), &gb)
         };
         for (board, policy) in history.iter() {
             let value = if board.turn() == winner { 1.0 } else { 0.0 };

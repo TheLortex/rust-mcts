@@ -1,40 +1,54 @@
 use rand::seq::SliceRandom;
 use std::collections::HashMap;
 
-use super::super::game::Game;
-use super::{Policy, PolicyBuilder, N_PLAYOUTS};
+use super::super::game::{BaseGame, MultiplayerGame, SingleplayerGame};
+use super::{MultiplayerPolicy, MultiplayerPolicyBuilder, SingleplayerPolicy, SingleplayerPolicyBuilder, N_PLAYOUTS};
 
 /* RANDOM POLICY */
 
-pub struct RandomPolicy<G: Game> {
-    color: G::Player,
-}
+pub struct RandomPolicy {}
 
-impl<G: Game> Policy<G> for RandomPolicy<G> {
-    fn play(self: &mut RandomPolicy<G>, board: &G) -> G::Move {
+impl<G: MultiplayerGame> MultiplayerPolicy<G> for RandomPolicy {
+    fn play(self: &mut RandomPolicy, board: &G) -> G::Move {
         let moves = board.possible_moves();
         moves.choose(&mut rand::thread_rng()).copied().unwrap()
+    }
+}
+
+impl<G: SingleplayerGame> SingleplayerPolicy<G> for RandomPolicy {
+    fn solve(self: &mut RandomPolicy, board: &G) -> Vec<G::Move> {
+        let b = board.clone();
+        let (_, h) = b.playout_board_history();
+        h.iter().map(|(_,b)| *b).collect()
     }
 }
 
 #[derive(Default)]
 pub struct Random {}
 
-impl<G: Game> PolicyBuilder<G> for Random {
-    type P = RandomPolicy<G>;
+impl<G: MultiplayerGame> MultiplayerPolicyBuilder<G> for Random {
+    type P = RandomPolicy;
 
-    fn create(&self, color: G::Player) -> Self::P {
-        RandomPolicy { color }
+    fn create(&self, _: G::Player) -> Self::P {
+        RandomPolicy {}
+    }
+}
+
+impl<G: SingleplayerGame> SingleplayerPolicyBuilder<G> for Random {
+    type P = RandomPolicy;
+
+    fn create(&self) -> Self::P {
+        RandomPolicy {}
     }
 }
 
 /* FLAT MONTE CARLO POLICY */
 
-pub struct FlatMonteCarloPolicy<G: Game> {
+pub struct FlatMonteCarloPolicy<G: MultiplayerGame> {
     color: G::Player,
 }
 
-impl<G: Game> Policy<G> for FlatMonteCarloPolicy<G> {
+impl<G: MultiplayerGame> MultiplayerPolicy<G> for FlatMonteCarloPolicy<G> {
     fn play(self: &mut FlatMonteCarloPolicy<G>, board: &G) -> G::Move {
         const FLAT_PLAYOUTS: usize = N_PLAYOUTS;
 
@@ -50,7 +64,7 @@ impl<G: Game> Policy<G> for FlatMonteCarloPolicy<G> {
             b_after_move.play(&m);
             let mut success = 0;
             for _ in 0..n_playouts_per_move {
-                if b_after_move.playout() == self.color {
+                if b_after_move.playout_board().has_won(self.color) {
                     success += 1;
                 }
             }
@@ -67,7 +81,7 @@ impl<G: Game> Policy<G> for FlatMonteCarloPolicy<G> {
 
 pub struct FlatMonteCarlo {}
 
-impl<G: Game> PolicyBuilder<G> for FlatMonteCarlo {
+impl<G: MultiplayerGame> MultiplayerPolicyBuilder<G> for FlatMonteCarlo {
     type P = FlatMonteCarloPolicy<G>;
 
     fn create(&self, color: G::Player) -> Self::P {
@@ -76,11 +90,11 @@ impl<G: Game> PolicyBuilder<G> for FlatMonteCarlo {
 }
 
 /* Flat UCB */
-pub struct FlatUCBMonteCarloPolicy<G: Game> {
+pub struct FlatUCBMonteCarloPolicy<G: MultiplayerGame> {
     color: G::Player,
 }
 
-impl<G: Game> Policy<G> for FlatUCBMonteCarloPolicy<G> {
+impl<G: MultiplayerGame> MultiplayerPolicy<G> for FlatUCBMonteCarloPolicy<G> {
     fn play(self: &mut FlatUCBMonteCarloPolicy<G>, board: &G) -> G::Move {
         const UCB_WEIGHT: f32 = 0.4;
         const UCB_PLAYOUTS: usize = N_PLAYOUTS;
@@ -93,7 +107,7 @@ impl<G: Game> Policy<G> for FlatUCBMonteCarloPolicy<G> {
         for m in moves.iter() {
             let mut b_after_move = board.clone();
             b_after_move.play(&m);
-            if b_after_move.playout() == self.color {
+            if b_after_move.playout_board().has_won(self.color) {
                 move_success.insert(m, 1);
             } else {
                 move_success.insert(m, 0);
@@ -120,7 +134,7 @@ impl<G: Game> Policy<G> for FlatUCBMonteCarloPolicy<G> {
 
             if let Some(max_move) = max_move {
                 *move_count.get_mut(&max_move).unwrap() += 1;
-                if move_board.get(&max_move).unwrap().playout() == self.color {
+                if move_board.get(&max_move).unwrap().playout_board().has_won(self.color) {
                     *move_success.get_mut(&max_move).unwrap() += 1;
                 }
             }
@@ -143,7 +157,7 @@ impl<G: Game> Policy<G> for FlatUCBMonteCarloPolicy<G> {
 
 pub struct FlatUCBMonteCarlo {}
 
-impl<G: Game> PolicyBuilder<G> for FlatUCBMonteCarlo {
+impl<G: MultiplayerGame> MultiplayerPolicyBuilder<G> for FlatUCBMonteCarlo {
     type P = FlatUCBMonteCarloPolicy<G>;
 
     fn create(&self, color: G::Player) -> Self::P {

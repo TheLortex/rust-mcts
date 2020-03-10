@@ -1,7 +1,7 @@
 use std::fmt;
 
-use super::Game;
-use super::breakthrough::{Breakthrough, Color, Move};
+use super::{BaseGame,MultiplayerGame,MultiplayerGameBuilder};
+use super::breakthrough::{Breakthrough, BreakthroughBuilder, Color, Move};
 
 const K: usize = 5;
 
@@ -16,53 +16,44 @@ impl fmt::Debug for MisereBreakthrough {
     }
 }
 
-impl Game for MisereBreakthrough {
-    type Player = Color;
-    type Move = Move;
-
-    type GameHash = usize;
-    type Settings = ();
-
-    fn new(turn: Color, _: ()) -> MisereBreakthrough {
+impl MultiplayerGameBuilder<MisereBreakthrough> for BreakthroughBuilder {
+    fn create(&self, turn: Color) -> MisereBreakthrough {
         MisereBreakthrough {
-            game: Breakthrough::new(turn, ())
+            game: self.create(turn)
         }
     }
+}
 
-    fn players() -> Vec<Color> {
-        Breakthrough::players()
-    }
+impl BaseGame for MisereBreakthrough {
+    type Move = Move;
 
     fn play(&mut self, m: &Move) {
         self.game.play(m)
-    }
-
-    fn turn(&self) -> Color {
-        self.game.turn()
     }
 
     fn hash(&self) -> usize {
         self.game.hash()
     }
 
-    fn possible_moves(&self) -> &Vec<Move> {
+    fn possible_moves(&self) -> &[Move] {
         self.game.possible_moves()
     }
 
-    fn winner(&self) -> Option<Color> {
-        self.game.winner().map(|c| c.adv())
+}
+
+impl MultiplayerGame for MisereBreakthrough {
+    type Player = Color;
+
+    fn players() -> Vec<Color> {
+        Breakthrough::players()
     }
 
-    fn score(&self, c: Self::Player) -> f32 {
-        match self.winner() {
-            Some (c_) if c == c_ => 1.,
-            Some (_) => -1.,
-            _ => 0.,
-        }
+    fn turn(&self) -> Color {
+        self.game.turn()
     }
 
-    fn pass(&mut self) {
-        self.game.pass()
+    fn has_won(&self, c: Color) -> bool {
+        self.game.winner().map(|c| c.adv()) == Some(c)
     }
 }
 

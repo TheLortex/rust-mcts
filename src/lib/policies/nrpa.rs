@@ -3,22 +3,20 @@ use std::f32;
 use std::iter::*;
 use std::marker::PhantomData;
 
-use super::super::game::{Game, MoveCode};
+use super::super::game::{SingleplayerGame, MoveCode};
 use super::super::game::hashcode_20::Hashcode20;
-use super::{SinglePolicy, SinglePolicyBuilder, N_PLAYOUTS};
+use super::{SingleplayerPolicy, SingleplayerPolicyBuilder, N_PLAYOUTS};
 
 use std::collections::HashMap;
 
 use rayon::prelude::*;
 
-pub struct NRPAPolicy<G: Game, M: MoveCode<G>> {
-    color: G::Player,
+pub struct NRPAPolicy<G: SingleplayerGame, M: MoveCode<G>> {
     s: NRPA<G,M>,
-    
     _m: PhantomData<M>,
 }
 
-impl<G: Game, M: MoveCode<G>> NRPAPolicy<G, M> {
+impl<G: SingleplayerGame, M: MoveCode<G>> NRPAPolicy<G, M> {
 
     fn next_move(playout_policy: &HashMap<usize, f32>, board: &G) -> G::Move {
         let moves = board.possible_moves();
@@ -59,14 +57,14 @@ impl<G: Game, M: MoveCode<G>> NRPAPolicy<G, M> {
             let mut board = board.clone();
 
             let mut history = vec![];
-            while { board.winner() == None } {
+            while { !board.is_finished() } {
                 let chosen_move = Self::next_move(&playout_policy, &board);
 
                 board.play(&chosen_move);
                 history.push(chosen_move);
             }
             //println!("{:?}", history);
-            (board.score(self.color), history)
+            (board.score(), history)
         } else {
             let mut best_score = 0.;
             let mut best_hist = vec![];
@@ -117,14 +115,14 @@ impl<G: Game, M: MoveCode<G>> NRPAPolicy<G, M> {
     }
 }
 
-impl<G: Game, M: MoveCode<G>> SinglePolicy<G> for NRPAPolicy<G, M> {
+impl<G: SingleplayerGame, M: MoveCode<G>> SingleplayerPolicy<G> for NRPAPolicy<G, M> {
     fn solve(self: &mut NRPAPolicy<G, M>, board: &G) -> Vec<G::Move> {
         let (_, policy) = self.nested(board, self.s.level, HashMap::new());
         policy
     }
 }
 
-pub struct NRPA<G: Game, M: MoveCode<G>>  {
+pub struct NRPA<G: SingleplayerGame, M: MoveCode<G>>  {
     N: usize,
     level: usize,
     alpha: f32,
@@ -132,15 +130,15 @@ pub struct NRPA<G: Game, M: MoveCode<G>>  {
     _g: PhantomData<G>
 }
 
-impl<G: Game, M: MoveCode<G>> Copy for NRPA<G, M> {}
+impl<G: SingleplayerGame, M: MoveCode<G>> Copy for NRPA<G, M> {}
 
-impl<G: Game, M: MoveCode<G>> Clone for NRPA<G, M> {
+impl<G: SingleplayerGame, M: MoveCode<G>> Clone for NRPA<G, M> {
     fn clone(&self) -> Self {
         *self
     }
 }
 
-impl<G: Game, M: MoveCode<G>>  Default for NRPA<G,M> {
+impl<G: SingleplayerGame, M: MoveCode<G>>  Default for NRPA<G,M> {
     fn default() -> NRPA<G,M> {
         NRPA::<G,M> {
             N: 1,
@@ -152,13 +150,11 @@ impl<G: Game, M: MoveCode<G>>  Default for NRPA<G,M> {
     }
 }
 
-impl<G: Game, M: MoveCode<G>> SinglePolicyBuilder<G> for NRPA<G,M> {
+impl<G: SingleplayerGame, M: MoveCode<G>> SingleplayerPolicyBuilder<G> for NRPA<G,M> {
     type P = NRPAPolicy<G, M>;
 
-    fn create(&self, color: G::Player) -> Self::P {
-        assert_eq!(G::players().len(), 1);
+    fn create(&self) -> Self::P {
         NRPAPolicy::<G,M> {
-            color,
             s: *self,
             _m: PhantomData
         }

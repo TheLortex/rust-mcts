@@ -1,4 +1,4 @@
-use super::game::Game;
+use super::game::{SingleplayerGame, MultiplayerGame};
 
 pub mod flat;
 pub mod mcts;
@@ -11,22 +11,22 @@ pub const N_PLAYOUTS: usize = 100;
 
 /* POLICY TRAITS */
 
-pub trait PolicyBuilder<T: Game> {
-    type P: Policy<T>;
+pub trait MultiplayerPolicyBuilder<T: MultiplayerGame> {
+    type P: MultiplayerPolicy<T>;
 
     fn create(&self, color: T::Player) -> Self::P; 
 }
 
-pub trait Policy<T: Game> {
+pub trait MultiplayerPolicy<T: MultiplayerGame> {
     fn play(&mut self, board: &T) -> T::Move;
 }
 
-pub trait SinglePolicyBuilder<T: Game> {
-    type P: SinglePolicy<T>;
+pub trait SingleplayerPolicyBuilder<T: SingleplayerGame> {
+    type P: SingleplayerPolicy<T>;
 
-    fn create(&self, color: T::Player) -> Self::P; 
+    fn create(&self) -> Self::P; 
 }
 
-pub trait SinglePolicy<T: Game> {
+pub trait SingleplayerPolicy<T: SingleplayerGame> {
     fn solve(&mut self, board: &T) -> Vec<T::Move>;
 }

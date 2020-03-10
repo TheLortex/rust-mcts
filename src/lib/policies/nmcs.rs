@@ -1,21 +1,20 @@
 use std::f32;
 use std::iter::*;
 
-use super::super::game::Game;
-use super::{Policy, PolicyBuilder, SinglePolicy, SinglePolicyBuilder, N_PLAYOUTS};
+use super::super::game::{SingleplayerGame, MultiplayerGame};
+use super::{MultiplayerPolicy, MultiplayerPolicyBuilder, SingleplayerPolicy, SingleplayerPolicyBuilder, N_PLAYOUTS};
 
-pub struct NMCSPolicy<G: Game> {
-    color: G::Player,
+pub struct NMCSPolicy {
     s: NMCS,
 }
 
-impl<G: Game> NMCSPolicy<G> {
-    fn nested(self: &NMCSPolicy<G>, board: &G, level: usize) -> (f32, Vec<G::Move>) {
+impl NMCSPolicy {
+    fn nested<G: SingleplayerGame>(self: &NMCSPolicy, board: &G, level: usize) -> (f32, Vec<G::Move>) {
         if level == 0 {
             let (board, mut history) = board.playout_board_history();
             history.reverse();
             (
-                board.score(self.color),
+                board.score(),
                 history.into_iter().map(|(_, b)| b).collect(),
             )
         } else {
@@ -24,7 +23,7 @@ impl<G: Game> NMCSPolicy<G> {
             let mut state = board.clone();
             let mut played_sequence = Vec::new();
 
-            while state.winner() == None {
+            while !state.is_finished() {
                 for m in state.possible_moves() {
                     let mut new_board = state.clone();
                     new_board.play(m);
@@ -45,9 +44,9 @@ impl<G: Game> NMCSPolicy<G> {
     }
 }
 
-impl<G: Game> SinglePolicy<G> for NMCSPolicy<G> {
-    fn solve(self: &mut NMCSPolicy<G>, board: &G) -> Vec<G::Move> {
-        let (_, mut sequence) = self.nested(&board, self.s.level);
+impl<G: SingleplayerGame> SingleplayerPolicy<G> for NMCSPolicy {
+    fn solve(self: &mut NMCSPolicy, board: &G) -> Vec<G::Move> {
+        let (_, mut sequence) = self.nested(board, self.s.level);
         sequence.reverse();
         sequence
     }
@@ -64,26 +63,25 @@ impl Default for NMCS {
     }
 }
 
-impl<G: Game> SinglePolicyBuilder<G> for NMCS {
-    type P = NMCSPolicy<G>;
+impl<G: SingleplayerGame> SingleplayerPolicyBuilder<G> for NMCS {
+    type P = NMCSPolicy;
 
-    fn create(&self, color: G::Player) -> Self::P {
-        assert_eq!(G::players().len(), 1);
-        NMCSPolicy { color, s: *self }
+    fn create(&self) -> Self::P {
+        NMCSPolicy { s: *self }
     }
 }
 
 /* MULTI NMCS  */
-pub struct MultiNMCSPolicy<G: Game> {
+pub struct MultiNMCSPolicy<G: MultiplayerGame> {
     color: G::Player,
     s: MultiNMCS,
 }
 
-impl<G: Game> MultiNMCSPolicy<G> {
+impl<G: MultiplayerGame> MultiNMCSPolicy<G> {
     fn nested(self: &MultiNMCSPolicy<G>, board: &G, level: usize, depth: f32, bound: f32) -> f32 {
         let mut d = depth;
         let mut s = board.clone();
-        while s.winner() == None {
+        while !s.is_finished() {
             let mut s_star = s.clone();
             s_star.random_move();
             let mut l_star = if s.turn() == self.color {
@@ -120,15 +118,17 @@ impl<G: Game> MultiNMCSPolicy<G> {
             d += 1.;
         }
 
+        let score = if board.has_won(self.color) { 1. } else if !board.is_finished() { 0.0 } else { -1.0};
+
         if self.s.discounting {
-            board.score(self.color) / d
+            score / d
         } else {
-            board.score(self.color)
+            score
         }
     }
 }
 
-impl<G: Game> Policy<G> for MultiNMCSPolicy<G> {
+impl<G: MultiplayerGame> MultiplayerPolicy<G> for MultiNMCSPolicy<G> {
     fn play(self: &mut MultiNMCSPolicy<G>, board: &G) -> G::Move {
         let mut best_move = None;
         let mut max_visited = 0.;
@@ -167,7 +167,7 @@ impl Default for MultiNMCS {
     }
 }
 
-impl<G: Game> PolicyBuilder<G> for MultiNMCS {
+impl<G: MultiplayerGame> MultiplayerPolicyBuilder<G> for MultiNMCS {
     type P = MultiNMCSPolicy<G>;
 
     fn create(&self, color: G::Player) -> Self::P {

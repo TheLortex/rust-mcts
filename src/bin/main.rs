@@ -7,10 +7,10 @@
 #![feature(fn_traits)]
 #![feature(drain_filter)]
 
-use cursive::views::{Dialog,LinearLayout,NamedView,Button};
+use cursive::views::{Button, Dialog, LinearLayout, NamedView};
 use cursive::Cursive;
 
-use atomic_counter::{AtomicCounter,RelaxedCounter};
+use atomic_counter::{AtomicCounter, RelaxedCounter};
 
 use std::collections::hash_map::DefaultHasher;
 use std::convert::TryFrom;
@@ -26,39 +26,36 @@ use rayon::prelude::*;
 
 extern crate zerol;
 
-
 use zerol::game::breakthrough::*;
+use zerol::game::hashcode_20::*;
 use zerol::game::misere_breakthrough::*;
 use zerol::game::weak_schur::*;
-use zerol::game::hashcode_20::*;
-use zerol::game::{Game, InteractiveGame, MoveCode, NoFeatures};
+use zerol::game::*;
 use zerol::policies::{
-    flat::*, mcts::*, nmcs::*, nrpa::*, ppa::*, puct::*, Policy, PolicyBuilder, SinglePolicy, SinglePolicyBuilder,
+    flat::*, mcts::*, nmcs::*, nrpa::*, ppa::*, puct::*, MultiplayerPolicy,
+    MultiplayerPolicyBuilder, SingleplayerPolicy, SingleplayerPolicyBuilder,
 };
 
-fn game_solo<G: Game, P: SinglePolicyBuilder<G>>(pb: &P, settings: G::Settings) -> f32 {
-    let player = G::players()[0];
-
-    let mut p = pb.create(player);
-    let mut b = G::new(player, settings);
+fn game_solo<G: SingleplayerGame, P: SingleplayerPolicyBuilder<G>>(pb: &P, game: &G) -> f32 {
+    let mut p = pb.create();
+    let mut b = game.clone();
     let actions = p.solve(&b);
     for a in actions {
         println!("{:?}", b);
         println!("Action: {:?}", a);
         b.play(&a);
-     //   println!("Score: {}", b.score(player));
+        //   println!("Score: {}", b.score(player));
     }
     println!("{:?}", b);
-    b.score(player)
+    b.score()
 }
 
-fn game_duel<G: Game, P1: Policy<G>, P2: Policy<G>>(
-    start: G::Player,
+fn game_duel<G: MultiplayerGame, P1: MultiplayerPolicy<G>, P2: MultiplayerPolicy<G>>(
     p1: &mut P1,
     p2: &mut P2,
-    settings: G::Settings,
-) -> G::Player {
-    let mut b = G::new(start, settings);
+    game: &G,
+) -> G {
+    let mut b = game.clone();
     const DBG: bool = false;
 
     while {
@@ -71,19 +68,24 @@ fn game_duel<G: Game, P1: Policy<G>, P2: Policy<G>>(
             println!("{:?} => {:?}", b, action);
         }
         b.play(&action);
-        b.winner() == None
+        !b.is_finished()
     } {}
     if DBG {
         println!("{:?}", b);
     };
-    b.winner().unwrap()
+    b
 }
 
-pub fn monte_carlo_match<G: Game, P1: PolicyBuilder<G> + Sync, P2: PolicyBuilder<G> + Sync>(
+pub fn monte_carlo_match<
+    G: MultiplayerGame,
+    GB: MultiplayerGameBuilder<G> + Sync,
+    P1: MultiplayerPolicyBuilder<G> + Sync,
+    P2: MultiplayerPolicyBuilder<G> + Sync,
+>(
     n: usize,
     pb1: &P1,
     pb2: &P2,
-    settings: &G::Settings,
+    game_factory: &GB,
 ) -> usize {
     let pb = ProgressBar::new(n as u64);
     pb.set_style(
@@ -104,12 +106,14 @@ pub fn monte_carlo_match<G: Game, P1: PolicyBuilder<G> + Sync, P2: PolicyBuilder
             let mut p1 = pb1.create(G::players()[0]);
             let mut p2 = pb2.create(G::players()[1]);
 
+            let starting_player = *G::players().choose(&mut rand::thread_rng()).unwrap();
+            let game = game_factory.create(starting_player);
+
             let result = if game_duel(
-                *G::players().choose(&mut rand::thread_rng()).unwrap(),
                 &mut p1,
                 &mut p2,
-                settings.clone()
-            ) == G::players()[0]
+                &game,
+            ).has_won(G::players()[0])
             {
                 c1.inc();
                 1
@@ -136,8 +140,12 @@ pub fn monte_carlo_match<G: Game, P1: PolicyBuilder<G> + Sync, P2: PolicyBuilder
 struct GameDuelUI {}
 
 impl GameDuelUI {
-    fn render<IG: InteractiveGame, P1: Policy<IG::G> + 'static, P2: Policy<IG::G> + 'static>(
-        start: <IG::G as Game>::Player,
+    fn render<
+        IG: InteractiveGame,
+        P1: MultiplayerPolicy<IG::G> + 'static,
+        P2: MultiplayerPolicy<IG::G> + 'static,
+    >(
+        start: <IG::G as MultiplayerGame>::Player,
         _p1: P1,
         p2: P2,
     ) -> impl cursive::view::View {
@@ -151,7 +159,7 @@ impl GameDuelUI {
 
                 //let mut p1 = r_p1.borrow_mut();
                 let mut p2 = r_p2.borrow_mut();
-                let p1_to_play = state.get().turn() == <IG::G as Game>::players()[0];
+                let p1_to_play = state.get().turn() == <IG::G as MultiplayerGame>::players()[0];
 
                 if p1_to_play {
                     //p1.play(&state)
@@ -170,7 +178,7 @@ fn main_ui() {
     let mut siv = Cursive::default();
 
     let pb1 = Random::default();
-    let p1: RandomPolicy<G> = pb1.create(G::players()[0]);
+    let p1: RandomPolicy = MultiplayerPolicyBuilder::<G>::create(&pb1,G::players()[0]);
     let pb2 = UCT::default();
     let p2: UCTPolicy<G> = pb2.create(G::players()[1]);
 
@@ -205,21 +213,17 @@ impl MoveCode<Breakthrough> for BTCapture {
     }
 }
 
-use zerol::misc::evaluator;
 use std::marker::PhantomData;
+use zerol::misc::evaluator;
 
 use tensorflow::{Code, Graph, Session, SessionOptions, Status};
 const MODEL_PATH: &str = "models/sample";
 
 fn main() {
-
     let mut graph = Graph::new();
-    let session = Session::from_saved_model(
-        &SessionOptions::new(),
-        &["serve"],
-        &mut graph,
-        MODEL_PATH,
-    ).unwrap();
+    let session =
+        Session::from_saved_model(&SessionOptions::new(), &["serve"], &mut graph, MODEL_PATH)
+            .unwrap();
 
     let p1 = Random {};
     let p2 = PUCT {
@@ -228,16 +232,18 @@ fn main() {
         evaluate: &(|board| evaluator(&session, &graph, board)),
     };
 
+    let gb = BreakthroughBuilder {};
+
     println!(
         "Result: {}",
-        monte_carlo_match::<Breakthrough, _, _>(100, &p1, &p2, &())
+        monte_carlo_match::<_, _, _, _>(100, &p1, &p2, &gb)
     );
     //main_ui();
-/*
+    /*
     let pb = NRPA::<_, NoFeatures>::default();
     let res = game_solo::<WeakSchurNumber, _>(&pb, ());
     println!("=> {} ", res);*/
-/*
+    /*
     let pb = NRPA::<_, NoFeatures>::default();
     let config = Hashcode20Settings::new_from_file("./data/b_read_on.txt");
     let res = game_solo::<Hashcode20, _>(&pb, &config);

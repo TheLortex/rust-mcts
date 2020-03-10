@@ -10,33 +10,44 @@ pub mod misere_breakthrough;
 pub mod weak_schur;
 pub mod hashcode_20;
 
-/* A MULTI-PLAYER GAME */
-pub trait Game: Sized + Clone + Debug {
-    type Player: PartialEq + Eq + Copy + Clone + Debug;
+/** 
+ * Common interface for single and multiplayer games
+ */
+pub trait BaseGame: Sized + Clone + Debug {
+    /**
+     * The type for a Move.
+     */
     type Move: PartialEq + Eq + Copy + Clone + Hash + Debug;
-    type GameHash: PartialEq + Eq + Copy + Clone + Hash + Debug;
-    type Settings: Sync + Clone + Debug;
-
-    fn new(turn: Self::Player, settings: Self::Settings) -> Self;
-
-    fn players() -> Vec<Self::Player>;
-    fn hash(&self) -> Self::GameHash;
-    fn turn(&self) -> Self::Player;
-    fn possible_moves(&self) -> &Vec<Self::Move>;
-
+    /**
+     * Given the game state and turn, list possible actions.
+     */
+    fn possible_moves(&self) -> &[Self::Move];
+    /**
+     * Returns if the game has ended or not.
+     */
+    fn is_finished(&self) -> bool {
+        return self.possible_moves().is_empty();
+    }
+    /**
+     * Mutates game state playing the given action.
+     */
     fn play(&mut self, action: &Self::Move);
-    fn pass(&mut self);
-    fn winner(&self) -> Option<Self::Player>;
-    fn score(&self, player: Self::Player) -> f32;
+    /**
+     * Pseudo-unique value representing the game state.
+     */
+    fn hash(&self) -> usize;
 
-    fn random_move(&mut self) -> (Self::GameHash, Option<Self::Move>) {
+    /**
+     * Plays a random move or does nothing if there's no move to play. 
+     */
+    fn random_move(&mut self) -> (usize, Option<Self::Move>) {
         let actions = self.possible_moves();
         let chosen_action = actions.choose(&mut rand::thread_rng()).copied();
 
         let gh = self.hash();
 
         match chosen_action {
-            None => self.pass(),
+            None => (),
             Some(action) => self.play(&action),
         };
         (gh, chosen_action)
@@ -46,7 +57,7 @@ pub trait Game: Sized + Clone + Debug {
         let mut s = self.clone();
         let mut hist = Vec::new();
 
-        while { s.winner().is_none() } {
+        while { !s.is_finished() } {
             let s_cloned = s.clone();
             let (_,m) = s.random_move();
             hist.push((s_cloned, m.unwrap()));
@@ -54,39 +65,51 @@ pub trait Game: Sized + Clone + Debug {
         (s, hist)
     }
 
-    fn playout_board_history(&self) -> (Self, Vec<(Self::GameHash, Self::Move)>) {
+    fn playout_board_history(&self) -> (Self, Vec<(usize, Self::Move)>) {
         let mut s = self.clone();
         let mut hist = Vec::new();
 
-        while { s.winner().is_none() } {
+        while { !s.is_finished() } {
             let (h,m) = s.random_move();
             hist.push((h, m.unwrap()));
         }
         (s, hist)
     }
 
-    fn playout_history(&self) -> (Self::Player, Vec<(Self::GameHash, Self::Move)>) {
-        let (s, hist) = self.playout_board_history();
-        (s.winner().unwrap(), hist)
-    }
-
     fn playout_board(&self) -> Self {
         let (s, _) = self.playout_board_history();
         s
     }
-
-    fn playout(&self) -> Self::Player {
-        let (s, _) = self.playout_board_history();
-        s.winner().unwrap()
-    }
 }
+
+pub trait MultiplayerGameBuilder<G: MultiplayerGame> {
+    fn create(&self, starting: G::Player) -> G;
+}
+
+pub trait MultiplayerGame: BaseGame {
+    type Player: PartialEq + Eq + Copy + Clone + Debug;
+
+    fn players() -> Vec<Self::Player>;    
+    fn turn(&self) -> Self::Player;
+
+    fn has_won(&self, player: Self::Player) -> bool;
+}
+
+pub trait SingleplayerGameBuilder<G: SingleplayerGame> {
+    fn create(&self) -> G;
+}
+
+pub trait SingleplayerGame: BaseGame {
+    fn score(&self) -> f32;
+}
+
 /* TODO: MoveCode */
-pub trait MoveCode<G: Game> {
+pub trait MoveCode<G: BaseGame> {
     fn code(game: &G, action: &G::Move) -> usize;
 }
 
 pub struct NoFeatures {}
-impl<T: Game> MoveCode<T> for NoFeatures {
+impl<T: BaseGame> MoveCode<T> for NoFeatures {
     fn code(_: &T, action: &T::Move) -> usize {
         let mut s = DefaultHasher::new();
         action.hash(&mut s);
@@ -96,11 +119,11 @@ impl<T: Game> MoveCode<T> for NoFeatures {
 
 /* GAME WITH AN UI */
 pub trait InteractiveGame: cursive::view::View {
-    type G: Game;
+    type G: MultiplayerGame;   
 
-    fn new(turn: <Self::G as Game>::Player) -> Self;
+    fn new(turn: <Self::G as MultiplayerGame>::Player) -> Self;
 
     fn get_mut(&mut self) -> &mut Self::G;
     fn get(&self) -> &Self::G;
-    fn choose_move(&mut self, cb: Box<dyn FnOnce(<Self::G as Game>::Move, &mut Self)>);
+    fn choose_move(&mut self, cb: Box<dyn FnOnce(<Self::G as BaseGame>::Move, &mut Self)>);
 }

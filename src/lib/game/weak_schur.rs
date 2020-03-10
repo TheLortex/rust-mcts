@@ -6,7 +6,7 @@ use std::hash::Hasher;
 
 use std::cmp::Ordering;
 
-use super::Game;
+use super::{SingleplayerGame,SingleplayerGameBuilder,BaseGame};
 
 const K: usize = 9;
 const WS_RULE: bool = true;
@@ -84,13 +84,12 @@ impl WeakSchurNumber {
     }
 }
 
-impl Game for WeakSchurNumber {
-    type Player = ();
-    type Move = usize;
-    type GameHash = usize;
-    type Settings = ();
+pub struct WeakSchurNumberBuilder {
 
-    fn new(_: Self::Player, _: Self::Settings) -> WeakSchurNumber {
+}
+
+impl SingleplayerGameBuilder<WeakSchurNumber> for WeakSchurNumberBuilder {
+    fn create(&self) -> WeakSchurNumber {
         let partitions = Default::default();
         let last_value = 0;
         let possible_moves = WeakSchurNumber::compute_possible_moves(last_value, &partitions);
@@ -101,18 +100,21 @@ impl Game for WeakSchurNumber {
             possible_moves,
         }
     }
+}
 
-    fn players() -> Vec<()> {
-        vec![()]
-    }
-
-    fn score(&self, _: Self::Player) -> f32 {
+impl SingleplayerGame for WeakSchurNumber {
+    fn score(&self) -> f32 {
         self.partitions
             .iter()
             .map(|p| Self::best_sequence(&p))
             .max()
             .unwrap() as f32
     }
+
+}
+
+impl BaseGame for WeakSchurNumber {
+    type Move = usize;
 
     fn play(&mut self, m: &Self::Move) {
         self.last_value += 1;
@@ -121,25 +123,13 @@ impl Game for WeakSchurNumber {
             WeakSchurNumber::compute_possible_moves(self.last_value, &self.partitions);
     }
 
-    fn turn(&self) -> Self::Player {}
-
     fn hash(&self) -> usize {
         let mut hasher = DefaultHasher::new();
         self.partitions.hash(&mut hasher);
         hasher.finish() as usize
     }
 
-    fn possible_moves(&self) -> &Vec<Self::Move> {
+    fn possible_moves(&self) -> &[Self::Move] {
         &self.possible_moves
     }
-
-    fn winner(&self) -> Option<Self::Player> {
-        if !self.possible_moves().is_empty() {
-            None
-        } else {
-            Some(())
-        }
-    }
-
-    fn pass(&mut self) {}
 }

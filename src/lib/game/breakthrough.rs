@@ -5,7 +5,7 @@ use std::fmt;
 
 use std::hash::*;
 
-use super::{Game, InteractiveGame};
+use super::{BaseGame, MultiplayerGame, InteractiveGame, MultiplayerGameBuilder};
 
 pub const K: usize = 8;
 /* PLAYERS */
@@ -190,14 +190,11 @@ impl fmt::Debug for Breakthrough {
     }
 }
 
-impl Game for Breakthrough {
-    type Player = Color;
-    type Move = Move;
+#[derive(Default)]
+pub struct BreakthroughBuilder {}
 
-    type GameHash = usize;
-    type Settings = ();
-
-    fn new(turn: Color, _: ()) -> Breakthrough {
+impl MultiplayerGameBuilder<Breakthrough> for BreakthroughBuilder {
+    fn create(&self, turn: Color) -> Breakthrough {
         let mut rng = rand::thread_rng();
 
         let mut content = [[Cell::Empty; K]; K];
@@ -226,18 +223,43 @@ impl Game for Breakthrough {
             hash: 0,
         }
     }
+}
 
+impl Breakthrough {
+    pub fn winner(&self) -> Option<Color> {
+        for i in 0..K {
+            if self.content[i][K - 1] == Cell::C(Color::Black) {
+                return Some(Color::Black);
+            } else if self.content[i][0] == Cell::C(Color::White) {
+                return Some(Color::White);
+            }
+        }
+        if self.possible_moves_black.is_empty() {
+            Some(Color::White)
+        } else if self.possible_moves_white.is_empty() {
+            Some(Color::Black)
+        } else {
+            None
+        }
+    }
+}
+
+impl MultiplayerGame for Breakthrough {
+    type Player = Color;
     fn players() -> Vec<Color> {
         vec![Color::Black, Color::White]
     }
-
-    fn score(&self, c: Self::Player) -> f32 {
-        match self.winner() {
-            Some(c_) if c == c_ => 1.,
-            Some(_) => -1.,
-            _ => 0.,
-        }
+    fn turn(&self) -> Color {
+        self.turn
     }
+
+    fn has_won(&self, player: Color) -> bool {
+        self.winner() == Some(player)
+    }
+}
+
+impl BaseGame for Breakthrough {
+    type Move = Move;
 
     fn play(&mut self, m: &Move) {
         if m.color != self.turn() {
@@ -274,41 +296,17 @@ impl Game for Breakthrough {
         }
     }
 
-    fn turn(&self) -> Color {
-        self.turn
-    }
 
     fn hash(&self) -> usize {
         (self.hash << 1) + (self.turn as usize)
     }
 
-    fn possible_moves(&self) -> &Vec<Move> {
+    fn possible_moves(&self) -> &[Move] {
         if self.turn == Color::Black {
             &self.possible_moves_black
         } else {
             &self.possible_moves_white
         }
-    }
-
-    fn winner(&self) -> Option<Color> {
-        for i in 0..K {
-            if self.content[i][K - 1] == Cell::C(Color::Black) {
-                return Some(Color::Black);
-            } else if self.content[i][0] == Cell::C(Color::White) {
-                return Some(Color::White);
-            }
-        }
-        if self.possible_moves_black.is_empty() {
-            Some(Color::White)
-        } else if self.possible_moves_white.is_empty() {
-            Some(Color::Black)
-        } else {
-            None
-        }
-    }
-
-    fn pass(&mut self) {
-        self.turn = self.turn.adv()
     }
 }
 
@@ -602,12 +600,14 @@ impl cursive::view::View for IBreakthrough {
     }
 }
 
+
 impl InteractiveGame for IBreakthrough {
     type G = Breakthrough;
 
-    fn new(turn: <Breakthrough as Game>::Player) -> Self {
+
+    fn new(turn: <Breakthrough as MultiplayerGame>::Player) -> Self {
         IBreakthrough {
-            game: Breakthrough::new(turn, ()),
+            game: (BreakthroughBuilder {}).create(turn),
             choosing_move: None,
             choosing_move_cb: None,
         }
@@ -621,7 +621,7 @@ impl InteractiveGame for IBreakthrough {
         &mut self.game
     }
 
-    fn choose_move(&mut self, cb: Box<dyn FnOnce(<Self::G as Game>::Move, &mut Self)>) {
+    fn choose_move(&mut self, cb: Box<dyn FnOnce(<Self::G as BaseGame>::Move, &mut Self)>) {
         let first_move = self.game.possible_moves()[0];
         self.choosing_move = Some(PendingMove::SelectingPosition(first_move.x, first_move.y));
         self.choosing_move_cb = Some(cb)
