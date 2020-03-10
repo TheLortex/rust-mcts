@@ -90,6 +90,8 @@ buffer_thr.start()
 
 network = build_network()
 network.compile(optimizer="adam", loss={"policy": "categorical_crossentropy", "value": "binary_crossentropy"})
+#models.save_model(network, "models/sample", include_optimizer=False, save_format="tf")
+
 trainGenerator = ZerolGenerator(input_data, policy, value)
 
 checkpoint = ModelCheckpoint("models/sample", verbose=1, save_weights_only=False)
