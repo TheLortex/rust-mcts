@@ -1,9 +1,7 @@
-use rand::seq::SliceRandom;
 use std::f32;
 use std::iter::*;
 
-use super::super::game::{BaseGame, MultiplayerGame, MoveCode};
-use super::mcts::{UCTMoveInfo, UCTNodeInfo};
+use super::super::game::{MultiplayerGame};
 use super::{MultiplayerPolicy, MultiplayerPolicyBuilder, N_PLAYOUTS};
 
 use std::collections::HashMap;

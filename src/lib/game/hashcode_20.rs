@@ -5,10 +5,9 @@ use std::collections::{BTreeSet, BTreeMap};
 use std::fmt;
 use std::hash::Hash;
 use std::hash::Hasher;
-use std::rc::Rc;
 use std::iter::FromIterator;
 use std::fs::File;
-use std::io::{self, prelude::*, BufReader};
+use std::io::{prelude::*, BufReader};
 
 #[derive(Debug, Clone)]
 pub struct Hashcode20Settings {

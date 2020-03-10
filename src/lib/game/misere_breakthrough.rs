@@ -3,8 +3,6 @@ use std::fmt;
 use super::{BaseGame,MultiplayerGame,MultiplayerGameBuilder};
 use super::breakthrough::{Breakthrough, BreakthroughBuilder, Color, Move};
 
-const K: usize = 5;
-
 #[derive(Clone, PartialEq, Eq)]
 pub struct MisereBreakthrough {
     game: Breakthrough,

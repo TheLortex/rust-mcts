@@ -2,7 +2,7 @@ use std::f32;
 use std::iter::*;
 
 use super::super::game::{SingleplayerGame, MultiplayerGame};
-use super::{MultiplayerPolicy, MultiplayerPolicyBuilder, SingleplayerPolicy, SingleplayerPolicyBuilder, N_PLAYOUTS};
+use super::{MultiplayerPolicy, MultiplayerPolicyBuilder, SingleplayerPolicy, SingleplayerPolicyBuilder};
 
 pub struct NMCSPolicy {
     s: NMCS,

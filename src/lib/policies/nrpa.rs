@@ -4,12 +4,9 @@ use std::iter::*;
 use std::marker::PhantomData;
 
 use super::super::game::{SingleplayerGame, MoveCode};
-use super::super::game::hashcode_20::Hashcode20;
-use super::{SingleplayerPolicy, SingleplayerPolicyBuilder, N_PLAYOUTS};
+use super::{SingleplayerPolicy, SingleplayerPolicyBuilder};
 
 use std::collections::HashMap;
-
-use rayon::prelude::*;
 
 pub struct NRPAPolicy<G: SingleplayerGame, M: MoveCode<G>> {
     s: NRPA<G,M>,

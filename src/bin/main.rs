@@ -1,11 +1,6 @@
 #![allow(dead_code)]
-#![allow(non_snake_case)]
-#![feature(associated_type_defaults)]
-#![feature(test)]
-#![feature(trait_alias)]
 #![allow(unused_imports)]
-#![feature(fn_traits)]
-#![feature(drain_filter)]
+#![allow(non_snake_case)]
 
 use cursive::views::{Button, Dialog, LinearLayout, NamedView};
 use cursive::Cursive;

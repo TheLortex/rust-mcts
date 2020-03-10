@@ -1,7 +1,7 @@
 use rand::seq::SliceRandom;
 use std::collections::HashMap;
 
-use super::super::game::{BaseGame, MultiplayerGame, SingleplayerGame};
+use super::super::game::{MultiplayerGame, SingleplayerGame};
 use super::{MultiplayerPolicy, MultiplayerPolicyBuilder, SingleplayerPolicy, SingleplayerPolicyBuilder, N_PLAYOUTS};
 
 /* RANDOM POLICY */

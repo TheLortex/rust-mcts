@@ -1,12 +1,10 @@
-use super::game::breakthrough::{Breakthrough, Color, Move};
+use super::game::breakthrough::{Breakthrough, Move};
 use super::game::BaseGame;
-use super::policies::puct::PUCTPolicy;
-use super::policies::MultiplayerPolicy;
 
 use std::collections::HashMap;
 use std::iter::FromIterator;
 
-use tensorflow::{Code, Graph, Session, SessionOptions, SessionRunArgs, Status, Tensor};
+use tensorflow::{Graph, Session, SessionRunArgs, Tensor};
 
 const K: usize  = 8; //TODO
 pub fn evaluator(session: &Session, graph: &Graph, board: &Breakthrough) -> (HashMap<Move, f32>, f32) {

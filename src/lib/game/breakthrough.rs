@@ -379,11 +379,9 @@ pub struct IBreakthrough {
 }
 
 use cursive::direction::Direction;
-use cursive::event::{Event, EventResult, Key, MouseButton, MouseEvent};
+use cursive::event::{Event, EventResult, Key};
 use cursive::theme;
 use cursive::theme::ColorStyle;
-use cursive::views::{Button, Dialog, LinearLayout, Panel, SelectView};
-use cursive::Cursive;
 use cursive::Printer;
 use cursive::Vec2;
 

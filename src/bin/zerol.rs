@@ -1,3 +1,7 @@
+#![allow(dead_code)]
+#![allow(unused_imports)]
+#![allow(non_snake_case)]
+
 use std::collections::HashMap;
 use std::error::Error;
 use std::fs::{File, OpenOptions};
