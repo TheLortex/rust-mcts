@@ -21,10 +21,11 @@ impl Game for MisereBreakthrough {
     type Move = Move;
 
     type GameHash = usize;
+    type Settings = ();
 
-    fn new(turn: Color) -> MisereBreakthrough {
+    fn new(turn: Color, _: ()) -> MisereBreakthrough {
         MisereBreakthrough {
-            game: Breakthrough::new(turn)
+            game: Breakthrough::new(turn, ())
         }
     }
 
@@ -52,7 +53,7 @@ impl Game for MisereBreakthrough {
         self.game.winner().map(|c| c.adv())
     }
 
-    fn score(&self, c: Self::Player) -> f64 {
+    fn score(&self, c: Self::Player) -> f32 {
         match self.winner() {
             Some (c_) if c == c_ => 1.,
             Some (_) => -1.,

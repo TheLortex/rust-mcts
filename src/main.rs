@@ -2,6 +2,7 @@
 #![allow(non_snake_case)]
 #![feature(associated_type_defaults)]
 #![feature(test)]
+#![feature(trait_alias)]
 #![allow(unused_imports)]
 #![feature(fn_traits)]
 #![feature(drain_filter)]
@@ -39,20 +40,22 @@ mod tests;
 use self::game::breakthrough::*;
 use self::game::misere_breakthrough::*;
 use self::game::weak_schur::*;
+use self::game::hashcode_20::*;
 use self::game::{Game, InteractiveGame, MoveCode, NoFeatures};
 use self::policies::{
     flat::*, mcts::*, nmcs::*, nrpa::*, ppa::*, Policy, PolicyBuilder, SinglePolicy, SinglePolicyBuilder,
 };
 
-fn game_solo<G: Game, P: SinglePolicyBuilder<G>>(pb: &P) -> f64 {
+fn game_solo<G: Game, P: SinglePolicyBuilder<G>>(pb: &P, settings: G::Settings) -> f32 {
     let player = G::players()[0];
 
     let mut p = pb.create(player);
-    let mut b = G::new(player);
+    let mut b = G::new(player, settings);
     let actions = p.solve(&b);
     for a in actions {
+        println!("{:?}", b);
+        println!("Action: {:?}", a);
         b.play(&a);
-     //   println!("{:?}", b);
      //   println!("Score: {}", b.score(player));
     }
     println!("{:?}", b);
@@ -63,8 +66,9 @@ fn game_duel<G: Game, P1: Policy<G>, P2: Policy<G>>(
     start: G::Player,
     p1: &mut P1,
     p2: &mut P2,
+    settings: G::Settings,
 ) -> G::Player {
-    let mut b = G::new(start);
+    let mut b = G::new(start, settings);
     const DBG: bool = false;
 
     while {
@@ -89,6 +93,7 @@ pub fn monte_carlo_match<G: Game, P1: PolicyBuilder<G> + Sync, P2: PolicyBuilder
     n: usize,
     pb1: &P1,
     pb2: &P2,
+    settings: G::Settings,
 ) -> usize {
     let pb = ProgressBar::new(n as u64);
     pb.set_style(
@@ -113,6 +118,7 @@ pub fn monte_carlo_match<G: Game, P1: PolicyBuilder<G> + Sync, P2: PolicyBuilder
                 *G::players().choose(&mut rand::thread_rng()).unwrap(),
                 &mut p1,
                 &mut p2,
+                settings.clone()
             ) == G::players()[0]
             {
                 c1.inc();
@@ -128,7 +134,7 @@ pub fn monte_carlo_match<G: Game, P1: PolicyBuilder<G> + Sync, P2: PolicyBuilder
                 "{}/{} ({:.2}%)",
                 v1,
                 v2,
-                (v1 as f64) * 100. / ((v1 + v2) as f64)
+                (v1 as f32) * 100. / ((v1 + v2) as f32)
             ));
             result
         })
@@ -215,11 +221,16 @@ fn main() {
 
     println!(
         "Result: {}",
-        monte_carlo_match::<Breakthrough, _, _>(100, &p1, &p2)
+        monte_carlo_match::<Breakthrough, _, _>(100, &p1, &p2, ())
     );*/
     //main_ui();
+/*
+    let pb = NRPA::<_, NoFeatures>::default();
+    let res = game_solo::<WeakSchurNumber, _>(&pb, ());
+    println!("=> {} ", res);*/
 
     let pb = NRPA::<_, NoFeatures>::default();
-    let res = game_solo::<WeakSchurNumber, _>(&pb);
+    let config = Hashcode20Settings::new_from_file("./data/b_read_on.txt");
+    let res = game_solo::<Hashcode20, _>(&pb, &config);
     println!("=> {} ", res);
 }

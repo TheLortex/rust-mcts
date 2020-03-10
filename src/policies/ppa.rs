@@ -1,5 +1,5 @@
 use rand::seq::SliceRandom;
-use std::f64;
+use std::f32;
 use std::iter::*;
 
 use super::super::game::{Game, MoveCode};
@@ -14,7 +14,7 @@ pub struct PPAPolicy<G: Game, M: MoveCode<G>> {
     color: G::Player,
     s: PPA<G,M>,
     tree: HashMap<G::GameHash, UCTNodeInfo<G>>,
-    playout_policy: HashMap<usize, f64>,
+    playout_policy: HashMap<usize, f32>,
 
     _m: PhantomData<M>,
 }
@@ -72,7 +72,7 @@ impl<G: Game, M: MoveCode<G>> PPAPolicy<G, M> {
         let node = self.playout_policy.entry(M::code(board, action)).or_insert(0.);
         *node += self.s.alpha;
 
-        let z: f64 = board
+        let z: f32 = board
             .possible_moves()
             .iter()
             .map(|m| self.playout_policy.get(&M::code(board, &m)).unwrap_or(&0.).exp())
@@ -205,8 +205,8 @@ impl<G: Game, M: MoveCode<G>> Policy<G> for PPAPolicy<G, M> {
 // POLICY BUILDER
 
 pub struct PPA<G: Game, M:MoveCode<G>> {
-    UCT_WEIGHT: f64,
-    alpha: f64,
+    UCT_WEIGHT: f32,
+    alpha: f32,
     _m: PhantomData<M>,
     _g: PhantomData<G>
 }

@@ -4,19 +4,21 @@ use std::fmt::Debug;
 use std::collections::hash_map::DefaultHasher;
 use std::convert::TryFrom;
 use std::hash::{Hash, Hasher};
-use std::mem;
 
 pub mod breakthrough;
 pub mod misere_breakthrough;
 pub mod weak_schur;
+pub mod hashcode_20;
+pub mod openai;
 
 /* A MULTI-PLAYER GAME */
 pub trait Game: Sized + Clone + Debug {
     type Player: PartialEq + Eq + Copy + Clone + Debug;
     type Move: PartialEq + Eq + Copy + Clone + Hash + Debug;
     type GameHash: PartialEq + Eq + Copy + Clone + Hash + Debug;
+    type Settings: Clone + Debug;
 
-    fn new(turn: Self::Player) -> Self;
+    fn new(turn: Self::Player, settings: Self::Settings) -> Self;
 
     fn players() -> Vec<Self::Player>;
     fn hash(&self) -> Self::GameHash;
@@ -26,7 +28,7 @@ pub trait Game: Sized + Clone + Debug {
     fn play(&mut self, action: &Self::Move);
     fn pass(&mut self);
     fn winner(&self) -> Option<Self::Player>;
-    fn score(&self, player: Self::Player) -> f64;
+    fn score(&self, player: Self::Player) -> f32;
 
     fn random_move(&mut self) -> (Self::GameHash, Option<Self::Move>) {
         let actions = self.possible_moves();
@@ -39,6 +41,18 @@ pub trait Game: Sized + Clone + Debug {
             Some(action) => self.play(&action),
         };
         (gh, chosen_action)
+    }
+
+    fn playout_full_history(&self) -> (Self, Vec<(Self, Self::Move)>) {
+        let mut s = self.clone();
+        let mut hist = Vec::new();
+
+        while { s.winner().is_none() } {
+            let s_cloned = s.clone();
+            let (_,m) = s.random_move();
+            hist.push((s_cloned, m.unwrap()));
+        }
+        (s, hist)
     }
 
     fn playout_board_history(&self) -> (Self, Vec<(Self::GameHash, Self::Move)>) {

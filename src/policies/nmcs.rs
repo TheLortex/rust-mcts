@@ -1,4 +1,4 @@
-use std::f64;
+use std::f32;
 use std::iter::*;
 
 use super::super::game::Game;
@@ -10,7 +10,7 @@ pub struct NMCSPolicy<G: Game> {
 }
 
 impl<G: Game> NMCSPolicy<G> {
-    fn nested(self: &NMCSPolicy<G>, board: &G, level: usize) -> (f64, Vec<G::Move>) {
+    fn nested(self: &NMCSPolicy<G>, board: &G, level: usize) -> (f32, Vec<G::Move>) {
         if level == 0 {
             let (board, mut history) = board.playout_board_history();
             history.reverse();
@@ -80,7 +80,7 @@ pub struct MultiNMCSPolicy<G: Game> {
 }
 
 impl<G: Game> MultiNMCSPolicy<G> {
-    fn nested(self: &MultiNMCSPolicy<G>, board: &G, level: usize, depth: f64, bound: f64) -> f64 {
+    fn nested(self: &MultiNMCSPolicy<G>, board: &G, level: usize, depth: f32, bound: f32) -> f32 {
         let mut d = depth;
         let mut s = board.clone();
         while s.winner() == None {
@@ -152,7 +152,7 @@ pub struct MultiNMCS {
     d_pruning: bool,
     cut_on_win: bool,
     level: usize,
-    bound: f64,
+    bound: f32,
 }
 
 impl Default for MultiNMCS {

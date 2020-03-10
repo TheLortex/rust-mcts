@@ -82,7 +82,7 @@ pub struct FlatUCBMonteCarloPolicy<G: Game> {
 
 impl<G: Game> Policy<G> for FlatUCBMonteCarloPolicy<G> {
     fn play(self: &mut FlatUCBMonteCarloPolicy<G>, board: &G) -> G::Move {
-        const UCB_WEIGHT: f64 = 0.4;
+        const UCB_WEIGHT: f32 = 0.4;
         const UCB_PLAYOUTS: usize = N_PLAYOUTS;
 
         let moves = board.possible_moves();
@@ -103,14 +103,14 @@ impl<G: Game> Policy<G> for FlatUCBMonteCarloPolicy<G> {
         }
 
         for i in 0..(UCB_PLAYOUTS - moves.len()) {
-            let mut max_ucb = 0f64;
+            let mut max_ucb = 0f32;
             let mut max_move = None;
 
             for m in moves.iter() {
-                let count = *move_count.get(&m).unwrap() as f64;
-                let succ = *move_success.get(&m).unwrap() as f64;
+                let count = *move_count.get(&m).unwrap() as f32;
+                let succ = *move_success.get(&m).unwrap() as f32;
                 let mean = succ / count;
-                let ucb = mean + UCB_WEIGHT * (((moves.len() + i) as f64).ln() / count).sqrt();
+                let ucb = mean + UCB_WEIGHT * (((moves.len() + i) as f32).ln() / count).sqrt();
 
                 if ucb >= max_ucb {
                     max_move = Some(m);

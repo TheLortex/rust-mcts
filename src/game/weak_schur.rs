@@ -88,8 +88,9 @@ impl Game for WeakSchurNumber {
     type Player = ();
     type Move = usize;
     type GameHash = usize;
+    type Settings = ();
 
-    fn new(_: Self::Player) -> WeakSchurNumber {
+    fn new(_: Self::Player, _: Self::Settings) -> WeakSchurNumber {
         let partitions = Default::default();
         let last_value = 0;
         let possible_moves = WeakSchurNumber::compute_possible_moves(last_value, &partitions);
@@ -105,12 +106,12 @@ impl Game for WeakSchurNumber {
         vec![()]
     }
 
-    fn score(&self, _: Self::Player) -> f64 {
+    fn score(&self, _: Self::Player) -> f32 {
         self.partitions
             .iter()
             .map(|p| Self::best_sequence(&p))
             .max()
-            .unwrap() as f64
+            .unwrap() as f32
     }
 
     fn play(&mut self, m: &Self::Move) {

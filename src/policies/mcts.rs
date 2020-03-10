@@ -1,5 +1,5 @@
 use std::collections::HashMap;
-use std::f64;
+use std::f32;
 use std::iter::*;
 
 use super::super::game::Game;
@@ -9,20 +9,20 @@ use super::{Policy, PolicyBuilder, N_PLAYOUTS};
 
 #[derive(Debug)]
 pub struct UCTMoveInfo {
-    pub Q: f64,
-    pub N_a: f64,
+    pub Q: f32,
+    pub N_a: f32,
 }
 
 #[derive(Debug)]
 pub struct UCTNodeInfo<G: Game> {
-    pub count: f64,
+    pub count: f32,
     pub moves: HashMap<G::Move, UCTMoveInfo>,
 }
 
 pub struct UCTPolicy<G: Game> {
     color: G::Player,
     tree: HashMap<G::GameHash, UCTNodeInfo<G>>,
-    UCT_WEIGHT: f64,
+    UCT_WEIGHT: f32,
 }
 
 impl<G: Game> UCTPolicy<G> {
@@ -152,7 +152,7 @@ impl<G: Game> Policy<G> for UCTPolicy<G> {
 }
 
 pub struct UCT {
-    UCT_WEIGHT: f64,
+    UCT_WEIGHT: f32,
 }
 
 impl Default for UCT {
@@ -177,22 +177,22 @@ impl<G: Game> PolicyBuilder<G> for UCT {
 
 #[derive(Debug)]
 struct MoveInfo {
-    wins: f64,
-    count: f64,
-    wins_AMAF: f64,
-    count_AMAF: f64,
+    wins: f32,
+    count: f32,
+    wins_AMAF: f32,
+    count_AMAF: f32,
 }
 
 #[derive(Debug)]
 struct NodeInfo<G: Game> {
-    count: f64,
+    count: f32,
     moves: HashMap<G::Move, MoveInfo>,
 }
 
 pub struct RAVEPolicy<G: Game> {
     color: G::Player,
     tree: HashMap<G::GameHash, NodeInfo<G>>,
-    UCT_WEIGHT: f64,
+    UCT_WEIGHT: f32,
 }
 
 impl<G: Game> RAVEPolicy<G> {
@@ -284,7 +284,7 @@ impl<G: Game> RAVEPolicy<G> {
         }
     }
 
-    fn beta(v: &MoveInfo) -> f64 {
+    fn beta(v: &MoveInfo) -> f32 {
         let b = 0.0001;
         let mut div = v.count_AMAF + v.count + 4. * v.count_AMAF * v.count * b * b;
         if div == 0. {
@@ -293,7 +293,7 @@ impl<G: Game> RAVEPolicy<G> {
         v.count_AMAF / div
     }
 
-    fn eval(self: &RAVEPolicy<G>, state: &G::GameHash, action: &G::Move, optimistic: bool) -> f64 {
+    fn eval(self: &RAVEPolicy<G>, state: &G::GameHash, action: &G::Move, optimistic: bool) -> f32 {
         let node_info = self.tree.get(state).unwrap();
         let v = node_info.moves.get(action).unwrap();
 
@@ -326,7 +326,6 @@ impl<G: Game> RAVEPolicy<G> {
 
 impl<G: Game> Policy<G> for RAVEPolicy<G> {
     fn play(self: &mut RAVEPolicy<G>, board: &G) -> G::Move {
-        self.tree.clear();
         for _ in 0..N_PLAYOUTS {
             self.simulate(board)
         }
@@ -352,7 +351,7 @@ impl<G: Game> Policy<G> for RAVEPolicy<G> {
 }
 
 pub struct RAVE {
-    UCT_WEIGHT: f64,
+    UCT_WEIGHT: f32,
 }
 
 impl Default for RAVE {

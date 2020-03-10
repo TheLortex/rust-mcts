@@ -5,8 +5,9 @@ pub mod mcts;
 pub mod nmcs;
 pub mod nrpa;
 pub mod ppa;
+pub mod puct;
 
-pub const N_PLAYOUTS: usize = 1000;
+pub const N_PLAYOUTS: usize = 100;
 
 /* POLICY TRAITS */
 

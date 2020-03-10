@@ -1,5 +1,5 @@
 [package]
-name = "breakthrough"
+name = "zerol"
 version = "0.1.0"
 authors = ["Lucas Pluvinage <lucas.pluvinage@gmail.com>"]
 edition = "2018"
@@ -14,8 +14,11 @@ rayon = "1.3.0"
 unwrap = "1.2.1"
 cursive = "0.14"
 atomic-counter = "1.0.1"
-num-traits = "0.2"
-num-derive = "0.2"
+
+# for gym
+cpython = "0.4.1"
+ndarray = "0.13.0"
+failure = "0.1.6"
 
 [profile.dev]
 opt-level = 0
@@ -23,3 +26,14 @@ debug = true
 
 [profile.release]
 debug = true
+
+[lib]
+name = "libzerol"
+crate-type = ["cdylib"]
+
+[dependencies.pyo3]
+version = "0.8.5"
+features = ["extension-module"]
+
+[dependencies.numpy]
+version = "0.7.0"

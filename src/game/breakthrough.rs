@@ -3,16 +3,13 @@ use ansi_term::Style;
 use rand::Rng;
 use std::fmt;
 
-use num_derive::{FromPrimitive, ToPrimitive};
-use num_traits::{FromPrimitive, ToPrimitive};
-
 use std::hash::*;
 
 use super::{Game, InteractiveGame};
 
-const K: usize = 8;
+pub const K: usize = 8;
 /* PLAYERS */
-#[derive(Clone, Copy, PartialEq, Eq, Hash, FromPrimitive, ToPrimitive)]
+#[derive(Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Color {
     Black = 0,
     White = 1,
@@ -67,7 +64,7 @@ impl fmt::Debug for Cell {
 
 /* MOVE */
 
-#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug, FromPrimitive, ToPrimitive)]
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 pub enum MoveDirection {
     Front,
     FrontLeft,
@@ -86,13 +83,17 @@ impl MoveDirection {
 
 #[derive(Hash, Eq, PartialEq, Copy, Clone, Debug)]
 pub struct Move {
-    color: Color,
-    x: usize,
-    y: usize,
-    direction: MoveDirection,
+    pub color: Color,
+    pub x: usize,
+    pub y: usize,
+    pub direction: MoveDirection,
 }
 
 impl Move {
+    pub fn serialize(&self) -> usize {
+        3 * (self.x + K * self.y) + (self.direction as usize)
+    }
+
     pub fn target(&self, content: &[[Cell; K]; K]) -> (usize, usize) {
         let c = content[self.x][self.y];
         assert_ne!(c, Cell::Empty);
@@ -194,8 +195,9 @@ impl Game for Breakthrough {
     type Move = Move;
 
     type GameHash = usize;
+    type Settings = ();
 
-    fn new(turn: Color) -> Breakthrough {
+    fn new(turn: Color, _: ()) -> Breakthrough {
         let mut rng = rand::thread_rng();
 
         let mut content = [[Cell::Empty; K]; K];
@@ -212,7 +214,8 @@ impl Game for Breakthrough {
             }
         }
 
-        let (possible_moves_black, possible_moves_white) = Breakthrough::compute_possible_moves(&content);
+        let (possible_moves_black, possible_moves_white) =
+            Breakthrough::compute_possible_moves(&content);
 
         Breakthrough {
             turn,
@@ -228,7 +231,7 @@ impl Game for Breakthrough {
         vec![Color::Black, Color::White]
     }
 
-    fn score(&self, c: Self::Player) -> f64 {
+    fn score(&self, c: Self::Player) -> f32 {
         match self.winner() {
             Some(c_) if c == c_ => 1.,
             Some(_) => -1.,
@@ -265,7 +268,6 @@ impl Game for Breakthrough {
                 let (pmb, pmw) = Breakthrough::compute_possible_moves(&self.content);
                 self.possible_moves_black = pmb;
                 self.possible_moves_white = pmw;
-
 
                 self.turn = self.turn.adv();
             }
@@ -345,6 +347,30 @@ impl Breakthrough {
             }
         }
         (result_black, result_white)
+    }
+
+    pub fn serialize(&self) -> Vec<f32> {
+        let mut result = vec![];
+        result.push(if self.turn() == Color::Black {
+            -1.0
+        } else {
+            1.0
+        });
+        for x in 0..K {
+            for y in 0..K {
+                result.push(if self.content[x][y] == Cell::C(Color::Black) {
+                    1.0
+                } else {
+                    0.0
+                });
+                result.push(if self.content[x][y] == Cell::C(Color::White) {
+                    1.0
+                } else {
+                    0.0
+                });
+            }
+        }
+        result
     }
 }
 
@@ -581,7 +607,7 @@ impl InteractiveGame for IBreakthrough {
 
     fn new(turn: <Breakthrough as Game>::Player) -> Self {
         IBreakthrough {
-            game: Breakthrough::new(turn),
+            game: Breakthrough::new(turn, ()),
             choosing_move: None,
             choosing_move_cb: None,
         }
