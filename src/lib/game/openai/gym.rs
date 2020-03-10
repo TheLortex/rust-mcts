@@ -1,5 +1,6 @@
 // CODE TAKEN FROM https://raw.githubusercontent.com/MrRobb/gym-rs/master/src/lib.rs under MIT License
 
+
 #[macro_use]
 use failure;
 use cpython;
@@ -49,10 +50,7 @@ pub enum SpaceTemplate {
 	},
 }
 
-use std::hash::{Hash, Hasher};
-
-
-#[derive(Debug, Clone, Hash)]
+#[derive(Debug, Clone)]
 pub enum SpaceData {
 	DISCRETE(DiscreteType),
 	BOX(VectorType<f64>),
@@ -61,8 +59,6 @@ pub enum SpaceData {
 
 pub struct Environment<'a> {
 	gil: &'a GILGuard,
-	parent: &'a GymClient,
-	env_id: String,
 	env: PyObject,
 	observation_space: SpaceTemplate,
 	action_space: SpaceTemplate,
@@ -72,14 +68,6 @@ pub struct GymClient {
 	gil: GILGuard,
 	gym: PyModule,
 	version: String,
-}
-
-use std::fmt;
-
-impl fmt::Debug for GymClient {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>)-> fmt::Result {
-        write!(f, "TODO")
-    }
 }
 
 impl SpaceData {
@@ -117,7 +105,7 @@ impl SpaceData {
 					.map(|s| s.into_pyo().expect("Unable to parse tuple"))
 					.collect::<Vec<_>>();
 				vpyo.into_py_object(py).into_object()
-			}
+			},
 		})
 	}
 }
@@ -133,7 +121,7 @@ impl SpaceTemplate {
 					.extract::<DiscreteType>(py)
 					.map_err(|_| GymError::InvalidConversion)?;
 				Ok(SpaceData::DISCRETE(n))
-			}
+			},
 			SpaceTemplate::BOX { .. } => {
 				let v = pyo
 					.call_method(py, "flatten", NoArgs, None)
@@ -141,7 +129,7 @@ impl SpaceTemplate {
 					.extract::<Vec<f64>>(py)
 					.map_err(|_| GymError::InvalidConversion)?;
 				Ok(SpaceData::BOX(v.into()))
-			}
+			},
 			SpaceTemplate::TUPLE { .. } => {
 				let mut tuple = vec![];
 				let mut i = 0;
@@ -153,7 +141,7 @@ impl SpaceTemplate {
 					item = pyo.get_item(py, i);
 				}
 				Ok(SpaceData::TUPLE(tuple.into()))
-			}
+			},
 		}
 	}
 
@@ -179,7 +167,7 @@ impl SpaceTemplate {
 					.extract::<usize>(py)
 					.expect("Unable to convert 'n' to usize");
 				SpaceTemplate::DISCRETE { n }
-			}
+			},
 			"Box" => {
 				let high = pyo
 					.getattr(py, "high")
@@ -205,12 +193,10 @@ impl SpaceTemplate {
 
 				debug_assert_eq!(high.len(), low.len());
 				debug_assert_eq!(low.len(), shape.iter().product());
-				high.iter()
-					.zip(low.iter())
-					.for_each(|(h, l)| debug_assert!(h > l));
+				high.iter().zip(low.iter()).for_each(|(h, l)| debug_assert!(h > l));
 
 				SpaceTemplate::BOX { high, low, shape }
-			}
+			},
 			"Tuple" => {
 				let mut i = 0;
 				let mut tuple = vec![];
@@ -225,7 +211,7 @@ impl SpaceTemplate {
 				}
 
 				SpaceTemplate::TUPLE { spaces: tuple }
-			}
+			},
 			_ => unreachable!(),
 		}
 	}
@@ -243,7 +229,7 @@ impl SpaceTemplate {
 					}
 				}
 				SpaceData::BOX(v.into())
-			}
+			},
 			SpaceTemplate::TUPLE { spaces } => {
 				let mut tuple = vec![];
 				for space in spaces {
@@ -251,7 +237,7 @@ impl SpaceTemplate {
 					tuple.push(sample);
 				}
 				SpaceData::TUPLE(tuple.into())
-			}
+			},
 		}
 	}
 }
@@ -292,7 +278,7 @@ impl<'a> Environment<'a> {
 				self.env
 					.call_method(py, "step", (vv,), None)
 					.map_err(|_| GymError::InvalidAction)?
-			}
+			},
 			Action::TUPLE(spaces) => {
 				let vpyo = spaces
 					.to_vec()
@@ -303,15 +289,13 @@ impl<'a> Environment<'a> {
 				self.env
 					.call_method(py, "step", (tpyo,), None)
 					.map_err(|_| GymError::InvalidAction)?
-			}
+			},
 		};
 
 		let s = State {
-			observation: self.observation_space.extract_data(
-				result
-					.get_item(py, 0)
-					.map_err(|_| GymError::WrongStepResult)?,
-			)?,
+			observation: self
+				.observation_space
+				.extract_data(result.get_item(py, 0).map_err(|_| GymError::WrongStepResult)?)?,
 			reward: result
 				.get_item(py, 1)
 				.map_err(|_| GymError::WrongStepResult)?
@@ -346,22 +330,6 @@ impl<'a> Environment<'a> {
 	}
 }
 
-impl<'a> Clone for Environment<'a> {
-	fn clone(&self) -> Self {
-		let py = self.gil.python();
-		let cloned_state = self
-			.env
-			.call_method(py, "clone_full_state", NoArgs, None)
-			.expect("Unable to call 'clone_full_state'");
-
-		let env = self.parent.make(&self.env_id);
-		env.env
-			.call_method(py, "restore_full_state", (cloned_state,), None)
-			.expect("Unable to call 'restore_full_state'");
-		env
-	}
-}
-
 impl Default for GymClient {
 	fn default() -> Self {
 		// Get python
@@ -375,8 +343,8 @@ impl Default for GymClient {
 			Result::Ok(argv) => {
 				argv.call_method(py, "append", ("",), None)
 					.expect("Error: sys.argv.append('')");
-			}
-			Result::Err(_) => {}
+			},
+			Result::Err(_) => {},
 		};
 
 		// Import gym
@@ -401,8 +369,6 @@ impl GymClient {
 
 		Environment {
 			gil: &self.gil,
-			parent: &self,
-			env_id: env_id.to_string(),
 			observation_space: SpaceTemplate::extract_template(
 				env.getattr(py, "observation_space")
 					.expect("Unable to get attribute 'observation_space'"),

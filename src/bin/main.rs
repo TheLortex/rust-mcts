@@ -7,43 +7,33 @@
 #![feature(fn_traits)]
 #![feature(drain_filter)]
 
-use cursive::direction::Direction;
-use cursive::event::{Event, EventResult, MouseButton, MouseEvent};
-use cursive::theme::{BaseColor, Color, ColorStyle};
-use cursive::views::{Button, Dialog, LinearLayout, NamedView, Panel, SelectView};
+use cursive::views::{Dialog,LinearLayout,NamedView,Button};
 use cursive::Cursive;
-use cursive::Printer;
-use cursive::Vec2;
 
-use atomic_counter::{AtomicCounter, RelaxedCounter};
+use atomic_counter::{AtomicCounter,RelaxedCounter};
 
 use std::collections::hash_map::DefaultHasher;
 use std::convert::TryFrom;
 use std::hash::{Hash, Hasher};
-use std::mem;
 
 use rand::seq::SliceRandom;
 use rand::Rng;
 use std::cell::RefCell;
-use std::rc::Rc;
 use std::sync::Arc;
 
 use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
 use rayon::prelude::*;
 
-pub mod game;
-pub mod policies;
+extern crate zerol;
 
-#[cfg(test)]
-mod tests;
 
-use self::game::breakthrough::*;
-use self::game::misere_breakthrough::*;
-use self::game::weak_schur::*;
-use self::game::hashcode_20::*;
-use self::game::{Game, InteractiveGame, MoveCode, NoFeatures};
-use self::policies::{
-    flat::*, mcts::*, nmcs::*, nrpa::*, ppa::*, Policy, PolicyBuilder, SinglePolicy, SinglePolicyBuilder,
+use zerol::game::breakthrough::*;
+use zerol::game::misere_breakthrough::*;
+use zerol::game::weak_schur::*;
+use zerol::game::hashcode_20::*;
+use zerol::game::{Game, InteractiveGame, MoveCode, NoFeatures};
+use zerol::policies::{
+    flat::*, mcts::*, nmcs::*, nrpa::*, ppa::*, puct::*, Policy, PolicyBuilder, SinglePolicy, SinglePolicyBuilder,
 };
 
 fn game_solo<G: Game, P: SinglePolicyBuilder<G>>(pb: &P, settings: G::Settings) -> f32 {
@@ -93,7 +83,7 @@ pub fn monte_carlo_match<G: Game, P1: PolicyBuilder<G> + Sync, P2: PolicyBuilder
     n: usize,
     pb1: &P1,
     pb2: &P2,
-    settings: G::Settings,
+    settings: &G::Settings,
 ) -> usize {
     let pb = ProgressBar::new(n as u64);
     pb.set_style(
@@ -199,12 +189,12 @@ fn main_ui() {
 
 pub struct BTCapture {}
 impl MoveCode<Breakthrough> for BTCapture {
-    fn code(game: &Breakthrough, action: &game::breakthrough::Move) -> usize {
+    fn code(game: &Breakthrough, action: &zerol::game::breakthrough::Move) -> usize {
         let mut s = DefaultHasher::new();
         action.hash(&mut s);
         let capture = {
             let (tx, ty) = action.target(&game.content);
-            if game.content[tx][ty] == game::breakthrough::Cell::Empty {
+            if game.content[tx][ty] == zerol::game::breakthrough::Cell::Empty {
                 0
             } else {
                 1
@@ -215,22 +205,41 @@ impl MoveCode<Breakthrough> for BTCapture {
     }
 }
 
+use zerol::misc::evaluator;
+use std::marker::PhantomData;
+
+use tensorflow::{Code, Graph, Session, SessionOptions, Status};
+const MODEL_PATH: &str = "models/sample";
+
 fn main() {
-    /*let p1 = RAVE::default();
-    let p2 = PPA::<_, BTCapture>::default();
+
+    let mut graph = Graph::new();
+    let session = Session::from_saved_model(
+        &SessionOptions::new(),
+        &["serve"],
+        &mut graph,
+        MODEL_PATH,
+    ).unwrap();
+
+    let p1 = Random {};
+    let p2 = PUCT {
+        _g: PhantomData,
+        C_PUCT: 0.4,
+        evaluate: &(|board| evaluator(&session, &graph, board)),
+    };
 
     println!(
         "Result: {}",
-        monte_carlo_match::<Breakthrough, _, _>(100, &p1, &p2, ())
-    );*/
+        monte_carlo_match::<Breakthrough, _, _>(100, &p1, &p2, &())
+    );
     //main_ui();
 /*
     let pb = NRPA::<_, NoFeatures>::default();
     let res = game_solo::<WeakSchurNumber, _>(&pb, ());
     println!("=> {} ", res);*/
-
+/*
     let pb = NRPA::<_, NoFeatures>::default();
     let config = Hashcode20Settings::new_from_file("./data/b_read_on.txt");
     let res = game_solo::<Hashcode20, _>(&pb, &config);
-    println!("=> {} ", res);
+    println!("=> {} ", res);*/
 }

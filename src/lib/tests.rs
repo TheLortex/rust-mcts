@@ -1,9 +1,15 @@
-use super::*;
+
 extern crate test;
 use test::Bencher;
-use super::game::*;
 
-type G = Breakthrough;
+use rand::seq::SliceRandom;
+use rand::Rng;
+
+use super::*;
+use super::game::*;
+use super::policies::*;
+
+type G = breakthrough::Breakthrough;
 
 #[bench]
 #[ignore]
@@ -67,7 +73,7 @@ fn bench_is_valid(b: &mut Bencher) {
 #[bench]
 fn bench_ppa_simulate(b: &mut Bencher) {
     let game = G::new(G::players()[0], ());
-    let pb = PPA::<_, NoFeatures>::default();
+    let pb = policies::ppa::PPA::<_, NoFeatures>::default();
 
     b.iter(|| {
         let mut policy = pb.create(G::players()[0]);
@@ -78,7 +84,7 @@ fn bench_ppa_simulate(b: &mut Bencher) {
 #[bench]
 fn bench_ppa_next_move(b: &mut Bencher) {
     let game = G::new(G::players()[0], ());
-    let pb = PPA::<_, NoFeatures>::default();
+    let pb = policies::ppa::PPA::<_, NoFeatures>::default();
 
     b.iter(|| {
         let mut policy = pb.create(G::players()[0]);

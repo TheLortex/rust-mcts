@@ -9,14 +9,13 @@ pub mod breakthrough;
 pub mod misere_breakthrough;
 pub mod weak_schur;
 pub mod hashcode_20;
-pub mod openai;
 
 /* A MULTI-PLAYER GAME */
 pub trait Game: Sized + Clone + Debug {
     type Player: PartialEq + Eq + Copy + Clone + Debug;
     type Move: PartialEq + Eq + Copy + Clone + Hash + Debug;
     type GameHash: PartialEq + Eq + Copy + Clone + Hash + Debug;
-    type Settings: Clone + Debug;
+    type Settings: Sync + Clone + Debug;
 
     fn new(turn: Self::Player, settings: Self::Settings) -> Self;
 
