@@ -79,6 +79,7 @@ impl<G: MultiplayerGame> MultiplayerPolicy<G> for FlatMonteCarloPolicy<G> {
     }
 }
 
+#[derive(Default)]
 pub struct FlatMonteCarlo {}
 
 impl<G: MultiplayerGame> MultiplayerPolicyBuilder<G> for FlatMonteCarlo {
@@ -155,6 +156,7 @@ impl<G: MultiplayerGame> MultiplayerPolicy<G> for FlatUCBMonteCarloPolicy<G> {
     }
 }
 
+#[derive(Default)]
 pub struct FlatUCBMonteCarlo {}
 
 impl<G: MultiplayerGame> MultiplayerPolicyBuilder<G> for FlatUCBMonteCarlo {
