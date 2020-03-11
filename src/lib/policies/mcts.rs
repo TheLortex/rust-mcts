@@ -161,6 +161,15 @@ impl Default for UCT {
     }
 }
 
+use std::fmt;
+impl fmt::Display for UCT {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        writeln!(f, "UCT")?;
+        writeln!(f, "|| UCT_WEIGHT: {}", self.UCT_WEIGHT)?;
+        writeln!(f, "|| N_PLAYOUT: {}", N_PLAYOUTS)
+    }
+} 
+
 impl<G: MultiplayerGame> MultiplayerPolicyBuilder<G> for UCT {
     type P = UCTPolicy<G>;
 
@@ -359,6 +368,14 @@ impl Default for RAVE {
         RAVE { UCT_WEIGHT: 0.4 }
     }
 }
+
+impl fmt::Display for RAVE {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        writeln!(f, "RAVE")?;
+        writeln!(f, "|| UCT_WEIGHT: {}", self.UCT_WEIGHT)?;
+        writeln!(f, "|| N_PLAYOUT: {}", N_PLAYOUTS)
+    }
+} 
 
 impl<G: MultiplayerGame> MultiplayerPolicyBuilder<G> for RAVE {
     type P = RAVEPolicy<G>;

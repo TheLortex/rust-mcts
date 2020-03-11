@@ -1,7 +1,7 @@
 use std::f32;
 use std::iter::*;
 
-use super::super::game::{MultiplayerGame};
+use super::super::game::MultiplayerGame;
 use super::{MultiplayerPolicy, MultiplayerPolicyBuilder, N_PLAYOUTS};
 
 use std::collections::HashMap;
@@ -36,7 +36,11 @@ impl<'a, G: MultiplayerGame, F: Fn(&G) -> (HashMap<G::Move, f32>, f32)> PUCTPoli
             self.expand(&b, policy);
             value
         } else {
-            if b.has_won(self.color) { 1. } else {0.}
+            if b.has_won(self.color) {
+                1.
+            } else {
+                0.
+            }
         };
         self.backup(history, value);
     }
@@ -76,7 +80,9 @@ impl<'a, G: MultiplayerGame, F: Fn(&G) -> (HashMap<G::Move, f32>, f32)> PUCTPoli
                 max_move = Some(*_move);
             }
         }
-        max_move.or_else(|| {panic!("Failed to select a move. {:?}", node_info.moves)}).unwrap()
+        max_move
+            .or_else(|| panic!("Failed to select a move. {:?}", node_info.moves))
+            .unwrap()
     }
 
     fn expand(self: &mut PUCTPolicy<'a, G, F>, board: &G, policy: HashMap<G::Move, f32>) {
@@ -113,7 +119,9 @@ impl<'a, G: MultiplayerGame, F: Fn(&G) -> (HashMap<G::Move, f32>, f32)> PUCTPoli
     }
 }
 
-impl<'a, G: MultiplayerGame, F: Fn(&G) -> (HashMap<G::Move, f32>, f32)> MultiplayerPolicy<G> for PUCTPolicy<'a, G, F> {
+impl<'a, G: MultiplayerGame, F: Fn(&G) -> (HashMap<G::Move, f32>, f32)> MultiplayerPolicy<G>
+    for PUCTPolicy<'a, G, F>
+{
     fn play(self: &mut PUCTPolicy<'a, G, F>, board: &G) -> G::Move {
         for _ in 0..N_PLAYOUTS {
             self.simulate(board)
@@ -142,7 +150,7 @@ impl<'a, G: MultiplayerGame, F: Fn(&G) -> (HashMap<G::Move, f32>, f32)> Multipla
 pub struct PUCT<'a, G: MultiplayerGame, F: Fn(&G) -> (HashMap<G::Move, f32>, f32)> {
     pub C_PUCT: f32,
     pub evaluate: &'a F,
-    pub _g: PhantomData<G>,
+    pub _g: PhantomData<fn() -> G>,
 }
 
 impl<G: MultiplayerGame, F: Fn(&G) -> (HashMap<G::Move, f32>, f32)> Copy for PUCT<'_, G, F> {}
@@ -153,7 +161,20 @@ impl<G: MultiplayerGame, F: Fn(&G) -> (HashMap<G::Move, f32>, f32)> Clone for PU
     }
 }
 
-impl<'a, G: MultiplayerGame, F: Fn(&G) -> (HashMap<G::Move, f32>, f32)> MultiplayerPolicyBuilder<G> for PUCT<'a, G, F> {
+use std::fmt;
+impl<G: MultiplayerGame, F: Fn(&G) -> (HashMap<G::Move, f32>, f32)> fmt::Display
+    for PUCT<'_, G, F>
+{
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        writeln!(f, "PUCT")?;
+        writeln!(f, "|| C_PUCT: {}", self.C_PUCT)?;
+        writeln!(f, "|| N_PLAYOUTS: {}", N_PLAYOUTS)
+    }
+}
+
+impl<'a, G: MultiplayerGame, F: Fn(&G) -> (HashMap<G::Move, f32>, f32)> MultiplayerPolicyBuilder<G>
+    for PUCT<'a, G, F>
+{
     type P = PUCTPolicy<'a, G, F>;
 
     fn create(&self, color: G::Player) -> Self::P {

@@ -26,6 +26,13 @@ impl<G: SingleplayerGame> SingleplayerPolicy<G> for RandomPolicy {
 #[derive(Default)]
 pub struct Random {}
 
+use std::fmt;
+impl fmt::Display for Random {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        writeln!(f, "Random")
+    }
+} 
+
 impl<G: MultiplayerGame> MultiplayerPolicyBuilder<G> for Random {
     type P = RandomPolicy;
 
@@ -81,6 +88,12 @@ impl<G: MultiplayerGame> MultiplayerPolicy<G> for FlatMonteCarloPolicy<G> {
 
 #[derive(Default)]
 pub struct FlatMonteCarlo {}
+
+impl fmt::Display for FlatMonteCarlo {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        writeln!(f, "FlatMonteCarlo")
+    }
+} 
 
 impl<G: MultiplayerGame> MultiplayerPolicyBuilder<G> for FlatMonteCarlo {
     type P = FlatMonteCarloPolicy<G>;
@@ -158,6 +171,12 @@ impl<G: MultiplayerGame> MultiplayerPolicy<G> for FlatUCBMonteCarloPolicy<G> {
 
 #[derive(Default)]
 pub struct FlatUCBMonteCarlo {}
+
+impl fmt::Display for FlatUCBMonteCarlo {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        writeln!(f, "FlatUCBMonteCarlo")
+    }
+} 
 
 impl<G: MultiplayerGame> MultiplayerPolicyBuilder<G> for FlatUCBMonteCarlo {
     type P = FlatUCBMonteCarloPolicy<G>;

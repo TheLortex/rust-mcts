@@ -9,6 +9,7 @@ pub mod puct;
 
 pub const N_PLAYOUTS: usize = 100;
 
+use std::fmt::Display;
 /* MULTIPLAYER POLICY TRAITS */
 /**
  * A static policy.
@@ -19,7 +20,7 @@ pub trait MultiplayerPolicy<T: MultiplayerGame> {
 /**
  * A static policy builder.
  */
-pub trait MultiplayerPolicyBuilder<T: MultiplayerGame> {
+pub trait MultiplayerPolicyBuilder<T: MultiplayerGame>: Display {
     type P: MultiplayerPolicy<T>;
 
     fn create(&self, color: T::Player) -> Self::P;
@@ -27,7 +28,7 @@ pub trait MultiplayerPolicyBuilder<T: MultiplayerGame> {
 /**
  * A dynamic policy builder.
  */
-pub trait DynMultiplayerPolicyBuilder<'a, T: MultiplayerGame> {
+pub trait DynMultiplayerPolicyBuilder<'a, T: MultiplayerGame>: Display {
     fn create(&self, color: T::Player) -> Box<dyn MultiplayerPolicy<T> + 'a>;
 }
 

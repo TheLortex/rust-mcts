@@ -167,6 +167,18 @@ impl Default for MultiNMCS {
     }
 }
 
+use std::fmt;
+impl fmt::Display for MultiNMCS {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        writeln!(f, "MultiNMCS")?;
+        writeln!(f, "|| Discounting: {}", self.discounting)?;
+        writeln!(f, "|| D_pruning: {}", self.d_pruning)?;
+        writeln!(f, "|| Cut_on_win: {}", self.cut_on_win)?;
+        writeln!(f, "|| LEVEL: {}", self.level)?;
+        writeln!(f, "|| BOUND: {}", self.bound)
+    }
+} 
+
 impl<G: MultiplayerGame> MultiplayerPolicyBuilder<G> for MultiNMCS {
     type P = MultiNMCSPolicy<G>;
 

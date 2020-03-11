@@ -162,6 +162,9 @@ fn main() {
 
     let gb = BreakthroughBuilder {};
 
+    println!("Player 1:\n{}", p1);
+    println!("Player 2:\n{}", p2);
+
     println!(
         "Result: {}",
         monte_carlo_match::<_, _>(100, p1, p2, &gb)

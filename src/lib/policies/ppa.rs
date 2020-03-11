@@ -230,6 +230,16 @@ impl<G: MultiplayerGame, M: MoveCode<G>> Default for PPA<G,M> {
     }
 }
 
+use std::fmt;
+impl<G: MultiplayerGame, M: MoveCode<G>> fmt::Display for PPA<G,M> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        writeln!(f, "PPA")?;
+        writeln!(f, "|| ALPHA: {}", self.alpha)?;
+        writeln!(f, "|| UCT_WEIGHT: {}", self.UCT_WEIGHT)?;
+        writeln!(f, "|| N_PLAYOUTS: {}", N_PLAYOUTS)
+    }
+} 
+
 impl<G: MultiplayerGame, M: MoveCode<G>> MultiplayerPolicyBuilder<G> for PPA<G,M> {
     type P = PPAPolicy<G, M>;
 
