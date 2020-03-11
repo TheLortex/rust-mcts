@@ -5,6 +5,61 @@ use std::iter::*;
 use super::super::game::MultiplayerGame;
 use super::{MultiplayerPolicy, MultiplayerPolicyBuilder, N_PLAYOUTS};
 
+
+/* ABSTRACT MCTS */
+
+pub trait MCTSPolicy<G: MultiplayerGame> {
+    type NodeInfo;
+    type PlayoutInfo;
+
+    fn tree(&self) -> &HashMap<usize, Self::NodeInfo>;
+    fn tree_mut(&mut self) -> &mut HashMap<usize, Self::NodeInfo>;
+
+
+    fn select_move(&self, board: &G) -> G::Move;
+
+    fn select(&self, board: &mut G) -> Vec<(usize, G::Move)> {
+        let mut history: Vec<(usize, G::Move)> = Vec::new();
+
+        while !board.is_finished() {
+            let s_t = board.hash();
+            match self.tree().get(&s_t) {
+                None => {
+                    /* we're at a leaf node. */
+                    return history;
+                }
+                Some(_node) => {
+                    /* play next move */
+                    let a = self.select_move(&board);
+                    history.push((s_t, a));
+                    board.play(&a)
+                }
+            };
+        }
+        history
+    }
+
+
+    fn default_node(&self, board: &G) -> Self::NodeInfo;
+
+    fn expand(&mut self, board: &G) {
+        let new_node = self.default_node(board);
+        self.tree_mut().insert(board.hash(), new_node);
+    }
+
+    fn simulate(&self, board: &G) -> Self::PlayoutInfo;
+
+    fn backpropagate(&mut self, history: &Vec<(usize, G::Move)>, playout: &Self::PlayoutInfo);
+
+    fn tree_search(&mut self, board: &G) {
+        let mut b = board.clone();
+        let history = self.select(&mut b);
+        self.expand(&b);
+        let playout = self.simulate(&b);
+        self.backpropagate(&history, &playout);
+    }
+}
+
 /* UCT */
 
 #[derive(Debug)]
@@ -35,41 +90,34 @@ impl<G: MultiplayerGame> UCTPolicy<G> {
 
     fn update(
         self: &mut UCTPolicy<G>,
-        history: Vec<(usize, Option<G::Move>)>,
+        history: Vec<(usize, G::Move)>,
         has_won: bool,
     ) {
         let z = if has_won { 1. } else { 0. };
         for (state, action) in history.iter() {
             let mut node = self.tree.get_mut(state).unwrap();
             node.count += 1.;
-            if let Some(action) = action {
-                let mut v = node.moves.get_mut(action).unwrap();
-                (*v).N_a += 1.;
-                (*v).Q += (z - (*v).Q) / (*v).N_a;
-            }
+
+            let mut v = node.moves.get_mut(action).unwrap();
+            (*v).N_a += 1.;
+            (*v).Q += (z - (*v).Q) / (*v).N_a;
         }
     }
 
-    fn sim_tree(self: &mut UCTPolicy<G>, b: &mut G) -> Vec<(usize, Option<G::Move>)> {
-        let mut history: Vec<(usize, Option<G::Move>)> = Vec::new();
+    fn sim_tree(self: &mut UCTPolicy<G>, b: &mut G) -> Vec<(usize, G::Move)> {
+        let mut history: Vec<(usize, G::Move)> = Vec::new();
 
         while { !b.is_finished()} {
             let s_t = b.hash();
             match self.tree.get(&s_t) {
                 None => {
-                    //history.push((s_t, None));
                     self.new_node(&b);
                     return history;
                 }
                 Some(_node) => {
-                    if let Some(a) = self.select_move(&b) {
-                        history.push((s_t, Some(a)));
-                        b.play(&a)
-                    } else {
-                        //panic!("? {} {:?}", b.possible_moves().len(), b);
-                        history.push((s_t, None));
-                        return history;
-                    }
+                    let a = self.select_move(&b).unwrap();
+                    history.push((s_t, a));
+                    b.play(&a)
                 }
             };
         }
