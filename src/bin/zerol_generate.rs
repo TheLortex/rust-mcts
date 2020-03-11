@@ -131,6 +131,8 @@ use std::sync::atomic::Ordering;
 
 use std::{thread, time};
 
+use tensorflow;
+
 fn run() -> Result<(), Box<dyn Error>> {
     /* check that model exists. */
     if !Path::new(MODEL_PATH).exists() {
@@ -147,8 +149,13 @@ fn run() -> Result<(), Box<dyn Error>> {
         ));
     };
     let mut graph = Graph::new();
+    let mut options = SessionOptions::new();
+    options.set_config(&[50, 2, 32, 1]).unwrap(); 
+    // config = tf.ConfigProto()
+    // config.gpu_options.allow_growth = True
+    // config.SerializeToString()
     let session = Session::from_saved_model(
-        &SessionOptions::new(),
+        &options,
         &["serve"],
         &mut graph,
         MODEL_PATH,

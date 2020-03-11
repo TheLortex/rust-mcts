@@ -12,6 +12,7 @@ name = "zerol"
 path = "src/lib/lib.rs"
 
 [dependencies]
+clap = "2.33.0"
 serde = "1.0"
 serde-pickle = "0.6"
 nix = "0.17.0"

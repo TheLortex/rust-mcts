@@ -1,6 +1,7 @@
 #![allow(dead_code)]
 #![allow(unused_imports)]
 #![allow(non_snake_case)]
+#![feature(impl_trait_in_bindings)]
 
 use cursive::views::{Button, Dialog, LinearLayout, NamedView};
 use cursive::Cursive;
@@ -30,20 +31,6 @@ use zerol::policies::{
     flat::*, mcts::*, nmcs::*, nrpa::*, ppa::*, puct::*, MultiplayerPolicy,
     MultiplayerPolicyBuilder, SingleplayerPolicy, SingleplayerPolicyBuilder,
 };
-
-fn game_solo<G: SingleplayerGame, P: SingleplayerPolicyBuilder<G>>(pb: &P, game: &G) -> f32 {
-    let mut p = pb.create();
-    let mut b = game.clone();
-    let actions = p.solve(&b);
-    for a in actions {
-        println!("{:?}", b);
-        println!("Action: {:?}", a);
-        b.play(&a);
-        //   println!("Score: {}", b.score(player));
-    }
-    println!("{:?}", b);
-    b.score()
-}
 
 fn game_duel<G: MultiplayerGame, P1: MultiplayerPolicy<G>, P2: MultiplayerPolicy<G>>(
     p1: &mut P1,
@@ -133,81 +120,8 @@ pub fn monte_carlo_match<
     count_victory
 }
 
-struct GameDuelUI {}
-
-impl GameDuelUI {
-    fn render<
-        IG: InteractiveGame,
-        P1: MultiplayerPolicy<IG::G> + 'static,
-        P2: MultiplayerPolicy<IG::G> + 'static,
-    >(
-        start: <IG::G as MultiplayerGame>::Player,
-        _p1: P1,
-        p2: P2,
-    ) -> impl cursive::view::View {
-        //let r_p1 = RefCell::new(p1);
-        let r_p2 = RefCell::new(p2);
-
-        LinearLayout::vertical()
-            .child(NamedView::new("game", IG::new(start)))
-            .child(Button::new_raw("Next", move |s| {
-                let state: &mut IG = &mut s.find_name("game").unwrap();
-
-                //let mut p1 = r_p1.borrow_mut();
-                let mut p2 = r_p2.borrow_mut();
-                let p1_to_play = state.get().turn() == <IG::G as MultiplayerGame>::players()[0];
-
-                if p1_to_play {
-                    //p1.play(&state)
-                    state.choose_move(Box::new(|action, state| state.get_mut().play(&action)))
-                } else {
-                    let action = p2.play(state.get());
-                    state.get_mut().play(&action);
-                };
-            }))
-    }
-}
-
 type G = Breakthrough;
 
-fn main_ui() {
-    let mut siv = Cursive::default();
-
-    let pb1 = Random::default();
-    let p1: RandomPolicy = MultiplayerPolicyBuilder::<G>::create(&pb1,G::players()[0]);
-    let pb2 = UCT::default();
-    let p2: UCTPolicy<G> = pb2.create(G::players()[1]);
-
-    siv.add_layer(
-        Dialog::new()
-            .title("Breakthrough")
-            .content(GameDuelUI::render::<ui::IBreakthrough, _, _>(
-                G::players()[0],
-                p1,
-                p2,
-            )),
-    );
-
-    siv.run();
-}
-
-pub struct BTCapture {}
-impl MoveCode<Breakthrough> for BTCapture {
-    fn code(game: &Breakthrough, action: &zerol::game::breakthrough::Move) -> usize {
-        let mut s = DefaultHasher::new();
-        action.hash(&mut s);
-        let capture = {
-            let (tx, ty) = action.target(&game.content);
-            if game.content[tx][ty] == zerol::game::breakthrough::Cell::Empty {
-                0
-            } else {
-                1
-            }
-        };
-        capture.hash(&mut s);
-        usize::try_from(s.finish()).unwrap()
-    }
-}
 
 use std::marker::PhantomData;
 use zerol::misc::evaluator;
@@ -215,7 +129,31 @@ use zerol::misc::evaluator;
 use tensorflow::{Code, Graph, Session, SessionOptions, Status};
 const MODEL_PATH: &str = "models/sample";
 
+use clap::{Arg, App, SubCommand};
+
 fn main() {
+    let matches = App::new("zerol-evaluate")
+        .arg(Arg::with_name("policy")
+            .short("p")
+            .long("policy")
+            .possible_values(&["rand", "flat", "flat_ucb", "uct", "rave", "ppa", "nmcs"]))
+        .get_matches();
+
+    let config = matches.value_of("policy").unwrap_or("rand");
+
+    let rand: Box<&dyn MultiplayerPolicyBuilder<G>> = Box::new(&Random::default() as &dyn MultiplayerPolicyBuilder<G>);
+/*
+    let p2: Box<&dyn MultiplayerPolicyBuilder<G>> = match config {
+        "rand" => Box::new(),
+       /* "flat" => Box::new(FlatMonteCarlo::default() as dyn MultiplayerPolicyBuilder<G>),
+        "flat_ucb" => Box::new(FlatUCBMonteCarlo::default() as dyn MultiplayerPolicyBuilder<G>),
+        "uct" => Box::new(UCT::default() as dyn MultiplayerPolicyBuilder<G>),
+        "rave" => Box::new(RAVE::default() as dyn MultiplayerPolicyBuilder<G>),
+        "ppa" => Box::new(PPA::default() as dyn MultiplayerPolicyBuilder<G>),
+        "nmcs" => Box::new(MultiNMCS::default() as dyn MultiplayerPolicyBuilder<G>)*/
+    };*/
+ 
+
     let mut graph = Graph::new();
     let session =
         Session::from_saved_model(&SessionOptions::new(), &["serve"], &mut graph, MODEL_PATH)
@@ -226,8 +164,6 @@ fn main() {
         C_PUCT: 0.4,
         evaluate: &(|board| evaluator(&session, &graph, board)),
     };
-    let p2 = FlatMonteCarlo::default();
-    
 
     let gb = BreakthroughBuilder {};
 
@@ -235,14 +171,4 @@ fn main() {
         "Result: {}",
         monte_carlo_match::<_, _, _, _>(100, &p1, &p2, &gb)
     );
-    //main_ui();
-    /*
-    let pb = NRPA::<_, NoFeatures>::default();
-    let res = game_solo::<WeakSchurNumber, _>(&pb, ());
-    println!("=> {} ", res);*/
-    /*
-    let pb = NRPA::<_, NoFeatures>::default();
-    let config = Hashcode20Settings::new_from_file("./data/b_read_on.txt");
-    let res = game_solo::<Hashcode20, _>(&pb, &config);
-    println!("=> {} ", res);*/
 }
