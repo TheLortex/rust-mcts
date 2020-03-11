@@ -9,8 +9,6 @@ import numpy as np
 import pickle
 from threading import Thread, RLock
 
-K = 8
-
 def build_network():
     input   = keras.Input(shape=(2*K*K+1), name='board')
     x       = layers.Dense((1*K*K), activation='relu')(input)
@@ -23,15 +21,15 @@ def build_network():
 #network.compile(optimizer="adam", loss={"policy": "categorical_crossentropy", "value": "binary_crossentropy"})
 #models.save_model(network, "models/sample", include_optimizer=False, save_format="tf")
 
-REPLAY_BUFFER = 128000 # SAVE THE LAST 12800 GAMES
-BATCH_SIZE    = 128
+REPLAY_BUFFER = 128000 # SAVE THE LAST 128000 GAMES
+BATCH_SIZE    = 512
 N_EPOCH       = 1000
 
 SAVE_BUFFER   = True 
 SAVE_NETWORK  = True
 
 # BREAKTHROUGH SETTINGS
-K = 8
+K = 5
 
 
 input_data = np.zeros((REPLAY_BUFFER, 2*K*K+1))

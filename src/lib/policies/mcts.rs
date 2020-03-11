@@ -264,7 +264,7 @@ impl<G: MultiplayerGame> RAVEPolicy<G> {
             let mut max_value = 0.;
             for _move in moves.iter() {
                 let value = self.eval(&board.hash(), _move, true);
-                if value >= max_value {
+                if (value >= max_value) || max_move.is_none() {
                     max_value = value;
                     max_move = Some(*_move);
                 }
@@ -275,7 +275,7 @@ impl<G: MultiplayerGame> RAVEPolicy<G> {
             let mut min_value = 1.;
             for _move in moves.iter() {
                 let value = self.eval(&board.hash(), _move, false);
-                if value <= min_value {
+                if (value <= min_value) || min_move.is_none() {
                     min_value = value;
                     min_move = Some(*_move);
                 }

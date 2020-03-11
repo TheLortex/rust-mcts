@@ -85,9 +85,10 @@ pub fn monte_carlo_match<
     let pb = ProgressBar::new(n as u64);
     pb.set_style(
         ProgressStyle::default_bar().template(
-            "{spinner:.green} [{elapsed_precise}] [{bar:70.cyan/blue}] {msg} (ETA {eta})",
+            "{spinner:.green} [{elapsed_precise}] [{wide_bar:.cyan/blue}] {msg} (ETA {eta})",
         ),
     );
+    pb.enable_steady_tick(200);
 
     let c1 = Arc::new(RelaxedCounter::new(0));
     let c2 = Arc::new(RelaxedCounter::new(0));
@@ -180,7 +181,7 @@ fn main_ui() {
     siv.add_layer(
         Dialog::new()
             .title("Breakthrough")
-            .content(GameDuelUI::render::<IBreakthrough, _, _>(
+            .content(GameDuelUI::render::<ui::IBreakthrough, _, _>(
                 G::players()[0],
                 p1,
                 p2,
@@ -220,12 +221,13 @@ fn main() {
         Session::from_saved_model(&SessionOptions::new(), &["serve"], &mut graph, MODEL_PATH)
             .unwrap();
 
-    let p1 = Random {};
-    let p2 = PUCT {
+    let p1 = PUCT {
         _g: PhantomData,
         C_PUCT: 0.4,
         evaluate: &(|board| evaluator(&session, &graph, board)),
     };
+    let p2 = Random::default();
+    
 
     let gb = BreakthroughBuilder {};
 

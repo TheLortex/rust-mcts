@@ -7,7 +7,9 @@ use std::hash::*;
 
 use super::{BaseGame, MultiplayerGame, InteractiveGame, MultiplayerGameBuilder};
 
-pub const K: usize = 8;
+pub mod ui;
+
+pub const K: usize = 5;
 /* PLAYERS */
 #[derive(Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Color {
@@ -307,6 +309,10 @@ impl BaseGame for Breakthrough {
         } else {
             &self.possible_moves_white
         }
+    }
+
+    fn is_finished(&self) -> bool {
+        self.winner().is_some()
     }
 }
 

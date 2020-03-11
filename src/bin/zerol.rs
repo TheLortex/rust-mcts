@@ -15,13 +15,16 @@ use tensorflow::{Code, Graph, Session, SessionOptions, Status};
 
 const MODEL_PATH: &str = "models/sample";
 
-use zerol::game::breakthrough::{Breakthrough, BreakthroughBuilder, Color, Move};
+use zerol::game::breakthrough::{Breakthrough, K, BreakthroughBuilder, Color, Move};
 use zerol::game::{BaseGame, MultiplayerGame, MultiplayerGameBuilder};
 use zerol::policies::puct::PUCTPolicy;
 use zerol::policies::MultiplayerPolicy;
 
 use nix::unistd::mkfifo;
 use std::io::SeekFrom;
+
+
+use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
 
 fn self_play_match<F: Fn(&Breakthrough) -> (HashMap<Move, f32>, f32)>(
     evaluate: &F,
@@ -65,8 +68,6 @@ fn self_play_match<F: Fn(&Breakthrough) -> (HashMap<Move, f32>, f32)>(
 
     (game.winner().unwrap(), history)
 }
-
-const K: usize = 8; // TODO
 
 struct FileManager {
     f: File,
@@ -121,6 +122,14 @@ use std::sync::Mutex;
 use std::sync::Arc;
 
 use zerol::misc::evaluator;
+use rayon::prelude::*;
+use rayon::iter::repeat;
+
+use std::sync::RwLock;
+use std::sync::atomic::AtomicBool;
+use std::sync::atomic::Ordering;
+
+use std::{thread, time};
 
 fn run() -> Result<(), Box<dyn Error>> {
     /* check that model exists. */
@@ -145,18 +154,21 @@ fn run() -> Result<(), Box<dyn Error>> {
         MODEL_PATH,
     )?;
 
-    let graph_and_session = Arc::new(Mutex::new((graph,session)));
+    let is_writing = Arc::new(AtomicBool::new(false));
+    let graph_and_session = Arc::new(RwLock::new((graph,session)));
     let g_and_s = graph_and_session.clone();
-
+    let i_w = is_writing.clone();
 
     //graph.operation_iter().map(|o| println!("{:?}", o.name().unwrap())).collect::<()>();
-    let mut fm = FileManager::new("./fifo");
+    let fm_mtx = Arc::new(Mutex::new(FileManager::new("./fifo")));
 
     let mut watcher: RecommendedWatcher = Watcher::new_immediate(move |x: Result<Event, _>| {
         if let Ok(x) = x {
             if x.kind == EventKind::Access(AccessKind::Close(AccessMode::Write)) {
-                
-                let mut locked_mutex = g_and_s.lock().unwrap();
+                println!("Updating model..\n");
+                i_w.store(true, Ordering::Relaxed);
+                let mut locked_mutex = g_and_s.write().unwrap();
+                i_w.store(false, Ordering::Relaxed);
                 let (ref _graph, ref mut session_m) = *locked_mutex;
                 session_m.close().expect("Unable to close the session.");
 
@@ -180,14 +192,27 @@ fn run() -> Result<(), Box<dyn Error>> {
 
     let gb = BreakthroughBuilder {};
 
-    loop {
+    let bar = ProgressBar::new_spinner();
+    bar.set_style(ProgressStyle::default_spinner().template("[{spinner}] {wide_bar} {pos} games generated ({elapsed})"));
+    bar.enable_steady_tick(200);
+
+    repeat(()).map(|_| {
         let (winner,history) = {
-            let (ref graph, ref session) = *graph_and_session.lock().unwrap();
+            let (ref graph, ref session) = *graph_and_session.read().unwrap();
             self_play_match(&(|board| evaluator(session, graph, board)), &gb)
         };
-        for (board, policy) in history.iter() {
-            let value = if board.turn() == winner { 1.0 } else { 0.0 };
-            fm.append(board, policy, &value);
+        {
+            while is_writing.load(Ordering::Relaxed) {
+                thread::sleep(time::Duration::from_millis(10));
+            };
+            let fm_mtx = fm_mtx.clone();
+            let mut fm = fm_mtx.lock().unwrap();
+            for (board, policy) in history.iter() {
+                let value = if board.turn() == winner { 1.0 } else { 0.0 };
+                fm.append(board, policy, &value);
+            }
         }
-    }
+        bar.inc(1);
+    }).collect::<()>();
+    Ok(())
 }
