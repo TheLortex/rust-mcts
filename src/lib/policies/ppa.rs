@@ -207,8 +207,8 @@ impl<G: MultiplayerGame, M: MoveCode<G>> MultiplayerPolicy<G> for PPAPolicy<G, M
 pub struct PPA<G: MultiplayerGame, M:MoveCode<G>> {
     UCT_WEIGHT: f32,
     alpha: f32,
-    _m: PhantomData<M>,
-    _g: PhantomData<G>
+    _m: PhantomData<fn() -> M>,
+    _g: PhantomData<fn() -> G>
 }
 
 impl<G: MultiplayerGame, M: MoveCode<G>> Copy for PPA<G, M> {}

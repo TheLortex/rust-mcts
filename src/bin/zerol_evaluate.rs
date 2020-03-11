@@ -1,7 +1,6 @@
 #![allow(dead_code)]
 #![allow(unused_imports)]
 #![allow(non_snake_case)]
-#![feature(impl_trait_in_bindings)]
 
 use cursive::views::{Button, Dialog, LinearLayout, NamedView};
 use cursive::Cursive;
@@ -28,13 +27,14 @@ use zerol::game::misere_breakthrough::*;
 use zerol::game::weak_schur::*;
 use zerol::game::*;
 use zerol::policies::{
+    get_multi,
     flat::*, mcts::*, nmcs::*, nrpa::*, ppa::*, puct::*, MultiplayerPolicy,
-    MultiplayerPolicyBuilder, SingleplayerPolicy, SingleplayerPolicyBuilder,
+    MultiplayerPolicyBuilder, DynMultiplayerPolicyBuilder, SingleplayerPolicy, SingleplayerPolicyBuilder,
 };
 
-fn game_duel<G: MultiplayerGame, P1: MultiplayerPolicy<G>, P2: MultiplayerPolicy<G>>(
-    p1: &mut P1,
-    p2: &mut P2,
+fn game_duel<'a, 'b, G: MultiplayerGame>(
+    mut p1: Box<dyn MultiplayerPolicy<G> + 'a>,
+    mut p2: Box<dyn MultiplayerPolicy<G> + 'b>,
     game: &G,
 ) -> G {
     let mut b = game.clone();
@@ -59,14 +59,14 @@ fn game_duel<G: MultiplayerGame, P1: MultiplayerPolicy<G>, P2: MultiplayerPolicy
 }
 
 pub fn monte_carlo_match<
+    'a, 'c,
+    'b, 'd,
     G: MultiplayerGame,
     GB: MultiplayerGameBuilder<G> + Sync,
-    P1: MultiplayerPolicyBuilder<G> + Sync,
-    P2: MultiplayerPolicyBuilder<G> + Sync,
 >(
     n: usize,
-    pb1: &P1,
-    pb2: &P2,
+    pb1: Box<dyn DynMultiplayerPolicyBuilder<'a, G> + Sync + 'c>, 
+    pb2: Box<dyn DynMultiplayerPolicyBuilder<'b, G> + Sync + 'd>,
     game_factory: &GB,
 ) -> usize {
     let pb = ProgressBar::new(n as u64);
@@ -86,15 +86,15 @@ pub fn monte_carlo_match<
             let c1 = c1.clone();
             let c2 = c2.clone();
 
-            let mut p1 = pb1.create(G::players()[0]);
-            let mut p2 = pb2.create(G::players()[1]);
+            let p1 = pb1.create(G::players()[0]);
+            let p2 = pb2.create(G::players()[1]);
 
             let starting_player = *G::players().choose(&mut rand::thread_rng()).unwrap();
             let game = game_factory.create(starting_player);
 
             let result = if game_duel(
-                &mut p1,
-                &mut p2,
+                p1,
+                p2,
                 &game,
             ).has_won(G::players()[0])
             {
@@ -131,44 +131,39 @@ const MODEL_PATH: &str = "models/sample";
 
 use clap::{Arg, App, SubCommand};
 
+use std::collections::HashMap;
+
+
 fn main() {
-    let matches = App::new("zerol-evaluate")
+    let args = App::new("zerol-evaluate")
         .arg(Arg::with_name("policy")
             .short("p")
             .long("policy")
+            .takes_value(true)
             .possible_values(&["rand", "flat", "flat_ucb", "uct", "rave", "ppa", "nmcs"]))
         .get_matches();
 
-    let config = matches.value_of("policy").unwrap_or("rand");
-
-    let rand: Box<&dyn MultiplayerPolicyBuilder<G>> = Box::new(&Random::default() as &dyn MultiplayerPolicyBuilder<G>);
-/*
-    let p2: Box<&dyn MultiplayerPolicyBuilder<G>> = match config {
-        "rand" => Box::new(),
-       /* "flat" => Box::new(FlatMonteCarlo::default() as dyn MultiplayerPolicyBuilder<G>),
-        "flat_ucb" => Box::new(FlatUCBMonteCarlo::default() as dyn MultiplayerPolicyBuilder<G>),
-        "uct" => Box::new(UCT::default() as dyn MultiplayerPolicyBuilder<G>),
-        "rave" => Box::new(RAVE::default() as dyn MultiplayerPolicyBuilder<G>),
-        "ppa" => Box::new(PPA::default() as dyn MultiplayerPolicyBuilder<G>),
-        "nmcs" => Box::new(MultiNMCS::default() as dyn MultiplayerPolicyBuilder<G>)*/
-    };*/
- 
-
+    /* Build PUCT */
     let mut graph = Graph::new();
     let session =
         Session::from_saved_model(&SessionOptions::new(), &["serve"], &mut graph, MODEL_PATH)
             .unwrap();
 
-    let p1 = PUCT {
+    let puct = PUCT {
         _g: PhantomData,
         C_PUCT: 0.4,
-        evaluate: &(|board| evaluator(&session, &graph, board)),
+        evaluate: &|board| evaluator(&session, &graph, board),
     };
+    let p1 = Box::new(puct);
+    
+    /* Build contender. */
+    let config = args.value_of("policy").unwrap_or("rand");
+    let p2 = get_multi(config);
 
     let gb = BreakthroughBuilder {};
 
     println!(
         "Result: {}",
-        monte_carlo_match::<_, _, _, _>(100, &p1, &p2, &gb)
+        monte_carlo_match::<_, _>(100, p1, p2, &gb)
     );
 }
