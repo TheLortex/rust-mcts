@@ -6,7 +6,7 @@ use std::iter::FromIterator;
 
 use tensorflow::{Graph, Session, SessionRunArgs, Tensor};
 
-pub fn evaluator(session: &Session, graph: &Graph, board: &Breakthrough) -> (HashMap<Move, f32>, f32) {
+pub fn breakthrough_evaluator(session: &Session, graph: &Graph, board: &Breakthrough) -> (HashMap<Move, f32>, f32) {
     let K_ = K as u64;
     let mut board_tensor: Tensor<f32> = Tensor::new(&[1, 2 * K_ * K_ + 1]);
     for (j, item) in board.serialize().iter().enumerate() {

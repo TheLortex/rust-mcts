@@ -2,11 +2,14 @@
 use std::f32;
 use std::iter::*;
 
-use super::super::game::{MoveTrait, MultiplayerGame, BaseGame};
-use super::{MultiplayerPolicy, MultiplayerPolicyBuilder, N_PLAYOUTS};
+use super::super::game::{MultiplayerGame, BaseGame};
+use super::{MultiplayerPolicyBuilder, N_PLAYOUTS};
+use super::mcts::{MCTSPolicy, WithMCTSPolicy};
 
 use std::collections::HashMap;
 use std::marker::PhantomData;
+
+use float_ord::FloatOrd;
 
 #[derive(Debug)]
 pub struct PUCTMoveInfo {
@@ -24,97 +27,88 @@ pub struct PUCTNodeInfo<G: MultiplayerGame> {
 pub trait Evaluator<G: BaseGame>: Fn(&G) -> (HashMap<G::Move, f32>, f32) {}
 impl<G:BaseGame, F: Fn(&G) -> (HashMap<G::Move, f32>, f32)> Evaluator <G>for F {}
 
-pub struct PUCTPolicy<'a, G: MultiplayerGame, F: Evaluator<G>> {
+pub struct PUCTPolicy_<'a, G: MultiplayerGame, F: Evaluator<G>> {
     pub color: G::Player,
     pub C_PUCT: f32,
     pub evaluate: &'a F,
     pub tree: HashMap<usize, PUCTNodeInfo<G>>,
 }
 
+impl<'a, G: MultiplayerGame, F: Evaluator<G>> MCTSPolicy<G> for PUCTPolicy_<'a, G, F> {
+    type NodeInfo = PUCTNodeInfo<G>;
+    type PlayoutInfo = (Option<HashMap<G::Move, f32>>, f32, G); // (policy, value, leaf_state).
 
-
-impl<'a, G: MultiplayerGame, F: Evaluator<G>> PUCTPolicy<'a, G, F> {
-    fn simulate(self: &mut PUCTPolicy<'a, G, F>, board: &G) {
-        let mut b = board.clone();
-        let history = self.select(&mut b);
-        let value = if !b.is_finished() {
-            let (policy, value) = (self.evaluate)(&b);
-            self.expand(&b, policy);
-            value
-        } else {
-            if b.has_won(self.color) {
-                1.
-            } else {
-                0.
-            }
-        };
-        self.backup(history, value);
+    fn tree(&self) -> &HashMap<usize, Self::NodeInfo> {
+        &self.tree
     }
 
-    fn select(self: &PUCTPolicy<'a, G, F>, b: &mut G) -> Vec<(usize, G::Move)> {
-        let mut history: Vec<(usize, G::Move)> = Vec::new();
-
-        while !b.is_finished() {
-            let s_t = b.hash();
-            match self.tree.get(&s_t) {
-                None => {
-                    return history;
-                }
-                Some(_node) => {
-                    let a = self.select_move(&b);
-                    history.push((s_t, a));
-                    b.play(&a)
-                }
-            };
-        }
-        history
+    fn tree_mut(&mut self) -> &mut HashMap<usize, Self::NodeInfo> {
+        &mut self.tree
     }
 
-    // Aggressive selection algorithm.
-    fn select_move(self: &PUCTPolicy<'a, G, F>, board: &G) -> G::Move {
+    fn select_move(&self, board: &G, exploration: bool) -> G::Move {
         let moves = board.possible_moves();
         let node_info = self.tree.get(&board.hash()).unwrap();
-
         let N = node_info.count;
-        let mut max_move = None;
-        let mut max_value = 0.;
-        for _move in moves.iter() {
-            let v = node_info.moves.get(_move).unwrap();
+
+        let moves_scores = moves.iter().map(|action| {
+            let v = node_info.moves.get(action).unwrap();
             let value = v.Q + self.C_PUCT * v.pi * (N.sqrt() / (v.N_a + 1.));
-            if value >= max_value {
-                max_value = value;
-                max_move = Some(*_move);
-            }
+            (value, action)
+        });
+
+        if board.turn() == self.color {
+            *moves_scores.max_by_key(|x| FloatOrd(x.0)).unwrap().1
+        } else {
+            *moves_scores.min_by_key(|x| FloatOrd(x.0)).unwrap().1
         }
-        max_move
-            .or_else(|| panic!("Failed to select a move. {:?}", node_info.moves))
-            .unwrap()
     }
 
-    fn expand(self: &mut PUCTPolicy<'a, G, F>, board: &G, policy: HashMap<G::Move, f32>) {
-        // normalize policy probabilities among possible moves.
-        let z: f32 = board
-            .possible_moves()
-            .into_iter()
-            .map(|m| policy.get(&m).unwrap())
-            .sum();
-        let z = if z == 0. { 1. } else { z };
+    fn default_node(&self, board: &G) -> Self::NodeInfo {
+        let n_moves = board.possible_moves().len();
         let moves = HashMap::from_iter(board.possible_moves().into_iter().map(|m| {
             (
                 *m,
                 PUCTMoveInfo {
                     Q: 0.,
                     N_a: 0.,
-                    pi: policy.get(&m).unwrap() / z,
+                    pi: 1. / (n_moves as f32),
                 },
             )
         }));
-
-        self.tree
-            .insert(board.hash(), PUCTNodeInfo { count: 0., moves });
+        PUCTNodeInfo { count: 0., moves }
     }
 
-    fn backup(self: &mut PUCTPolicy<'a, G, F>, history: Vec<(usize, G::Move)>, value: f32) {
+    fn simulate(&self, board: &G) -> Self::PlayoutInfo {
+        if !board.is_finished() {
+            let (policy, value) = (self.evaluate)(&board);
+            (Some(policy), value, board.clone())
+        } else {
+            if board.has_won(self.color) {
+                (None, 1., board.clone())
+            } else {
+                (None, 0., board.clone())
+            }
+        }
+    }
+
+    fn backpropagate(&mut self, history: Vec<(usize, G::Move)>, (policy, value, board): Self::PlayoutInfo) {
+        if let Some(policy) = policy { // save probabilities of newly created node.
+            let z: f32 = board
+                .possible_moves()
+                .into_iter()
+                .map(|m| policy.get(&m).unwrap())
+                .sum();
+            let z = if z == 0. { 1. } else { z };
+            
+            for (m, info) in self.tree.get_mut(&board.hash()).unwrap().moves.iter_mut() {
+                info.pi = policy.get(&m).unwrap() / z;
+            }
+            ;
+        };
+
+        let value = if board.turn() == self.color { value } else { 1. - value };
+
         for (state, action) in history.iter() {
             let mut node = self.tree.get_mut(state).unwrap();
             node.count += 1.;
@@ -125,31 +119,9 @@ impl<'a, G: MultiplayerGame, F: Evaluator<G>> PUCTPolicy<'a, G, F> {
     }
 }
 
-impl<'a, G: MultiplayerGame, F: Evaluator<G>> MultiplayerPolicy<G>
-    for PUCTPolicy<'a, G, F>
-{
-    fn play(self: &mut PUCTPolicy<'a, G, F>, board: &G) -> G::Move {
-        for _ in 0..N_PLAYOUTS {
-            self.simulate(board)
-        }
 
-        let mut best_move = None;
-        let mut max_visited = 0.;
+pub type PUCTPolicy<'a,G,F> = WithMCTSPolicy<G, PUCTPolicy_<'a,G,F>> ;
 
-        let node_info = self.tree.get(&board.hash()).unwrap();
-
-        for m in board.possible_moves().iter() {
-            let v = node_info.moves.get(&m).unwrap();
-            let value = v.Q;
-
-            if value >= max_visited {
-                max_visited = value;
-                best_move = Some(*m);
-            }
-        }
-        best_move.unwrap()
-    }
-}
 
 // POLICY BUILDER
 
@@ -188,11 +160,11 @@ impl<'a, G: MultiplayerGame, F: Evaluator<G>> MultiplayerPolicyBuilder<G>
     type P = PUCTPolicy<'a, G, F>;
 
     fn create(&self, color: G::Player) -> Self::P {
-        PUCTPolicy::<'a, G, F> {
+        WithMCTSPolicy::new(PUCTPolicy_::<'a, G, F> {
             color,
             C_PUCT: self.C_PUCT,
             evaluate: self.evaluate,
             tree: HashMap::new(),
-        }
+        })
     }
 }

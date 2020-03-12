@@ -17,11 +17,12 @@ const MODEL_PATH: &str = "models/sample";
 
 use zerol::game::breakthrough::{Breakthrough, K, BreakthroughBuilder, Color, Move};
 use zerol::game::{BaseGame, MultiplayerGame, MultiplayerGameBuilder};
-use zerol::policies::puct::PUCTPolicy;
-use zerol::policies::MultiplayerPolicy;
+use zerol::policies::puct::PUCT;
+use zerol::policies::{MultiplayerPolicy, MultiplayerPolicyBuilder};
 
 use nix::unistd::mkfifo;
 use std::io::SeekFrom;
+use std::marker::PhantomData;
 
 
 use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
@@ -31,18 +32,13 @@ fn self_play_match<F: Fn(&Breakthrough) -> (HashMap<Move, f32>, f32)>(
     gb: &BreakthroughBuilder
 ) -> (Color, Vec<(Breakthrough, HashMap<Move, f32>)>) {
     let mut game: Breakthrough = gb.create(Color::Black);
-    let mut p1 = PUCTPolicy {
+    let puct = PUCT {
         C_PUCT: 4.,
-        color: Color::Black,
-        tree: HashMap::new(),
         evaluate,
+        _g: PhantomData,
     };
-    let mut p2 = PUCTPolicy {
-        C_PUCT: 4.,
-        color: Color::White,
-        tree: HashMap::new(),
-        evaluate,
-    };
+    let mut p1 = puct.create(Color::Black);
+    let mut p2 = puct.create(Color::White);
 
     let mut history = vec![];
 
@@ -54,7 +50,7 @@ fn self_play_match<F: Fn(&Breakthrough) -> (HashMap<Move, f32>, f32)>(
         };
 
         let action = policy.play(&game);
-        let game_node = policy.tree.get(&game.hash()).unwrap();
+        let game_node = policy.0.tree.get(&game.hash()).unwrap();
         let monte_carlo_distribution = HashMap::from_iter(
             game_node
                 .moves
@@ -121,7 +117,7 @@ use std::time::Duration;
 use std::sync::Mutex;
 use std::sync::Arc;
 
-use zerol::misc::evaluator;
+use zerol::misc::breakthrough_evaluator;
 use rayon::prelude::*;
 use rayon::iter::repeat;
 
@@ -150,10 +146,12 @@ fn run() -> Result<(), Box<dyn Error>> {
     };
     let mut graph = Graph::new();
     let mut options = SessionOptions::new();
+    /* To get configuration, use python:
+     *      config = tf.ConfigProto()
+     *      config.gpu_options.allow_growth = True
+     *      config.SerializeToString()
+     */
     options.set_config(&[50, 2, 32, 1]).unwrap(); 
-    // config = tf.ConfigProto()
-    // config.gpu_options.allow_growth = True
-    // config.SerializeToString()
     let session = Session::from_saved_model(
         &options,
         &["serve"],
@@ -206,7 +204,7 @@ fn run() -> Result<(), Box<dyn Error>> {
     repeat(()).map(|_| {
         let (winner,history) = {
             let (ref graph, ref session) = *graph_and_session.read().unwrap();
-            self_play_match(&(|board| evaluator(session, graph, board)), &gb)
+            self_play_match(&(|board| breakthrough_evaluator(session, graph, board)), &gb)
         };
         {
             while is_writing.load(Ordering::Relaxed) {

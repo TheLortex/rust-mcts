@@ -210,7 +210,7 @@ impl MoveCode<Breakthrough> for BTCapture {
 }
 
 use std::marker::PhantomData;
-use zerol::misc::evaluator;
+use zerol::misc::breakthrough_evaluator;
 
 use tensorflow::{Code, Graph, Session, SessionOptions, Status};
 const MODEL_PATH: &str = "models/sample";
@@ -224,7 +224,7 @@ fn main() {
     let p1 = PUCT {
         _g: PhantomData,
         C_PUCT: 0.4,
-        evaluate: &(|board| evaluator(&session, &graph, board)),
+        evaluate: &(|board| breakthrough_evaluator(&session, &graph, board)),
     };
     let p2 = FlatMonteCarlo::default();
     

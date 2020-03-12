@@ -124,7 +124,7 @@ type G = Breakthrough;
 
 
 use std::marker::PhantomData;
-use zerol::misc::evaluator;
+use zerol::misc::breakthrough_evaluator;
 
 use tensorflow::{Code, Graph, Session, SessionOptions, Status};
 const MODEL_PATH: &str = "models/sample";
@@ -152,7 +152,7 @@ fn main() {
     let puct = PUCT {
         _g: PhantomData,
         C_PUCT: 0.4,
-        evaluate: &|board| evaluator(&session, &graph, board),
+        evaluate: &|board| breakthrough_evaluator(&session, &graph, board),
     };
     let p1 = Box::new(puct);
     
@@ -162,8 +162,8 @@ fn main() {
 
     let gb = BreakthroughBuilder {};
 
-    println!("Player 1:\n{}", p1);
-    println!("Player 2:\n{}", p2);
+    println!("Player 1: {}", p1);
+    println!("Player 2: {}", p2);
 
     println!(
         "Result: {}",

@@ -60,7 +60,13 @@ pub trait MCTSPolicy<G: MultiplayerGame> {
     }
 }
 
-pub struct WithMCTSPolicy<G: MultiplayerGame, M: MCTSPolicy<G>>(M, std::marker::PhantomData<G>);
+pub struct WithMCTSPolicy<G: MultiplayerGame, M: MCTSPolicy<G>>(pub M, std::marker::PhantomData<G>);
+
+impl<G: MultiplayerGame, M: MCTSPolicy<G>> WithMCTSPolicy<G, M> {
+    pub fn new(p: M) -> Self {
+        WithMCTSPolicy(p, PhantomData)
+    }
+}
 
 impl<G: MultiplayerGame, M: MCTSPolicy<G>> MultiplayerPolicy<G> for WithMCTSPolicy<G, M> {
     fn play(&mut self, board: &G) -> G::Move {
@@ -183,14 +189,11 @@ impl<G: MultiplayerGame> MultiplayerPolicyBuilder<G> for UCT {
     type P = UCTPolicy<G>;
 
     fn create(&self, color: G::Player) -> Self::P {
-        WithMCTSPolicy(
-            UCTPolicy_ {
-                color,
-                tree: HashMap::new(),
-                UCT_WEIGHT: self.UCT_WEIGHT,
-            },
-            PhantomData::<G>,
-        )
+        WithMCTSPolicy::new(UCTPolicy_ {
+            color,
+            tree: HashMap::new(),
+            UCT_WEIGHT: self.UCT_WEIGHT,
+        })
     }
 }
 
@@ -342,13 +345,12 @@ impl<G: MultiplayerGame> MultiplayerPolicyBuilder<G> for RAVE {
     type P = RAVEPolicy<G>;
 
     fn create(&self, color: G::Player) -> Self::P {
-        WithMCTSPolicy(
+        WithMCTSPolicy::new(
             RAVEPolicy_ {
                 color,
                 tree: HashMap::new(),
                 UCT_WEIGHT: self.UCT_WEIGHT,
-            },
-            PhantomData::<G>,
+            }
         )
     }
 }
