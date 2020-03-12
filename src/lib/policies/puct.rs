@@ -45,7 +45,7 @@ impl<'a, G: MultiplayerGame, F: Fn(&G) -> (HashMap<G::Move, f32>, f32)> PUCTPoli
         self.backup(history, value);
     }
 
-    fn select(self: &mut PUCTPolicy<'a, G, F>, b: &mut G) -> Vec<(usize, G::Move)> {
+    fn select(self: &PUCTPolicy<'a, G, F>, b: &mut G) -> Vec<(usize, G::Move)> {
         let mut history: Vec<(usize, G::Move)> = Vec::new();
 
         while !b.is_finished() {

@@ -26,6 +26,7 @@ atomic-counter = "1.0.1"
 crossbeam-channel = "0.4.0"
 notify = "5.0.0-pre.2"
 ndarray = "0.13.0"
+float-ord = "0.2.0"
 
 # for gym
 #cpython = "0.4.1"
@@ -47,4 +48,4 @@ version = "0.7.0"
 
 [dependencies.tensorflow]
 version = "0.14.0"
-#features = ["tensorflow_gpu"]
+features = ["tensorflow_gpu"]
