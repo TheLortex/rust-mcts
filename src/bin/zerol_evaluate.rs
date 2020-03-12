@@ -35,10 +35,9 @@ use zerol::policies::{
 fn game_duel<'a, 'b, G: MultiplayerGame>(
     mut p1: Box<dyn MultiplayerPolicy<G> + 'a>,
     mut p2: Box<dyn MultiplayerPolicy<G> + 'b>,
-    game: &G,
+    game: &G
 ) -> G {
     let mut b = game.clone();
-    const DBG: bool = false;
 
     while {
         let action = if b.turn() == G::players()[0] {
@@ -46,15 +45,12 @@ fn game_duel<'a, 'b, G: MultiplayerGame>(
         } else {
             p2.play(&b)
         };
-        if DBG {
-            println!("{:?} => {:?}", b, action);
-        }
+        // println!("{:?} => {:?}", b, action);
+        
         b.play(&action);
         !b.is_finished()
     } {}
-    if DBG {
-        println!("{:?}", b);
-    };
+    // println!("{:?}", b);
     b
 }
 
@@ -68,14 +64,19 @@ pub fn monte_carlo_match<
     pb1: Box<dyn DynMultiplayerPolicyBuilder<'a, G> + Sync + 'c>, 
     pb2: Box<dyn DynMultiplayerPolicyBuilder<'b, G> + Sync + 'd>,
     game_factory: &GB,
+    silent: bool
 ) -> usize {
-    let pb = ProgressBar::new(n as u64);
-    pb.set_style(
-        ProgressStyle::default_bar().template(
-            "{spinner:.green} [{elapsed_precise}] [{wide_bar:.cyan/blue}] {msg} (ETA {eta})",
-        ),
-    );
-    pb.enable_steady_tick(200);
+
+    let pb = if silent { None } else {
+        let pb = ProgressBar::new(n as u64);
+        pb.set_style(
+            ProgressStyle::default_bar().template(
+                "{spinner:.green} [{elapsed_precise}] [{wide_bar:.cyan/blue}] {msg} (ETA {eta})",
+            ),
+        );
+        pb.enable_steady_tick(200);
+        Some(pb)
+    };
 
     let c1 = Arc::new(RelaxedCounter::new(0));
     let c2 = Arc::new(RelaxedCounter::new(0));
@@ -95,7 +96,7 @@ pub fn monte_carlo_match<
             let result = if game_duel(
                 p1,
                 p2,
-                &game,
+                &game
             ).has_won(G::players()[0])
             {
                 c1.inc();
@@ -104,19 +105,25 @@ pub fn monte_carlo_match<
                 c2.inc();
                 0
             };
-            pb.inc(1);
-            let v1 = c1.get();
-            let v2 = c2.get();
-            pb.set_message(&format!(
-                "{}/{} ({:.2}%)",
-                v1,
-                v2,
-                (v1 as f32) * 100. / ((v1 + v2) as f32)
-            ));
+
+            if let Some(pb) = &pb {
+                pb.inc(1);
+                let v1 = c1.get();
+                let v2 = c2.get();
+                pb.set_message(&format!(
+                    "{}/{} ({:.2}%)",
+                    v1,
+                    v2,
+                    (v1 as f32) * 100. / ((v1 + v2) as f32)
+                ));
+            }
             result
         })
         .sum();
-    pb.finish();
+       
+    if let Some(pb) = pb { 
+        pb.finish();
+    }
     count_victory
 }
 
@@ -127,7 +134,7 @@ use std::marker::PhantomData;
 use zerol::misc::breakthrough_evaluator;
 
 use tensorflow::{Code, Graph, Session, SessionOptions, Status};
-const MODEL_PATH: &str = "models/sample";
+const MODEL_PATH: &str = "models/breakthrough";
 
 use clap::{Arg, App, SubCommand};
 
@@ -141,6 +148,7 @@ fn main() {
             .long("policy")
             .takes_value(true)
             .possible_values(&["rand", "flat", "flat_ucb", "uct", "rave", "ppa", "nmcs"]))
+        .arg(Arg::with_name("only-result").long("only-result"))
         .get_matches();
 
     /* Build PUCT */
@@ -162,11 +170,15 @@ fn main() {
 
     let gb = BreakthroughBuilder {};
 
-    println!("Player 1: {}", p1);
-    println!("Player 2: {}", p2);
+    let silent = args.is_present("only-result");
+
+    if !silent {
+        println!("Player 1: {}", p1);
+        println!("Player 2: {}", p2);
+    }
 
     println!(
-        "Result: {}",
-        monte_carlo_match::<_, _>(100, p1, p2, &gb)
+        "{}",
+        monte_carlo_match::<_, _>(100, p1, p2, &gb, silent)
     );
 }

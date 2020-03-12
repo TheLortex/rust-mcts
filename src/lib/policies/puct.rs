@@ -46,7 +46,7 @@ impl<'a, G: MultiplayerGame, F: Evaluator<G>> MCTSPolicy<G> for PUCTPolicy_<'a, 
         &mut self.tree
     }
 
-    fn select_move(&self, board: &G, exploration: bool) -> G::Move {
+    fn select_move(&self, board: &G, _exploration: bool) -> G::Move {
         let moves = board.possible_moves();
         let node_info = self.tree.get(&board.hash()).unwrap();
         let N = node_info.count;

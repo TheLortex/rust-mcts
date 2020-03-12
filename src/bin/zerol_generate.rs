@@ -13,7 +13,7 @@ use std::process::exit;
 
 use tensorflow::{Code, Graph, Session, SessionOptions, Status};
 
-const MODEL_PATH: &str = "models/sample";
+const MODEL_PATH: &str = "models/breakthrough";
 
 use zerol::game::breakthrough::{Breakthrough, K, BreakthroughBuilder, Color, Move};
 use zerol::game::{BaseGame, MultiplayerGame, MultiplayerGameBuilder};
@@ -31,7 +31,7 @@ fn self_play_match<F: Fn(&Breakthrough) -> (HashMap<Move, f32>, f32)>(
     evaluate: &F,
     gb: &BreakthroughBuilder
 ) -> (Color, Vec<(Breakthrough, HashMap<Move, f32>)>) {
-    let mut game: Breakthrough = gb.create(Color::Black);
+    let mut game: Breakthrough = gb.create(Color::random());
     let puct = PUCT {
         C_PUCT: 4.,
         evaluate,
@@ -151,7 +151,8 @@ fn run() -> Result<(), Box<dyn Error>> {
      *      config.gpu_options.allow_growth = True
      *      config.SerializeToString()
      */
-    options.set_config(&[50, 2, 32, 1]).unwrap(); 
+    let configuration_buf = [50, 2, 32, 1];
+    options.set_config(&configuration_buf).unwrap(); 
     let session = Session::from_saved_model(
         &options,
         &["serve"],
@@ -178,8 +179,11 @@ fn run() -> Result<(), Box<dyn Error>> {
                 session_m.close().expect("Unable to close the session.");
 
                 let mut graph = Graph::new();
+                let mut options = SessionOptions::new();
+                options.set_config(&configuration_buf).unwrap(); 
+
                 let session = Session::from_saved_model(
-                    &SessionOptions::new(),
+                    &options,
                     &["serve"],
                     &mut graph,
                     MODEL_PATH,
@@ -198,7 +202,7 @@ fn run() -> Result<(), Box<dyn Error>> {
     let gb = BreakthroughBuilder {};
 
     let bar = ProgressBar::new_spinner();
-    bar.set_style(ProgressStyle::default_spinner().template("[{spinner}] {wide_bar} {pos} games generated ({elapsed})"));
+    bar.set_style(ProgressStyle::default_spinner().template("[{spinner}] {wide_bar} {pos} games generated ({elapsed_precise})"));
     bar.enable_steady_tick(200);
 
     repeat(()).map(|_| {
