@@ -10,6 +10,8 @@ pub mod misere_breakthrough;
 pub mod weak_schur;
 pub mod hashcode_20;
 
+pub trait MoveTrait = PartialEq + Eq + Copy + Clone + Hash + Debug;
+
 /** 
  * Common interface for single and multiplayer games
  */
@@ -17,7 +19,7 @@ pub trait BaseGame: Sized + Clone + Debug {
     /**
      * The type for a Move.
      */
-    type Move: PartialEq + Eq + Copy + Clone + Hash + Debug;
+    type Move: MoveTrait;
     /**
      * Given the game state and turn, list possible actions.
      */

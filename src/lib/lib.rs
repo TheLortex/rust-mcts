@@ -1,5 +1,5 @@
 #![allow(non_snake_case)]
-#![feature(specialization)]
+#![feature(trait_alias)]
 
 
 pub mod game;
