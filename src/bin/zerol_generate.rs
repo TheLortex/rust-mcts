@@ -18,6 +18,7 @@ const MODEL_PATH: &str = "models/breakthrough";
 use zerol::game::breakthrough::{Breakthrough, K, BreakthroughBuilder, Color, Move};
 use zerol::game::{BaseGame, MultiplayerGame, MultiplayerGameBuilder};
 use zerol::policies::puct::PUCT;
+use zerol::policies::flat::Random;
 use zerol::policies::{MultiplayerPolicy, MultiplayerPolicyBuilder};
 
 use nix::unistd::mkfifo;
@@ -32,6 +33,7 @@ fn self_play_match<F: Fn(&Breakthrough) -> (HashMap<Move, f32>, f32)>(
     gb: &BreakthroughBuilder
 ) -> (Color, Vec<(Breakthrough, HashMap<Move, f32>)>) {
     let mut game: Breakthrough = gb.create(Color::random());
+    
     let puct = PUCT {
         C_PUCT: 4.,
         evaluate,
@@ -39,11 +41,13 @@ fn self_play_match<F: Fn(&Breakthrough) -> (HashMap<Move, f32>, f32)>(
     };
     let mut p1 = puct.create(Color::Black);
     let mut p2 = puct.create(Color::White);
+    //let mut p1 = MultiplayerPolicyBuilder::<Breakthrough>::create(&Random {}, Color::Black);
+    //let mut p2 = MultiplayerPolicyBuilder::<Breakthrough>::create(&Random {}, Color::White);
 
     let mut history = vec![];
 
     while { game.winner().is_none() } {
-        let policy = if game.turn() == Color::Black {
+        let policy = if game.turn() == Color::Black { // : &mut dyn MultiplayerPolicy<Breakthrough>
             &mut p1
         } else {
             &mut p2
@@ -168,6 +172,9 @@ fn run() -> Result<(), Box<dyn Error>> {
     //graph.operation_iter().map(|o| println!("{:?}", o.name().unwrap())).collect::<()>();
     let fm_mtx = Arc::new(Mutex::new(FileManager::new("./fifo")));
 
+    /*
+     * Watches for change in the model, and reload when needed.
+     */
     let mut watcher: RecommendedWatcher = Watcher::new_immediate(move |x: Result<Event, _>| {
         if let Ok(x) = x {
             if x.kind == EventKind::Access(AccessKind::Close(AccessMode::Write)) {
@@ -212,13 +219,13 @@ fn run() -> Result<(), Box<dyn Error>> {
         };
         {
             while is_writing.load(Ordering::Relaxed) {
-                thread::sleep(time::Duration::from_millis(10));
+                thread::sleep(time::Duration::from_millis(1));
             };
             let fm_mtx = fm_mtx.clone();
             let mut fm = fm_mtx.lock().unwrap();
             for (board, policy) in history.iter() {
                 let value = if board.turn() == winner { 1.0 } else { 0.0 };
-                fm.append(board, policy, &value);
+                //fm.append(board, policy, &value);
             }
         }
         bar.inc(1);

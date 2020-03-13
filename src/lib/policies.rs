@@ -6,6 +6,10 @@ pub mod nmcs;
 pub mod nrpa;
 pub mod ppa;
 pub mod puct;
+pub mod puct_async; 
+pub mod mcts_async; 
+
+use async_trait::async_trait;
 
 pub const N_PLAYOUTS: usize = 100;
 
@@ -17,11 +21,20 @@ use std::fmt::Display;
 pub trait MultiplayerPolicy<T: MultiplayerGame> {
     fn play(&mut self, board: &T) -> T::Move;
 }
+#[async_trait]
+pub trait AsyncMultiplayerPolicy<T: MultiplayerGame> {
+    async fn play(&mut self, board: &T) -> T::Move;
+}
 /**
  * A static policy builder.
  */
 pub trait MultiplayerPolicyBuilder<T: MultiplayerGame>: Display {
     type P: MultiplayerPolicy<T>;
+
+    fn create(&self, color: T::Player) -> Self::P;
+}
+pub trait AsyncMultiplayerPolicyBuilder<T: MultiplayerGame>: Display {
+    type P: AsyncMultiplayerPolicy<T>;
 
     fn create(&self, color: T::Player) -> Self::P;
 }

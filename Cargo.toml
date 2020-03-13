@@ -12,6 +12,8 @@ name = "zerol"
 path = "src/lib/lib.rs"
 
 [dependencies]
+tokio = { version = "0.2", features = ["full"] }
+async-trait = "0.1.24"
 clap = "2.33.0"
 serde = "1.0"
 serde-pickle = "0.6"
