@@ -3,6 +3,7 @@ use std::f32;
 use std::iter::*;
 
 use crate::game::{MultiplayerGame, BaseGame};
+use crate::game;
 use crate::policies::N_PLAYOUTS;
 use super::{AsyncMultiplayerPolicyBuilder};
 use super::mcts::{AsyncMCTSPolicy, WithAsyncMCTSPolicy};
@@ -28,13 +29,15 @@ pub struct PUCTNodeInfo<G: MultiplayerGame> {
     pub moves: HashMap<G::Move, PUCTMoveInfo>,
 }
 
-pub trait FutureOutput<G: BaseGame>: std::future::Future<Output=(HashMap<G::Move, f32>, f32)> {}
-impl<G:BaseGame, O: std::future::Future<Output=(HashMap<G::Move, f32>, f32)>> FutureOutput<G> for O {}
+use ndarray::Array;
 
-pub trait AsyncEvaluator<G: BaseGame, O:FutureOutput<G>>: Fn(&G) -> O {}
-impl<'a, G:BaseGame, O:FutureOutput<G>, F: Fn(&G) -> O> AsyncEvaluator <G,O>for F {}
+pub trait FutureOutput<G:  game::Feature>: std::future::Future<Output=(Array<f32, G::ActionDim>, f32)> {}
+impl<G: game::Feature, O: std::future::Future<Output=(Array<f32, G::ActionDim>, f32)>> FutureOutput<G> for O {}
 
-pub struct PUCTPolicy_<'a, G: MultiplayerGame, O:FutureOutput<G>,F: AsyncEvaluator<G,O>> {
+pub trait AsyncEvaluator<G:  game::Feature, O:FutureOutput<G>>: Fn(G::Player, &[G]) -> O {}
+impl<'a, G: game::Feature, O:FutureOutput<G>, F: Fn(G::Player, &[G]) -> O> AsyncEvaluator <G,O>for F {}
+
+pub struct PUCTPolicy_<'a, G: game::Feature, O:FutureOutput<G>,F: AsyncEvaluator<G,O>> {
     pub color: G::Player,
     pub C_PUCT: f32,
     pub evaluate: &'a F,
@@ -45,7 +48,7 @@ pub struct PUCTPolicy_<'a, G: MultiplayerGame, O:FutureOutput<G>,F: AsyncEvaluat
 #[async_trait]
 impl<'a,'b, G, O, F> AsyncMCTSPolicy<G> for PUCTPolicy_<'a, G, O, F>
 where
-    G: MultiplayerGame + Send + Sync,
+    G: game::Feature + Send + Sync,
     G::Player: Send + Sync,
     G::Move: Send + Sync,
     O: FutureOutput<G> + Send + Sync,
@@ -97,7 +100,8 @@ where
 
     async fn simulate(&self, board: &G) -> Self::PlayoutInfo {
         if !board.is_finished() {
-            let (policy, value) = (self.evaluate)(&board).await;
+            let (policy, value) = (self.evaluate)(self.color, &[board.clone()]).await;
+            let policy = board.feature_to_moves(&policy);
             (Some(policy), value, board.clone())
         } else {
             if board.has_won(self.color) {
@@ -143,20 +147,21 @@ pub type PUCTPolicy<'a,G,O,F> = WithAsyncMCTSPolicy<G, PUCTPolicy_<'a,G,O,F>> ;
 
 pub struct PUCT<'a, G, O, F> 
     where 
-    G: MultiplayerGame + Send + Sync,
+    G: game::Feature + Send + Sync,
     O: FutureOutput<G> + Send + Sync,
     G::Player: Send + Sync,
     G::Move: Send + Sync,
-    F: (Fn(&G) -> O) + Sync
+    F: (Fn(G::Player, &[G]) -> O) + Sync
 {
     pub C_PUCT: f32,
     pub evaluate: &'a F,
     pub _g: PhantomData<fn() -> G>,
+    pub _o: PhantomData<fn() -> O>,
 }
 
 impl<G,O,F> Copy for PUCT<'_, G, O, F> 
 where
-    G: MultiplayerGame + Send + Sync,
+    G: game::Feature + Send + Sync,
     G::Player: Send + Sync,
     G::Move: Send + Sync,
     O: FutureOutput<G> + Send + Sync,
@@ -165,7 +170,7 @@ where
 
 impl<G,O,F> Clone for PUCT<'_, G, O, F>
 where
-    G: MultiplayerGame + Send + Sync,
+    G: game::Feature + Send + Sync,
     G::Player: Send + Sync,
     G::Move: Send + Sync,
     O: FutureOutput<G> + Send + Sync,
@@ -180,7 +185,7 @@ use std::fmt;
 impl<G,O,F> fmt::Display
     for PUCT<'_, G, O, F>
 where
-    G: MultiplayerGame + Send + Sync,
+    G: game::Feature + Send + Sync,
     G::Player: Send + Sync,
     G::Move: Send + Sync,
     O: FutureOutput<G> + Send + Sync,
@@ -195,7 +200,7 @@ where
 
 impl<'a, G, O, F> AsyncMultiplayerPolicyBuilder<G>for PUCT<'a, G, O, F>
 where
-    G: MultiplayerGame + Send + Sync,
+    G: game::Feature + Send + Sync,
     G::Player: Send + Sync,
     G::Move: Send + Sync,
     O: FutureOutput<G> + Send + Sync,

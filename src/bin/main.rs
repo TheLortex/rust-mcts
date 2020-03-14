@@ -224,7 +224,7 @@ fn main() {
     let p1 = PUCT {
         _g: PhantomData,
         C_PUCT: 0.4,
-        evaluate: &(|board| breakthrough_evaluator(&session, &graph, board)),
+        evaluate: &(|pov, board_history: &[&Breakthrough]| breakthrough_evaluator(&session, &graph, pov, board_history)),
     };
     let p2 = FlatMonteCarlo::default();
     

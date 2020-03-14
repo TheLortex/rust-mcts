@@ -2,12 +2,15 @@
 use std::f32;
 use std::iter::*;
 
-use super::super::game::{MultiplayerGame, BaseGame};
+use crate::game::{MultiplayerGame, BaseGame};
+use crate::game;
 use super::{MultiplayerPolicyBuilder, N_PLAYOUTS};
 use super::mcts::{MCTSPolicy, WithMCTSPolicy};
 
 use std::collections::HashMap;
 use std::marker::PhantomData;
+
+use ndarray::Array;
 
 use float_ord::FloatOrd;
 
@@ -19,22 +22,22 @@ pub struct PUCTMoveInfo {
 }
 
 #[derive(Debug)]
-pub struct PUCTNodeInfo<G: MultiplayerGame> {
+pub struct PUCTNodeInfo<G: game::Feature> {
     pub count: f32,
     pub moves: HashMap<G::Move, PUCTMoveInfo>,
 }
 
-pub trait Evaluator<G: BaseGame>: Fn(&G) -> (HashMap<G::Move, f32>, f32) {}
-impl<G:BaseGame, F: Fn(&G) -> (HashMap<G::Move, f32>, f32)> Evaluator <G>for F {}
+pub trait Evaluator<G: game::Feature>: Fn(G::Player, &[&G]) -> (Array<f32, G::ActionDim>, f32) {}
+impl<G:game::Feature, F: Fn(G::Player, &[&G]) -> (Array<f32, G::ActionDim>, f32)> Evaluator <G>for F {}
 
-pub struct PUCTPolicy_<'a, G: MultiplayerGame, F: Evaluator<G>> {
+pub struct PUCTPolicy_<'a, G: game::Feature, F: Evaluator<G>> {
     pub color: G::Player,
     pub C_PUCT: f32,
     pub evaluate: &'a F,
     pub tree: HashMap<usize, PUCTNodeInfo<G>>,
 }
 
-impl<'a, G: MultiplayerGame, F: Evaluator<G>> MCTSPolicy<G> for PUCTPolicy_<'a, G, F> {
+impl<'a, G: game::Feature, F: Evaluator<G>> MCTSPolicy<G> for PUCTPolicy_<'a, G, F> {
     type NodeInfo = PUCTNodeInfo<G>;
     type PlayoutInfo = (Option<HashMap<G::Move, f32>>, f32, G); // (policy, value, leaf_state).
 
@@ -81,7 +84,8 @@ impl<'a, G: MultiplayerGame, F: Evaluator<G>> MCTSPolicy<G> for PUCTPolicy_<'a, 
 
     fn simulate(&self, board: &G) -> Self::PlayoutInfo {
         if !board.is_finished() {
-            let (policy, value) = (self.evaluate)(&board);
+            let (policy, value) = (self.evaluate)(self.color, &[board]);
+            let policy = board.feature_to_moves(&policy);
             (Some(policy), value, board.clone())
         } else {
             if board.has_won(self.color) {
@@ -127,24 +131,24 @@ pub type PUCTPolicy<'a,G,F> = WithMCTSPolicy<G, PUCTPolicy_<'a,G,F>> ;
 
 pub struct PUCT<'a, G, F> 
     where 
-    G: MultiplayerGame,
-    F: Fn(&G) -> (HashMap<G::Move, f32>, f32)
+    G: game::Feature,
+    F: Fn(G::Player, &[&G]) -> (Array<f32, G::ActionDim>, f32)
 {
     pub C_PUCT: f32,
     pub evaluate: &'a F,
     pub _g: PhantomData<fn() -> G>,
 }
 
-impl<G: MultiplayerGame, F: Evaluator<G>> Copy for PUCT<'_, G, F> {}
+impl<G: game::Feature, F: Evaluator<G>> Copy for PUCT<'_, G, F> {}
 
-impl<G: MultiplayerGame, F: Evaluator<G>> Clone for PUCT<'_, G, F> {
+impl<G: game::Feature, F: Evaluator<G>> Clone for PUCT<'_, G, F> {
     fn clone(&self) -> Self {
         *self
     }
 }
 
 use std::fmt;
-impl<G: MultiplayerGame, F: Evaluator<G>> fmt::Display
+impl<G: game::Feature, F: Evaluator<G>> fmt::Display
     for PUCT<'_, G, F>
 {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -154,7 +158,7 @@ impl<G: MultiplayerGame, F: Evaluator<G>> fmt::Display
     }
 }
 
-impl<'a, G: MultiplayerGame, F: Evaluator<G>> MultiplayerPolicyBuilder<G>
+impl<'a, G: game::Feature, F: Evaluator<G>> MultiplayerPolicyBuilder<G>
     for PUCT<'a, G, F>
 {
     type P = PUCTPolicy<'a, G, F>;

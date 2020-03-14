@@ -113,13 +113,13 @@ pub trait Feature: MultiplayerGame {
     type StateDim: Dimension;
     type ActionDim: Dimension;
 
-    fn state_dimension() -> [usize];
-    fn action_dimension() -> [usize];
+    fn state_dimension() -> Self::StateDim;
+    fn action_dimension() -> Self::ActionDim;
 
     fn state_to_feature(&self, pov: Self::Player) -> Array<f32, Self::StateDim>;
+    fn moves_to_feature(moves: &HashMap<Self::Move, f32>) -> Array<f32, Self::ActionDim>;
 
-    fn moves_to_feature(actions: HashMap<Self::Move, f32>) -> Array<f32, Self::ActionDim>;
-    fn feature_to_moves(ft: Array<f32, Self::ActionDim>) -> HashMap<Self::Move, f32>;
+    fn feature_to_moves(&self, features: &Array<f32, Self::ActionDim>) -> HashMap<Self::Move, f32>;
 }
 
 /* TODO: MoveCode */

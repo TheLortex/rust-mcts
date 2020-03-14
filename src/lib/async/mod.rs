@@ -10,12 +10,13 @@ use tokio::sync::{mpsc, oneshot};
 
 const BATCH_SIZE: usize = 128;
 const N_EVALUATORS: usize = 7;
-const N_GENERATORS: usize = 3*BATCH_SIZE/2;
+const N_GENERATORS: usize = 3 * BATCH_SIZE / 2;
 const BATCH_TIMEOUT: usize = BATCH_SIZE * 1000 * 1000 * 1000 / (10 * 1000 * 1000); // in nanos
 
-use super::game::breakthrough::{Breakthrough, K, Move, BreakthroughBuilder, Color};
-use super::game::{MultiplayerGame, BaseGame, MultiplayerGameBuilder};
-use self::policies::{puct::PUCT, AsyncMultiplayerPolicyBuilder, AsyncMultiplayerPolicy};
+use self::policies::{puct, puct::PUCT, AsyncMultiplayerPolicy, AsyncMultiplayerPolicyBuilder};
+use super::game::breakthrough::{Breakthrough, BreakthroughBuilder, Color, Move, K};
+use super::game;
+use super::game::{BaseGame, Feature, MultiplayerGame, MultiplayerGameBuilder};
 use std::marker::PhantomData;
 
 use indicatif::{ProgressBar, ProgressStyle};
@@ -24,38 +25,60 @@ use tensorflow::{Graph, Session, SessionRunArgs, Tensor};
 
 use super::misc::tensorflow_call;
 
-async fn breakthrough_evaluator_batch(
+type EvaluatorChannel = (Tensor<f32>, oneshot::Sender<(Tensor<f32>, Tensor<f32>)>);
+type GameHistoryChannel = (Color, Vec<(Breakthrough, HashMap<Move, f32>)>);
+
+use ndarray::{Array, ArrayBase, Dimension};
+
+async fn breakthrough_evaluator_batch<'a>(
     mut sender: mpsc::Sender<EvaluatorChannel>,
-    board: Breakthrough,
-) -> (HashMap<Move, f32>, f32) {
-    let K_ = K as u64;
-    let mut board_tensor: Tensor<f32> = Tensor::new(&[1, 2 * K_ * K_ + 1]);
-    for (j, item) in board.serialize().iter().enumerate() {
-        board_tensor[j] = *item;
+    pov: Color,
+    board_history: Vec<Breakthrough>,
+) -> (Array<f32, <Breakthrough as Feature>::ActionDim>, f32) {
+    let input_dimensions = Breakthrough::state_dimension();
+    let input_stride = input_dimensions.size();
+    // add one dimension to the tensor, this looks bad.
+    let w_history_dim: Vec<u64> = [
+        &[board_history.len()],
+        input_dimensions.as_array_view().to_slice().unwrap(),
+    ]
+    .concat()
+    .iter()
+    .map(|x| *x as u64)
+    .collect();
+
+    let mut board_tensor = Tensor::new(&w_history_dim);
+    for (i, board) in board_history.iter().enumerate() {
+        board_tensor[i * input_stride..(i + 1) * input_stride]
+            .clone_from_slice(&board.state_to_feature(pov).into_raw_vec());
     }
 
     let (resp_tx, resp_rx) = oneshot::channel();
     sender.send((board_tensor, resp_tx)).await.ok().unwrap();
     let (policy_tensor, value_tensor) = resp_rx.await.unwrap();
 
-    let policy = HashMap::from_iter(
-        board
-            .possible_moves()
-            .into_iter()
-            .map(|m| (*m, policy_tensor[m.serialize()])),
-    );
+    let policy =
+        ArrayBase::from_shape_vec(Breakthrough::action_dimension(), (&policy_tensor).to_vec())
+            .unwrap();
     let value = value_tensor[0];
     (policy, value)
 }
 
-
-async fn game_generator_task(sender: mpsc::Sender<EvaluatorChannel>, mut output_chan: mpsc::Sender<GameHistoryChannel>, bar: Arc<Box<ProgressBar>>) {
+async fn game_generator_task(
+    sender: mpsc::Sender<EvaluatorChannel>,
+    mut output_chan: mpsc::Sender<GameHistoryChannel>,
+    bar: Arc<Box<ProgressBar>>,
+) {
     let gb = BreakthroughBuilder {};
 
     let puct = PUCT {
         C_PUCT: 4.,
-        evaluate: &|board: &Breakthrough| breakthrough_evaluator_batch(sender.clone(), board.clone()), // hacky ? should not have to clone..
+        evaluate: &|pov: Color, board_history: &[Breakthrough]| {
+            let bidule: Vec<Breakthrough> = board_history.iter().map(|x| (*x).clone()).collect();
+            breakthrough_evaluator_batch(sender.clone(), pov, bidule)
+        }, 
         _g: PhantomData,
+        _o: PhantomData,
     };
 
     loop {
@@ -66,7 +89,7 @@ async fn game_generator_task(sender: mpsc::Sender<EvaluatorChannel>, mut output_
         let mut history = vec![];
 
         while { game.winner().is_none() } {
-            let policy = if game.turn() == Color::Black { 
+            let policy = if game.turn() == Color::Black {
                 &mut p1
             } else {
                 &mut p2
@@ -83,15 +106,21 @@ async fn game_generator_task(sender: mpsc::Sender<EvaluatorChannel>, mut output_
 
             game.play(&action);
         }
-        output_chan.send((game.winner().unwrap(), history)).await.ok().unwrap();
+        output_chan
+            .send((game.winner().unwrap(), history))
+            .await
+            .ok()
+            .unwrap();
         bar.inc(1 as u64);
     }
 }
 
-
-async fn game_evaluator_task(g_and_s: Arc<RwLock<(Graph, Session)>>, mut receiver: mpsc::Receiver<EvaluatorChannel>, bar: Arc<Box<ProgressBar>>) {
+async fn game_evaluator_task(
+    g_and_s: Arc<RwLock<(Graph, Session)>>,
+    mut receiver: mpsc::Receiver<EvaluatorChannel>,
+    bar: Arc<Box<ProgressBar>>,
+) {
     println!("Starting game evaluator..");
-
 
     let feature_size: usize = 2 * K * K + 1;
     let policy_size: usize = 3 * K * K;
@@ -100,23 +129,20 @@ async fn game_evaluator_task(g_and_s: Arc<RwLock<(Graph, Session)>>, mut receive
     let mut idx = 0;
 
     while let Some((input, tx)) = receiver.recv().await {
-    
-        input_tensor[idx*feature_size..(idx+1)*feature_size].clone_from_slice(&input);
+        input_tensor[idx * feature_size..(idx + 1) * feature_size].clone_from_slice(&input);
         tx_buf.push(tx);
         idx += 1;
 
         if idx == BATCH_SIZE {
             //bar.inc(BATCH_SIZE as u64);
             idx = 0;
-                
             let (policies, values) = {
                 let (ref graph, ref session) = *g_and_s.read().unwrap();
                 tensorflow_call(&session, &graph, &input_tensor)
             };
             for i in (0..BATCH_SIZE).rev() {
-                let policy = Tensor::from(&policies[i*policy_size..(i+1)*policy_size]);
-                let value  = Tensor::from(values[i]);
-                
+                let policy = Tensor::from(&policies[i * policy_size..(i + 1) * policy_size]);
+                let value = Tensor::from(values[i]);
                 tx_buf.pop().unwrap().send((policy, value)).unwrap();
             }
             tx_buf.clear();
@@ -124,42 +150,44 @@ async fn game_evaluator_task(g_and_s: Arc<RwLock<(Graph, Session)>>, mut receive
     }
 }
 
-type EvaluatorChannel   = (Tensor<f32>, oneshot::Sender<(Tensor<f32>, Tensor<f32>)>);
-type GameHistoryChannel = (Color, Vec<(Breakthrough, HashMap<Move, f32>)>);
-
 use std::sync::Arc;
 use std::sync::RwLock;
 
-pub async fn game_generator(graph_and_session: Arc<RwLock<(Graph, Session)>>, output_chan: mpsc::Sender<GameHistoryChannel>) {
+pub async fn game_generator(
+    graph_and_session: Arc<RwLock<(Graph, Session)>>,
+    output_chan: mpsc::Sender<GameHistoryChannel>,
+) {
     let bar = ProgressBar::new_spinner();
-    bar.set_style(ProgressStyle::default_spinner().template("[{spinner}] {wide_bar} {pos} games generated ({elapsed_precise})"));
+    bar.set_style(
+        ProgressStyle::default_spinner()
+            .template("[{spinner}] {wide_bar} {pos} games generated ({elapsed_precise})"),
+    );
     bar.enable_steady_tick(200);
     let bar_box = Arc::new(Box::new(bar));
 
     let bar2 = ProgressBar::new_spinner();
-    bar2.set_style(ProgressStyle::default_spinner().template("[{spinner}] {wide_bar} {pos} moves generated ({elapsed_precise})"));
+    bar2.set_style(
+        ProgressStyle::default_spinner()
+            .template("[{spinner}] {wide_bar} {pos} moves generated ({elapsed_precise})"),
+    );
     //bar2.enable_steady_tick(200);
     let bar_box2 = Arc::new(Box::new(bar2));
 
     let mut join_handles = vec![];
     let mut join_handles_ev = vec![];
 
-
     for _ in 0..N_EVALUATORS {
-        let (tx, rx) = mpsc::channel::<EvaluatorChannel>(2*BATCH_SIZE);
+        let (tx, rx) = mpsc::channel::<EvaluatorChannel>(2 * BATCH_SIZE);
         for _ in 0..N_GENERATORS {
             let cmd_tx = tx.clone();
             let output_tx = output_chan.clone();
             let czop = bar_box.clone();
-    
             join_handles.push(tokio::spawn(async move {
                 game_generator_task(cmd_tx, output_tx, czop).await
             }));
         }
-    
         drop(tx);
         let czop2 = bar_box2.clone();
-        
         let g_and_s = graph_and_session.clone();
         join_handles_ev.push(tokio::spawn(async move {
             game_evaluator_task(g_and_s, rx, czop2).await

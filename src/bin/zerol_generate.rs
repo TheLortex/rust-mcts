@@ -17,6 +17,7 @@ const MODEL_PATH: &str = "models/breakthrough";
 
 use zerol::game::breakthrough::{Breakthrough, K, BreakthroughBuilder, Color, Move};
 use zerol::game::{BaseGame, MultiplayerGame, MultiplayerGameBuilder};
+use zerol::game;
 use zerol::policies::puct::PUCT;
 use zerol::policies::flat::Random;
 use zerol::policies::{MultiplayerPolicy, MultiplayerPolicyBuilder};
@@ -27,8 +28,9 @@ use std::marker::PhantomData;
 
 
 use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
+use ndarray::Array;
 
-fn self_play_match<F: Fn(&Breakthrough) -> (HashMap<Move, f32>, f32)>(
+fn self_play_match<F: Fn(Color, &[&Breakthrough]) -> (Array<f32, <Breakthrough as game::Feature>::ActionDim>, f32)>(
     evaluate: &F,
     gb: &BreakthroughBuilder
 ) -> (Color, Vec<(Breakthrough, HashMap<Move, f32>)>) {
@@ -76,6 +78,8 @@ struct FileManager {
 use nix::sys::stat;
 use std::mem::transmute;
 
+use zerol::game::Feature;
+
 impl FileManager {
     fn new(path: &str) -> Self {
         match mkfifo(path, stat::Mode::S_IRWXU) {
@@ -92,11 +96,9 @@ impl FileManager {
     }
 
     fn append(&mut self, board: &Breakthrough, policy: &HashMap<Move, f32>, value: &f32) {
-        let vec_board = board.serialize();
-        let mut vec_policy = vec![0.; 3 * K * K];
-        for (k, v) in policy.iter() {
-            vec_policy[k.serialize()] = *v;
-        }
+        let vec_board = board.state_to_feature(board.turn()).into_raw_vec();
+        
+        let vec_policy = Breakthrough::moves_to_feature(policy).into_raw_vec();
 
         let toser = (vec_board, vec_policy, value);
         let ser = serde_pickle::to_vec(&toser, true).unwrap();
