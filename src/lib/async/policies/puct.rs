@@ -2,10 +2,10 @@
 use std::f32;
 use std::iter::*;
 
-use super::super::game::{MultiplayerGame, BaseGame};
-use super::{AsyncMultiplayerPolicyBuilder, N_PLAYOUTS};
-use super::mcts_async::{AsyncMCTSPolicy, WithAsyncMCTSPolicy};
-
+use crate::game::{MultiplayerGame, BaseGame};
+use crate::policies::N_PLAYOUTS;
+use super::{AsyncMultiplayerPolicyBuilder};
+use super::mcts::{AsyncMCTSPolicy, WithAsyncMCTSPolicy};
 
 
 use async_trait::async_trait;

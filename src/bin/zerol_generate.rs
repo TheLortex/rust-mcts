@@ -11,7 +11,7 @@ use std::iter::FromIterator;
 use std::path::Path;
 use std::process::exit;
 
-use tensorflow::{Code, Graph, Session, SessionOptions, Status};
+use tensorflow::{Code, Graph, Session, SessionOptions};
 
 const MODEL_PATH: &str = "models/breakthrough";
 
@@ -106,13 +106,12 @@ impl FileManager {
 }
 
 fn main() {
-    exit(match run() {
-        Ok(_) => 0,
-        Err(e) => {
-            println!("{}", e);
-            1
-        }
-    })
+    let mut threaded_rt = tokio::runtime::Builder::new()
+        .threaded_scheduler()
+        .core_threads(8)
+        .build().unwrap();
+
+    threaded_rt.block_on(run())
 }
 
 use notify::event::*;
@@ -132,21 +131,13 @@ use std::sync::atomic::Ordering;
 use std::{thread, time};
 
 use tensorflow;
+use tokio;
 
-fn run() -> Result<(), Box<dyn Error>> {
+async fn run() {
     /* check that model exists. */
     if !Path::new(MODEL_PATH).exists() {
-        return Err(Box::new(
-            Status::new_set(
-                Code::NotFound,
-                &format!(
-                    "Run 'python zerol.py' to generate \
-                     {} and try again.",
-                    MODEL_PATH
-                ),
-            )
-            .unwrap(),
-        ));
+        println!("Couldn't find model at {}", MODEL_PATH);
+        return;
     };
     let mut graph = Graph::new();
     let mut options = SessionOptions::new();
@@ -162,7 +153,7 @@ fn run() -> Result<(), Box<dyn Error>> {
         &["serve"],
         &mut graph,
         MODEL_PATH,
-    )?;
+    ).unwrap();
 
     let is_writing = Arc::new(AtomicBool::new(false));
     let graph_and_session = Arc::new(RwLock::new((graph,session)));
@@ -206,29 +197,26 @@ fn run() -> Result<(), Box<dyn Error>> {
         .watch(MODEL_PATH, RecursiveMode::NonRecursive)
         .unwrap();
 
-    let gb = BreakthroughBuilder {};
 
-    let bar = ProgressBar::new_spinner();
-    bar.set_style(ProgressStyle::default_spinner().template("[{spinner}] {wide_bar} {pos} games generated ({elapsed_precise})"));
-    bar.enable_steady_tick(200);
+    let (tx_games, mut rx_games) = tokio::sync::mpsc::channel(1024);
+    
+    let game_gen = tokio::spawn(zerol::r#async::game_generator(graph_and_session, tx_games));
 
-    repeat(()).map(|_| {
-        let (winner,history) = {
-            let (ref graph, ref session) = *graph_and_session.read().unwrap();
-            self_play_match(&(|board| breakthrough_evaluator(session, graph, board)), &gb)
-        };
-        {
+    let game_writer = tokio::spawn(async move {
+        while let Some((winner, history)) = rx_games.recv().await {
             while is_writing.load(Ordering::Relaxed) {
                 thread::sleep(time::Duration::from_millis(1));
             };
+
             let fm_mtx = fm_mtx.clone();
             let mut fm = fm_mtx.lock().unwrap();
             for (board, policy) in history.iter() {
                 let value = if board.turn() == winner { 1.0 } else { 0.0 };
-                //fm.append(board, policy, &value);
+                fm.append(board, policy, &value);
             }
         }
-        bar.inc(1);
-    }).collect::<()>();
-    Ok(())
+    });
+
+    game_gen.await.unwrap();
+    game_writer.await.unwrap();
 }

@@ -1,8 +1,9 @@
 use std::collections::HashMap;
 
 
-use super::super::game::MultiplayerGame;
-use super::{AsyncMultiplayerPolicy, N_PLAYOUTS};
+use crate::game::MultiplayerGame;
+use super::AsyncMultiplayerPolicy;
+use crate::policies::N_PLAYOUTS;
 
 use std::marker::PhantomData;
 

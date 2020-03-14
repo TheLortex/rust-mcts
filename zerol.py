@@ -14,16 +14,18 @@ import subprocess
 
 def build_network():
     input   = keras.Input(shape=(2*K*K+1), name='board')
-    x       = layers.Dense((3*K*K), activation='relu')(input)
-    x       = layers.Dense((6*K*K), activation='relu')(x)
-    x       = layers.Dense((3*K*K), activation='relu')(x)
+    x       = layers.Dense((512), activation='relu')(input)
+    x       = layers.Dense((1024), activation='relu')(x)
+    x       = layers.Dense((1024), activation='relu')(x)
+    x       = layers.Dense((1024), activation='relu')(x)
+    x       = layers.Dense((1024), activation='relu')(x)
     policy  = layers.Dense((3*K*K), activation='softmax', name='policy')(x)
     value   = layers.Dense((1), activation='sigmoid', name='value')(x)
     return keras.Model(inputs=input, outputs={"policy": policy, "value": value})
 
 REPLAY_BUFFER_SIZE = 1280000 # SAVE THE LAST 12800 STATES
-SAVE_REPLAY_BUFFER_PERIOD = 4096 # backup replay buffer once in a while
-BATCH_SIZE         = 16000
+SAVE_REPLAY_BUFFER_PERIOD = 10000 # backup replay buffer once in a while
+BATCH_SIZE         = 10000
 N_EPOCH            = 10000
 
 
@@ -87,7 +89,7 @@ class BufferThread(Thread):
                 pbar.update(1)
 
             if idx % SAVE_REPLAY_BUFFER_PERIOD == 0:
-                print("Saving in training_data/")
+                #print("Saving in training_data/")
                 np.save(training_data_path+"input_data",input_data)
                 np.save(training_data_path+"policy",policy)
                 np.save(training_data_path+"value",value)
@@ -161,24 +163,25 @@ class StatsLogger(tf.keras.callbacks.Callback):
         pass
 
     def on_epoch_end(self, epoch, logs=None):
+        print("OOO")
         tf.summary.scalar('generated_states', data=states_count, step=epoch)
         if epoch % EVALUATION_PERIOD == EVALUATION_PERIOD-1:
             print("||Evaluating network")
             np.save(model_path+"epoch",epoch)
 
             perf_against_random  = int(subprocess.run(["zerol_evaluate", "-p", "rand", "--only-result"], stdout=PIPE, stderr=DEVNULL).stdout.splitlines()[0])
-            #perf_against_flatmc  = subprocess.run(["zerol_evaluate", "-p", "flat", "--only-result"]).stdout
+            perf_against_flatmc  = subprocess.run(["zerol_evaluate", "-p", "flat", "--only-result"]).stdout
             #perf_against_flat_uct  = subprocess.run(["zerol_evaluate", "-p", "flat_ucb", "--only-result"]).stdout
             perf_against_uct     = int(subprocess.run(["zerol_evaluate", "-p", "uct", "--only-result"], stdout=PIPE, stderr=DEVNULL).stdout.splitlines()[0])
             #perf_against_rave    = subprocess.run(["zerol_evaluate", "-p", "rave", "--only-result"]).stdout
             print("VS RANDOM: {} | VS UCT: {}".format(perf_against_random, perf_against_uct))
             tf.summary.scalar('vs_random', data=perf_against_random, step=epoch)
-            #tf.summary.scalar('vs_flatmc', data=perf_against_flatmc, step=epoch)
+            tf.summary.scalar('vs_flatmc', data=perf_against_flatmc, step=epoch)
             #tf.summary.scalar('vs_flat_ucb', data=perf_against_flat_uct, step=epoch)
             tf.summary.scalar('vs_uct', data=perf_against_uct,step=epoch)
             #tf.summary.scalar('vs_rave', data=perf_against_rave, step=epoch)
             print("||Done!")
-        
+
 tensorboard_callback = keras.callbacks.TensorBoard(log_dir=logdir)
 
 stats_callback = StatsLogger()

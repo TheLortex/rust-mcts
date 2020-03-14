@@ -5,6 +5,8 @@ use std::collections::hash_map::DefaultHasher;
 use std::convert::TryFrom;
 use std::hash::{Hash, Hasher};
 
+use ndarray::{Array, Dimension};
+
 pub mod breakthrough;
 pub mod misere_breakthrough;
 pub mod weak_schur;
@@ -103,6 +105,21 @@ pub trait SingleplayerGameBuilder<G: SingleplayerGame> {
 
 pub trait SingleplayerGame: BaseGame {
     fn score(&self) -> f32;
+}
+
+use std::collections::HashMap;
+/* FeatureGame */
+pub trait Feature: MultiplayerGame {
+    type StateDim: Dimension;
+    type ActionDim: Dimension;
+
+    fn state_dimension() -> [usize];
+    fn action_dimension() -> [usize];
+
+    fn state_to_feature(&self, pov: Self::Player) -> Array<f32, Self::StateDim>;
+
+    fn moves_to_feature(actions: HashMap<Self::Move, f32>) -> Array<f32, Self::ActionDim>;
+    fn feature_to_moves(ft: Array<f32, Self::ActionDim>) -> HashMap<Self::Move, f32>;
 }
 
 /* TODO: MoveCode */
