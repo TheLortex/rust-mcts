@@ -15,7 +15,7 @@ use tokio;
 
 const MODEL_PATH: &str = "models/breakthrough";
 
-use zerol::game::{MultiplayerGame, Feature, breakthrough::{Color, Breakthrough}};
+use zerol::game::{MultiplayerGame, breakthrough::Breakthrough};
 
 fn main() {
     let mut threaded_rt = tokio::runtime::Builder::new()

@@ -8,10 +8,10 @@ use rayon::prelude::*;
 use std::marker::PhantomData;
 use std::sync::Arc;
 use tensorflow::{Graph, Session, SessionOptions};
-use zerol::game::{breakthrough::*, MultiplayerGame, MultiplayerGameBuilder};
+use zerol::game::breakthrough::*;
 use zerol::game;
 use zerol::misc::breakthrough_evaluator;
-use zerol::policies::{get_multi, puct::*, DynMultiplayerPolicyBuilder, MultiplayerPolicy};
+use zerol::policies::{get_multi, puct::*, DynMultiplayerPolicyBuilder};
 
 const MODEL_PATH: &str = "models/breakthrough";
 

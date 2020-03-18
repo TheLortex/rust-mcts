@@ -2,7 +2,6 @@
 use std::f32;
 use std::iter::*;
 
-use crate::game::{MultiplayerGame, BaseGame};
 use crate::game;
 use super::{MultiplayerPolicyBuilder, N_PLAYOUTS};
 use super::mcts::{MCTSPolicy, WithMCTSPolicy};

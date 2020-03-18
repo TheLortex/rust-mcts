@@ -3,9 +3,6 @@ pub mod policies;
 use std::collections::HashMap;
 use std::iter::FromIterator;
 
-const MODEL_PATH: &str = "models/breakthrough";
-
-use tokio::prelude::*;
 use tokio::sync::{mpsc, oneshot};
 
 
@@ -19,15 +16,14 @@ const N_EVALUATORS: usize = 1;
 const N_GENERATORS: usize = 1;
 */
 
-use self::policies::{puct, puct::PUCT, AsyncMultiplayerPolicy, AsyncMultiplayerPolicyBuilder};
-use super::game::breakthrough::{Breakthrough, BreakthroughBuilder, Color, Move, K};
-use super::game;
+use self::policies::{puct::PUCT, AsyncMultiplayerPolicy, AsyncMultiplayerPolicyBuilder};
+use super::game::breakthrough::{Breakthrough, BreakthroughBuilder, Color, Move};
 use super::game::{BaseGame, Feature, MultiplayerGame, MultiplayerGameBuilder};
 use std::marker::PhantomData;
 
 use indicatif::{ProgressBar, ProgressStyle};
 
-use tensorflow::{Graph, Session, SessionRunArgs, Tensor};
+use tensorflow::{Graph, Session, Tensor};
 
 use super::misc::tensorflow_call;
 
@@ -128,7 +124,7 @@ async fn game_generator_task(
 async fn game_evaluator_task<G: Feature>(
     g_and_s: Arc<RwLock<(Graph, Session)>>,
     mut receiver: mpsc::Receiver<EvaluatorChannel>,
-    bar: Arc<Box<ProgressBar>>,
+    _bar: Arc<Box<ProgressBar>>,
 ) {
     println!("Starting game evaluator..");
 

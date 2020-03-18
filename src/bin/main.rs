@@ -1,8 +1,5 @@
 #![allow(non_snake_case)]
 
-use cursive::views::{Button, Dialog, LinearLayout, NamedView};
-use cursive::Cursive;
-
 use atomic_counter::{AtomicCounter, RelaxedCounter};
 
 use std::collections::hash_map::DefaultHasher;
@@ -10,7 +7,6 @@ use std::convert::TryFrom;
 use std::hash::Hasher;
 
 use rand::seq::SliceRandom;
-use std::cell::RefCell;
 use std::sync::Arc;
 
 use indicatif::{ProgressBar, ProgressStyle};
@@ -22,7 +18,7 @@ use zerol::game;
 use zerol::game::breakthrough::*;
 use zerol::game::{MoveTrait, MoveCode, MultiplayerGame, MultiplayerGameBuilder, SingleplayerGame};
 use zerol::policies::{
-    flat::*, mcts::*, puct::*, MultiplayerPolicy, MultiplayerPolicyBuilder, SingleplayerPolicy,
+    flat::*, puct::*, MultiplayerPolicyBuilder, SingleplayerPolicy,
     SingleplayerPolicyBuilder,
 };
 
@@ -66,8 +62,8 @@ pub fn monte_carlo_match<
             let c1 = c1.clone();
             let c2 = c2.clone();
 
-            let mut p1 = Box::new(pb1.create(G::players()[0]));
-            let mut p2 = Box::new(pb2.create(G::players()[1]));
+            let p1 = Box::new(pb1.create(G::players()[0]));
+            let p2 = Box::new(pb2.create(G::players()[1]));
 
             let starting_player = *G::players().choose(&mut rand::thread_rng()).unwrap();
             let game = game_factory.create(starting_player);
@@ -99,66 +95,6 @@ pub fn monte_carlo_match<
     count_victory
 }
 
-/*
-struct GameDuelUI {}
-
-impl GameDuelUI {
-    fn render<
-        IG: InteractiveGame,
-        P1: MultiplayerPolicy<IG::G> + 'static,
-        P2: MultiplayerPolicy<IG::G> + 'static,
-    >(
-        start: <IG::G as MultiplayerGame>::Player,
-        _p1: P1,
-        p2: P2,
-    ) -> impl cursive::view::View {
-        //let r_p1 = RefCell::new(p1);
-        let r_p2 = RefCell::new(p2);
-
-        LinearLayout::vertical()
-            .child(NamedView::new("game", IG::new(start)))
-            .child(Button::new_raw("Next", move |s| {
-                let state: &mut IG = &mut s.find_name("game").unwrap();
-
-                //let mut p1 = r_p1.borrow_mut();
-                let mut p2 = r_p2.borrow_mut();
-                let p1_to_play = state.get().turn() == <IG::G as MultiplayerGame>::players()[0];
-
-                if p1_to_play {
-                    //p1.play(&state)
-                    state.choose_move(Box::new(|action, state| state.get_mut().play(&action)))
-                } else {
-                    let action = p2.play(state.get());
-                    state.get_mut().play(&action);
-                };
-            }))
-    }
-}
-
-type G = Breakthrough;
-
-fn main_ui() {
-    let mut siv = Cursive::default();
-
-    let pb1 = Random::default();
-    let p1: RandomPolicy = MultiplayerPolicyBuilder::<G>::create(&pb1,G::players()[0]);
-    let pb2 = UCT::default();
-    let p2: UCTPolicy<G> = pb2.create(G::players()[1]);
-
-    siv.add_layer(
-        Dialog::new()
-            .title("Breakthrough")
-            .content(GameDuelUI::render::<ui::IBreakthrough, _, _>(
-                G::players()[0],
-                p1,
-                p2,
-            )),
-    );
-
-    siv.run();
-}
-*/
-
 pub struct BTCapture {}
 impl MoveCode<Breakthrough> for BTCapture {
     fn code(game: &Breakthrough, action: &zerol::game::breakthrough::Move) -> usize {
@@ -180,7 +116,7 @@ impl MoveCode<Breakthrough> for BTCapture {
 use std::marker::PhantomData;
 use zerol::misc::breakthrough_evaluator;
 
-use tensorflow::{Code, Graph, Session, SessionOptions, Status};
+use tensorflow::{Graph, Session, SessionOptions};
 const MODEL_PATH: &str = "models/sample";
 
 fn main() {

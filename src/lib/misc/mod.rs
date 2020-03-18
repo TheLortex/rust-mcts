@@ -1,9 +1,4 @@
 use super::game;
-use super::game::breakthrough::{Breakthrough, Move, K};
-use super::game::BaseGame;
-
-use std::collections::HashMap;
-use std::iter::FromIterator;
 
 use tensorflow::{Graph, Session, SessionRunArgs, Tensor};
 
