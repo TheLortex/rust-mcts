@@ -15,7 +15,7 @@ use std::fmt::Display;
  * A static policy.
  */
 pub trait MultiplayerPolicy<T: MultiplayerGame> {
-    fn play(&mut self, board: &T) -> T::Move;
+    fn play(&mut self, history: &[T]) -> T::Move;
 }
 /**
  * A static policy builder.

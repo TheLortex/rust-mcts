@@ -181,7 +181,8 @@ impl<G: MultiplayerGame, M: MoveCode<G>> PPAPolicy<G, M> {
 }
 
 impl<G: MultiplayerGame, M: MoveCode<G>> MultiplayerPolicy<G> for PPAPolicy<G, M> {
-    fn play(self: &mut PPAPolicy<G, M>, board: &G) -> G::Move {
+    fn play(self: &mut PPAPolicy<G, M>, history: &[G]) -> G::Move {
+        let board = history.last().unwrap();
         for _ in 0..N_PLAYOUTS {
             self.simulate(board)
         }

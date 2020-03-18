@@ -26,8 +26,8 @@ pub trait AsyncMCTSPolicy<G>: Sync
 
     fn select_move(&self, board: &G, exploration: bool) -> G::Move;
 
-    fn select(&self, board: &mut G) -> Vec<(usize, G::Move)> {
-        let mut history: Vec<(usize, G::Move)> = Vec::new();
+    fn select(&self, board: &mut G) -> Vec<(G, G::Move)> {
+        let mut history: Vec<(G, G::Move)> = Vec::new();
 
         while !board.is_finished() {
             let s_t = board.hash();
@@ -39,7 +39,7 @@ pub trait AsyncMCTSPolicy<G>: Sync
                 Some(_node) => {
                     /* play next move */
                     let a = self.select_move(&board, true);
-                    history.push((s_t, a));
+                    history.push((board.clone(), a));
                     board.play(&a)
                 }
             };
@@ -54,16 +54,19 @@ pub trait AsyncMCTSPolicy<G>: Sync
         self.tree_mut().insert(board.hash(), new_node);
     }
 
-    async fn simulate(&self, board: &G) -> Self::PlayoutInfo;
+    async fn simulate(&self, history: &[G]) -> Self::PlayoutInfo;
 
-    fn backpropagate(&mut self, history: Vec<(usize, G::Move)>, playout: Self::PlayoutInfo);
+    fn backpropagate(&mut self, history: Vec<(G, G::Move)>, playout: Self::PlayoutInfo);
 
-    async fn tree_search(&mut self, board: &G) {
-        let mut b = board.clone();
-        let history = self.select(&mut b);
+    async fn tree_search(&mut self, history: &[G]) {
+        let mut b = history.last().unwrap().clone();
+        let selection_history = self.select(&mut b);
+
+        let mut game_history = Vec::from(history);
+        game_history.extend(selection_history.iter().map(|(g,_)| g.clone()));
         self.expand(&b);
-        let playout = self.simulate(&b).await;
-        self.backpropagate(history, playout);
+        let playout = self.simulate(&game_history).await;
+        self.backpropagate(selection_history, playout);
     }
 }
 
@@ -89,18 +92,20 @@ where
 }
 
 #[async_trait]
-impl<G: MultiplayerGame, M: AsyncMCTSPolicy<G>> AsyncMultiplayerPolicy<G> for WithAsyncMCTSPolicy<G, M>
+impl<G, M> AsyncMultiplayerPolicy<G> for WithAsyncMCTSPolicy<G, M>
 where
     G: MultiplayerGame,
     M: AsyncMCTSPolicy<G> + Sync + Send,
     G::Move: Sync + Send,
     G: Sync + Send 
 {
-    async fn play(&mut self, board: &G) -> G::Move {
+    async fn play(&mut self, history: &[G]) -> G::Move {
+        let board = history.last().unwrap();
+
         for _ in 0..N_PLAYOUTS {
-            self.inner.tree_search(board).await
+            self.inner.tree_search(history).await
         }
 
-        self.inner.select_move(&board, false)
+        self.inner.select_move(board, false)
     }
 }

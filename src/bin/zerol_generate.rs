@@ -1,111 +1,21 @@
-#![allow(dead_code)]
-#![allow(unused_imports)]
 #![allow(non_snake_case)]
 
-use std::collections::HashMap;
-use std::error::Error;
-use std::fs::{File, OpenOptions};
-use std::io::prelude::*;
-use std::io::BufReader;
-use std::iter::FromIterator;
+use tensorflow::{Graph, Session, SessionOptions};
+use notify::event::*;
+use notify::{RecommendedWatcher, RecursiveMode, Watcher};
+use std::sync::Mutex;
+use std::sync::Arc;
+use std::sync::RwLock;
+use std::sync::atomic::AtomicBool;
+use std::sync::atomic::Ordering;
 use std::path::Path;
-use std::process::exit;
-
-use tensorflow::{Code, Graph, Session, SessionOptions};
+use std::{thread, time};
+use tensorflow;
+use tokio;
 
 const MODEL_PATH: &str = "models/breakthrough";
 
-use zerol::game::breakthrough::{Breakthrough, K, BreakthroughBuilder, Color, Move};
-use zerol::game::{BaseGame, MultiplayerGame, MultiplayerGameBuilder};
-use zerol::game;
-use zerol::policies::puct::PUCT;
-use zerol::policies::flat::Random;
-use zerol::policies::{MultiplayerPolicy, MultiplayerPolicyBuilder};
-
-use nix::unistd::mkfifo;
-use std::io::SeekFrom;
-use std::marker::PhantomData;
-
-
-use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
-use ndarray::Array;
-
-fn self_play_match<F: Fn(Color, &[&Breakthrough]) -> (Array<f32, <Breakthrough as game::Feature>::ActionDim>, f32)>(
-    evaluate: &F,
-    gb: &BreakthroughBuilder
-) -> (Color, Vec<(Breakthrough, HashMap<Move, f32>)>) {
-    let mut game: Breakthrough = gb.create(Color::random());
-    
-    let puct = PUCT {
-        C_PUCT: 4.,
-        evaluate,
-        _g: PhantomData,
-    };
-    let mut p1 = puct.create(Color::Black);
-    let mut p2 = puct.create(Color::White);
-    //let mut p1 = MultiplayerPolicyBuilder::<Breakthrough>::create(&Random {}, Color::Black);
-    //let mut p2 = MultiplayerPolicyBuilder::<Breakthrough>::create(&Random {}, Color::White);
-
-    let mut history = vec![];
-
-    while { game.winner().is_none() } {
-        let policy = if game.turn() == Color::Black { // : &mut dyn MultiplayerPolicy<Breakthrough>
-            &mut p1
-        } else {
-            &mut p2
-        };
-
-        let action = policy.play(&game);
-        let game_node = policy.0.tree.get(&game.hash()).unwrap();
-        let monte_carlo_distribution = HashMap::from_iter(
-            game_node
-                .moves
-                .iter()
-                .map(|(k, v)| (*k, v.N_a / game_node.count)),
-        );
-        history.push((game.clone(), monte_carlo_distribution));
-
-        game.play(&action);
-    }
-
-    (game.winner().unwrap(), history)
-}
-
-struct FileManager {
-    f: File,
-}
-
-use nix::sys::stat;
-use std::mem::transmute;
-
-use zerol::game::Feature;
-
-impl FileManager {
-    fn new(path: &str) -> Self {
-        match mkfifo(path, stat::Mode::S_IRWXU) {
-            Ok(_) => println!("Created FIFO {}.", path),
-            Err(_) => println!("FIFO already exists."),
-        };
-
-        let f = OpenOptions::new()
-            .read(true)
-            .write(true)
-            .open(path)
-            .expect("Unable to open file.");
-        FileManager { f }
-    }
-
-    fn append(&mut self, board: &Breakthrough, policy: &HashMap<Move, f32>, value: &f32) {
-        let vec_board = board.state_to_feature(board.turn()).into_raw_vec();
-        
-        let vec_policy = Breakthrough::moves_to_feature(policy).into_raw_vec();
-
-        let toser = (vec_board, vec_policy, value);
-        let ser = serde_pickle::to_vec(&toser, true).unwrap();
-        self.f.write(&ser.len().to_be_bytes()).expect(":c");
-        self.f.write_all(&ser).expect("Could not write file..");
-    }
-}
+use zerol::game::{MultiplayerGame, Feature, breakthrough::{Color, Breakthrough}};
 
 fn main() {
     let mut threaded_rt = tokio::runtime::Builder::new()
@@ -116,24 +26,6 @@ fn main() {
     threaded_rt.block_on(run())
 }
 
-use notify::event::*;
-use notify::{RecommendedWatcher, RecursiveMode, Watcher};
-use std::time::Duration;
-use std::sync::Mutex;
-use std::sync::Arc;
-
-use zerol::misc::breakthrough_evaluator;
-use rayon::prelude::*;
-use rayon::iter::repeat;
-
-use std::sync::RwLock;
-use std::sync::atomic::AtomicBool;
-use std::sync::atomic::Ordering;
-
-use std::{thread, time};
-
-use tensorflow;
-use tokio;
 
 async fn run() {
     /* check that model exists. */
@@ -163,7 +55,7 @@ async fn run() {
     let i_w = is_writing.clone();
 
     //graph.operation_iter().map(|o| println!("{:?}", o.name().unwrap())).collect::<()>();
-    let fm_mtx = Arc::new(Mutex::new(FileManager::new("./fifo")));
+    let fm_mtx = Arc::new(Mutex::new(zerol::misc::filemanager::FileManager::new("./fifo")));
 
     /*
      * Watches for change in the model, and reload when needed.
@@ -210,11 +102,18 @@ async fn run() {
                 thread::sleep(time::Duration::from_millis(1));
             };
 
+
+
             let fm_mtx = fm_mtx.clone();
             let mut fm = fm_mtx.lock().unwrap();
+            let mut board_history: Vec<Breakthrough> = vec![];
             for (board, policy) in history.iter() {
+                while board_history.len() < 1 { // TODO: N_HISTORY-1
+                    board_history.push(board.clone());
+                };
+                board_history.push(board.clone());
                 let value = if board.turn() == winner { 1.0 } else { 0.0 };
-                fm.append(board, policy, &value);
+                fm.append(&board_history, policy, &value);
             }
         }
     });

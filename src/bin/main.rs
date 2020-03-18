@@ -1,5 +1,3 @@
-#![allow(dead_code)]
-#![allow(unused_imports)]
 #![allow(non_snake_case)]
 
 use cursive::views::{Button, Dialog, LinearLayout, NamedView};
@@ -9,26 +7,23 @@ use atomic_counter::{AtomicCounter, RelaxedCounter};
 
 use std::collections::hash_map::DefaultHasher;
 use std::convert::TryFrom;
-use std::hash::{Hash, Hasher};
+use std::hash::Hasher;
 
 use rand::seq::SliceRandom;
-use rand::Rng;
 use std::cell::RefCell;
 use std::sync::Arc;
 
-use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
+use indicatif::{ProgressBar, ProgressStyle};
 use rayon::prelude::*;
 
 extern crate zerol;
 
+use zerol::game;
 use zerol::game::breakthrough::*;
-use zerol::game::hashcode_20::*;
-use zerol::game::misere_breakthrough::*;
-use zerol::game::weak_schur::*;
-use zerol::game::*;
+use zerol::game::{MoveTrait, MoveCode, MultiplayerGame, MultiplayerGameBuilder, SingleplayerGame};
 use zerol::policies::{
-    flat::*, mcts::*, nmcs::*, nrpa::*, ppa::*, puct::*, MultiplayerPolicy,
-    MultiplayerPolicyBuilder, SingleplayerPolicy, SingleplayerPolicyBuilder,
+    flat::*, mcts::*, puct::*, MultiplayerPolicy, MultiplayerPolicyBuilder, SingleplayerPolicy,
+    SingleplayerPolicyBuilder,
 };
 
 fn game_solo<G: SingleplayerGame, P: SingleplayerPolicyBuilder<G>>(pb: &P, game: &G) -> f32 {
@@ -45,32 +40,6 @@ fn game_solo<G: SingleplayerGame, P: SingleplayerPolicyBuilder<G>>(pb: &P, game:
     b.score()
 }
 
-fn game_duel<G: MultiplayerGame, P1: MultiplayerPolicy<G>, P2: MultiplayerPolicy<G>>(
-    p1: &mut P1,
-    p2: &mut P2,
-    game: &G,
-) -> G {
-    let mut b = game.clone();
-    const DBG: bool = false;
-
-    while {
-        let action = if b.turn() == G::players()[0] {
-            p1.play(&b)
-        } else {
-            p2.play(&b)
-        };
-        if DBG {
-            println!("{:?} => {:?}", b, action);
-        }
-        b.play(&action);
-        !b.is_finished()
-    } {}
-    if DBG {
-        println!("{:?}", b);
-    };
-    b
-}
-
 pub fn monte_carlo_match<
     G: MultiplayerGame,
     GB: MultiplayerGameBuilder<G> + Sync,
@@ -83,11 +52,9 @@ pub fn monte_carlo_match<
     game_factory: &GB,
 ) -> usize {
     let pb = ProgressBar::new(n as u64);
-    pb.set_style(
-        ProgressStyle::default_bar().template(
-            "{spinner:.green} [{elapsed_precise}] [{wide_bar:.cyan/blue}] {msg} (ETA {eta})",
-        ),
-    );
+    pb.set_style(ProgressStyle::default_bar().template(
+        "{spinner:.green} [{elapsed_precise}] [{wide_bar:.cyan/blue}] {msg} (ETA {eta})",
+    ));
     pb.enable_steady_tick(200);
 
     let c1 = Arc::new(RelaxedCounter::new(0));
@@ -99,17 +66,16 @@ pub fn monte_carlo_match<
             let c1 = c1.clone();
             let c2 = c2.clone();
 
-            let mut p1 = pb1.create(G::players()[0]);
-            let mut p2 = pb2.create(G::players()[1]);
+            let mut p1 = Box::new(pb1.create(G::players()[0]));
+            let mut p2 = Box::new(pb2.create(G::players()[1]));
 
             let starting_player = *G::players().choose(&mut rand::thread_rng()).unwrap();
             let game = game_factory.create(starting_player);
 
-            let result = if game_duel(
-                &mut p1,
-                &mut p2,
-                &game,
-            ).has_won(G::players()[0])
+            let result = if game::simulate(p1, p2, &game)
+                .last()
+                .unwrap()
+                .has_won(G::players()[0])
             {
                 c1.inc();
                 1
@@ -133,6 +99,7 @@ pub fn monte_carlo_match<
     count_victory
 }
 
+/*
 struct GameDuelUI {}
 
 impl GameDuelUI {
@@ -190,6 +157,7 @@ fn main_ui() {
 
     siv.run();
 }
+*/
 
 pub struct BTCapture {}
 impl MoveCode<Breakthrough> for BTCapture {
@@ -224,10 +192,12 @@ fn main() {
     let p1 = PUCT {
         _g: PhantomData,
         C_PUCT: 0.4,
-        evaluate: &(|pov, board_history: &[&Breakthrough]| breakthrough_evaluator(&session, &graph, pov, board_history)),
+        N_HISTORY: 2,
+        evaluate: &(|pov, board_history: &[Breakthrough]| {
+            breakthrough_evaluator(&session, &graph, pov, board_history)
+        }),
     };
     let p2 = FlatMonteCarlo::default();
-    
 
     let gb = BreakthroughBuilder {};
 

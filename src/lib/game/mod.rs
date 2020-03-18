@@ -146,3 +146,28 @@ pub trait InteractiveGame: cursive::view::View {
     fn get(&self) -> &Self::G;
     fn choose_move(&mut self, cb: Box<dyn FnOnce(<Self::G as BaseGame>::Move, &mut Self)>);
 }
+
+
+use crate::policies::MultiplayerPolicy;
+
+pub fn simulate<'a, 'b, G: MultiplayerGame>(
+    mut p1: Box<dyn MultiplayerPolicy<G> + 'a>,
+    mut p2: Box<dyn MultiplayerPolicy<G> + 'b>,
+    game: &G,
+) -> Vec<G> {
+    let mut history = vec![game.clone()];
+
+    while {
+        let mut board = history.last().unwrap().clone();
+        let action = if board.turn() == G::players()[0] {
+            p1.play(&history)
+        } else {
+            p2.play(&history)
+        };
+        board.play(&action);
+        let game_has_ended = board.is_finished();
+        history.push(board);
+        !game_has_ended
+    } {}
+    history
+}

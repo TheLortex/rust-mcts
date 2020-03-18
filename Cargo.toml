@@ -51,3 +51,6 @@ version = "0.7.0"
 [dependencies.tensorflow]
 version = "0.14.0"
 features = ["tensorflow_gpu"]
+
+#[replace]
+#'tensorflow:0.14.0' = { path = '/home/lucas/git/tensorflow-rust' }

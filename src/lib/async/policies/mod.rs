@@ -8,7 +8,7 @@ use async_trait::async_trait;
 
 #[async_trait]
 pub trait AsyncMultiplayerPolicy<T: MultiplayerGame> {
-    async fn play(&mut self, board: &T) -> T::Move;
+    async fn play(&mut self, history: &[T]) -> T::Move;
 }
 
 

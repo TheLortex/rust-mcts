@@ -375,8 +375,12 @@ impl Feature for Breakthrough {
                 *row = 1.0
             } else if z == 1 && self.content[x][y] == Cell::C(pov.adv()) {
                 *row = 1.0
-            } else if z == 2 && self.turn() == pov {
-                *row = 1.0
+            } else if z == 2 {
+                if self.turn() == Color::White {
+                    *row = 1.0
+                } else {
+                    *row = -1.0
+                }
             }
         }
         
@@ -398,5 +402,48 @@ impl Feature for Breakthrough {
         HashMap::from_iter(
             self.possible_moves().iter().map(|m| (*m, features[[m.x, m.y, m.direction as usize]] / z))
         )
+    }
+}
+
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_feature_to_moves() {
+        let g: Breakthrough = (BreakthroughBuilder {}).create(Color::Black);
+        let mut features = Array::zeros(Breakthrough::action_dimension());
+        features[[0, 1, MoveDirection::Front as usize]] = 0.2;
+        features[[1, 1, MoveDirection::Front as usize]] = 0.2;
+        features[[0, 0, MoveDirection::Front as usize]] = 0.6;
+
+        let moves = g.feature_to_moves(&features);
+        assert_eq!(*moves.get(&Move {x: 0, y: 1, color: Color::Black, direction: MoveDirection::Front}).unwrap(), 0.5);
+        assert_eq!(*moves.get(&Move {x: 1, y: 1, color: Color::Black, direction: MoveDirection::Front}).unwrap(), 0.5);
+    }
+
+    #[test]
+    fn test_initial_state_to_features() {
+        for color in &[Color::Black, Color::White] {
+            for pov in &[Color::Black, Color::White] {
+                let g: Breakthrough = (BreakthroughBuilder {}).create(*color);
+                let f = g.state_to_feature(*pov);
+                
+                if *pov == Color::Black {
+                    assert_eq!(f[[2,0,0]], 1.0);
+                    assert_eq!(f[[2,K-1,1]], 1.0);
+                } else {
+                    assert_eq!(f[[2,K-1,0]], 1.0);
+                    assert_eq!(f[[2,0,1]], 1.0);
+                }
+
+                if *color == Color::Black {
+                    assert_eq!(f[[0,2,2]], -1.0);
+                } else{
+                    assert_eq!(f[[0,2,2]], 1.0);
+                }
+            }
+        }
     }
 }

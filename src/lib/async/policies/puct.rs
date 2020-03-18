@@ -1,19 +1,17 @@
 
-use std::f32;
-use std::iter::*;
-
-use crate::game::{MultiplayerGame, BaseGame};
+use crate::game::MultiplayerGame;
 use crate::game;
 use crate::policies::N_PLAYOUTS;
 use super::{AsyncMultiplayerPolicyBuilder};
 use super::mcts::{AsyncMCTSPolicy, WithAsyncMCTSPolicy};
 
-
-use async_trait::async_trait;
-
+use std::f32;
+use std::iter::*;
 use std::collections::HashMap;
 use std::marker::PhantomData;
-
+use std::future::Future;
+use ndarray::Array;
+use async_trait::async_trait;
 use float_ord::FloatOrd;
 
 #[derive(Debug)]
@@ -29,24 +27,40 @@ pub struct PUCTNodeInfo<G: MultiplayerGame> {
     pub moves: HashMap<G::Move, PUCTMoveInfo>,
 }
 
-use ndarray::Array;
 
-pub trait FutureOutput<G:  game::Feature>: std::future::Future<Output=(Array<f32, G::ActionDim>, f32)> {}
-impl<G: game::Feature, O: std::future::Future<Output=(Array<f32, G::ActionDim>, f32)>> FutureOutput<G> for O {}
+pub trait FutureOutput<G>: Future<Output=(Array<f32, G::ActionDim>, f32)> 
+    where G: game::Feature {}
+impl<G, O> FutureOutput<G> for O 
+where 
+    G: game::Feature,
+    O: Future<Output=(Array<f32, G::ActionDim>, f32)> {}
 
-pub trait AsyncEvaluator<G:  game::Feature, O:FutureOutput<G>>: Fn(G::Player, &[G]) -> O {}
-impl<'a, G: game::Feature, O:FutureOutput<G>, F: Fn(G::Player, &[G]) -> O> AsyncEvaluator <G,O>for F {}
+pub trait AsyncEvaluator<G, O>: Fn(G::Player, &[G]) -> O 
+where 
+    G: game::Feature, 
+    O:FutureOutput<G> {}
+impl<'a, G, O, F> AsyncEvaluator <G,O> for F
+where 
+    G: game::Feature,
+    O: FutureOutput<G>,
+    F: Fn(G::Player, &[G]) -> O  {}
 
-pub struct PUCTPolicy_<'a, G: game::Feature, O:FutureOutput<G>,F: AsyncEvaluator<G,O>> {
+pub struct PUCTPolicy_<'a, G, O, F> 
+where 
+    G: game::Feature, 
+    O: FutureOutput<G>,
+    F: AsyncEvaluator<G,O>
+{
     pub color: G::Player,
     pub C_PUCT: f32,
+    pub N_HISTORY: usize,
     pub evaluate: &'a F,
     pub tree: HashMap<usize, PUCTNodeInfo<G>>,
     pub _o: PhantomData<O>,
 }
 
 #[async_trait]
-impl<'a,'b, G, O, F> AsyncMCTSPolicy<G> for PUCTPolicy_<'a, G, O, F>
+impl<'a, G, O, F> AsyncMCTSPolicy<G> for PUCTPolicy_<'a, G, O, F>
 where
     G: game::Feature + Send + Sync,
     G::Player: Send + Sync,
@@ -98,9 +112,17 @@ where
         PUCTNodeInfo { count: 0., moves }
     }
 
-    async fn simulate(&self, board: &G) -> Self::PlayoutInfo {
+    async fn simulate(&self, history: &[G]) -> Self::PlayoutInfo {
+        let board = history.last().unwrap();
         if !board.is_finished() {
-            let (policy, value) = (self.evaluate)(self.color, &[board.clone()]).await;
+            let history: Vec<G> = if history.len() < self.N_HISTORY {
+                let mut _h = vec![history.first().unwrap().clone(); self.N_HISTORY - history.len()];
+                _h.extend(history.iter().cloned());
+                _h
+            } else {
+                Vec::from(&history[(history.len()-self.N_HISTORY)..(history.len())])
+            };
+            let (policy, value) = (self.evaluate)(self.color, &history).await;
             let policy = board.feature_to_moves(&policy);
             (Some(policy), value, board.clone())
         } else {
@@ -112,7 +134,7 @@ where
         }
     }
 
-    fn backpropagate(&mut self, history: Vec<(usize, G::Move)>, (policy, value, board): Self::PlayoutInfo) {
+    fn backpropagate(&mut self, history: Vec<(G, G::Move)>, (policy, value, board): Self::PlayoutInfo) {
         if let Some(policy) = policy { // save probabilities of newly created node.
             let z: f32 = board
                 .possible_moves()
@@ -130,7 +152,7 @@ where
         let value = if board.turn() == self.color { value } else { 1. - value };
 
         for (state, action) in history.iter() {
-            let mut node = self.tree.get_mut(state).unwrap();
+            let mut node = self.tree.get_mut(&state.hash()).unwrap();
             node.count += 1.;
             let mut v = node.moves.get_mut(action).unwrap();
             (*v).N_a += 1.;
@@ -154,9 +176,9 @@ pub struct PUCT<'a, G, O, F>
     F: (Fn(G::Player, &[G]) -> O) + Sync
 {
     pub C_PUCT: f32,
+    pub N_HISTORY: usize,
     pub evaluate: &'a F,
-    pub _g: PhantomData<fn() -> G>,
-    pub _o: PhantomData<fn() -> O>,
+    pub _g: PhantomData<fn() -> G>
 }
 
 impl<G,O,F> Copy for PUCT<'_, G, O, F> 
@@ -212,6 +234,7 @@ where
         WithAsyncMCTSPolicy::new(PUCTPolicy_::<'a, G, O, F> {
             color,
             C_PUCT: self.C_PUCT,
+            N_HISTORY: self.N_HISTORY,
             evaluate: self.evaluate,
             tree: HashMap::new(),
             _o: PhantomData

@@ -8,10 +8,16 @@ const MODEL_PATH: &str = "models/breakthrough";
 use tokio::prelude::*;
 use tokio::sync::{mpsc, oneshot};
 
-const BATCH_SIZE: usize = 128;
+
+const BATCH_SIZE: usize = 64;
 const N_EVALUATORS: usize = 7;
 const N_GENERATORS: usize = 3 * BATCH_SIZE / 2;
-const BATCH_TIMEOUT: usize = BATCH_SIZE * 1000 * 1000 * 1000 / (10 * 1000 * 1000); // in nanos
+
+/*
+const BATCH_SIZE: usize = 1;
+const N_EVALUATORS: usize = 1;
+const N_GENERATORS: usize = 1;
+*/
 
 use self::policies::{puct, puct::PUCT, AsyncMultiplayerPolicy, AsyncMultiplayerPolicyBuilder};
 use super::game::breakthrough::{Breakthrough, BreakthroughBuilder, Color, Move, K};
@@ -46,12 +52,12 @@ async fn breakthrough_evaluator_batch<'a>(
     .iter()
     .map(|x| *x as u64)
     .collect();
-
     let mut board_tensor = Tensor::new(&w_history_dim);
     for (i, board) in board_history.iter().enumerate() {
         board_tensor[i * input_stride..(i + 1) * input_stride]
             .clone_from_slice(&board.state_to_feature(pov).into_raw_vec());
     }
+    
 
     let (resp_tx, resp_rx) = oneshot::channel();
     sender.send((board_tensor, resp_tx)).await.ok().unwrap();
@@ -73,28 +79,30 @@ async fn game_generator_task(
 
     let puct = PUCT {
         C_PUCT: 4.,
+        N_HISTORY: 2,
         evaluate: &|pov: Color, board_history: &[Breakthrough]| {
             let bidule: Vec<Breakthrough> = board_history.iter().map(|x| (*x).clone()).collect();
             breakthrough_evaluator_batch(sender.clone(), pov, bidule)
         }, 
         _g: PhantomData,
-        _o: PhantomData,
     };
 
     loop {
         let mut p1 = puct.create(Color::Black);
         let mut p2 = puct.create(Color::White);
 
-        let mut game: Breakthrough = gb.create(Color::random());
+        let mut state_history: Vec<Breakthrough>  = vec![gb.create(Color::random())];
         let mut history = vec![];
 
-        while { game.winner().is_none() } {
-            let policy = if game.turn() == Color::Black {
+        while { state_history.last().unwrap().winner().is_none() } {
+            let policy = if state_history.last().unwrap().turn() == Color::Black {
                 &mut p1
             } else {
                 &mut p2
             };
-            let action = policy.play(&game).await;
+            let action = policy.play(&state_history).await;
+
+            let mut game = state_history.last().unwrap().clone();
             let game_node = policy.inner.tree.get(&game.hash()).unwrap();
             let monte_carlo_distribution: HashMap<Move, f32> = HashMap::from_iter(
                 game_node
@@ -105,9 +113,11 @@ async fn game_generator_task(
             history.push((game.clone(), monte_carlo_distribution));
 
             game.play(&action);
+            state_history.push(game);
         }
+
         output_chan
-            .send((game.winner().unwrap(), history))
+            .send((state_history.last().unwrap().winner().unwrap(), history))
             .await
             .ok()
             .unwrap();
@@ -115,15 +125,15 @@ async fn game_generator_task(
     }
 }
 
-async fn game_evaluator_task(
+async fn game_evaluator_task<G: Feature>(
     g_and_s: Arc<RwLock<(Graph, Session)>>,
     mut receiver: mpsc::Receiver<EvaluatorChannel>,
     bar: Arc<Box<ProgressBar>>,
 ) {
     println!("Starting game evaluator..");
 
-    let feature_size: usize = 2 * K * K + 1;
-    let policy_size: usize = 3 * K * K;
+    let feature_size: usize = G::state_dimension().size() * 2; //TODO: beurk
+    let policy_size: usize = G::action_dimension().size();
     let mut input_tensor: Tensor<f32> = Tensor::new(&[BATCH_SIZE as u64, feature_size as u64]);
     let mut tx_buf = vec![];
     let mut idx = 0;
@@ -190,15 +200,15 @@ pub async fn game_generator(
         let czop2 = bar_box2.clone();
         let g_and_s = graph_and_session.clone();
         join_handles_ev.push(tokio::spawn(async move {
-            game_evaluator_task(g_and_s, rx, czop2).await
+            game_evaluator_task::<Breakthrough>(g_and_s, rx, czop2).await
         }));
     }
 
     for join_handle in join_handles.drain(..) {
-        join_handle.await.unwrap(); // ?????????
+        join_handle.await.unwrap();
     }
 
     for join_handle in join_handles_ev.drain(..) {
-        join_handle.await.unwrap(); // ?????????
+        join_handle.await.unwrap();
     }
 }

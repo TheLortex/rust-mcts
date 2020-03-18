@@ -1,79 +1,41 @@
-#![allow(dead_code)]
-#![allow(unused_imports)]
 #![allow(non_snake_case)]
 
-use cursive::views::{Button, Dialog, LinearLayout, NamedView};
-use cursive::Cursive;
-
 use atomic_counter::{AtomicCounter, RelaxedCounter};
-
-use std::collections::hash_map::DefaultHasher;
-use std::convert::TryFrom;
-use std::hash::{Hash, Hasher};
-
+use clap::{App, Arg};
+use indicatif::{ProgressBar, ProgressStyle};
 use rand::seq::SliceRandom;
-use rand::Rng;
-use std::cell::RefCell;
-use std::sync::Arc;
-
-use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
 use rayon::prelude::*;
+use std::marker::PhantomData;
+use std::sync::Arc;
+use tensorflow::{Graph, Session, SessionOptions};
+use zerol::game::{breakthrough::*, MultiplayerGame, MultiplayerGameBuilder};
+use zerol::game;
+use zerol::misc::breakthrough_evaluator;
+use zerol::policies::{get_multi, puct::*, DynMultiplayerPolicyBuilder, MultiplayerPolicy};
 
-extern crate zerol;
-
-use zerol::game::breakthrough::*;
-use zerol::game::hashcode_20::*;
-use zerol::game::misere_breakthrough::*;
-use zerol::game::weak_schur::*;
-use zerol::game::*;
-use zerol::policies::{
-    get_multi,
-    flat::*, mcts::*, nmcs::*, nrpa::*, ppa::*, puct::*, MultiplayerPolicy,
-    MultiplayerPolicyBuilder, DynMultiplayerPolicyBuilder, SingleplayerPolicy, SingleplayerPolicyBuilder,
-};
-
-fn game_duel<'a, 'b, G: MultiplayerGame>(
-    mut p1: Box<dyn MultiplayerPolicy<G> + 'a>,
-    mut p2: Box<dyn MultiplayerPolicy<G> + 'b>,
-    game: &G
-) -> G {
-    let mut b = game.clone();
-
-    while {
-        let action = if b.turn() == G::players()[0] {
-            p1.play(&b)
-        } else {
-            p2.play(&b)
-        };
-        // println!("{:?} => {:?}", b, action);
-        
-        b.play(&action);
-        !b.is_finished()
-    } {}
-    // println!("{:?}", b);
-    b
-}
+const MODEL_PATH: &str = "models/breakthrough";
 
 pub fn monte_carlo_match<
-    'a, 'c,
-    'b, 'd,
-    G: MultiplayerGame,
-    GB: MultiplayerGameBuilder<G> + Sync,
+    'a,
+    'c,
+    'b,
+    'd,
+    G: game::MultiplayerGame,
+    GB: game::MultiplayerGameBuilder<G> + Sync,
 >(
     n: usize,
-    pb1: Box<dyn DynMultiplayerPolicyBuilder<'a, G> + Sync + 'c>, 
+    pb1: Box<dyn DynMultiplayerPolicyBuilder<'a, G> + Sync + 'c>,
     pb2: Box<dyn DynMultiplayerPolicyBuilder<'b, G> + Sync + 'd>,
     game_factory: &GB,
-    silent: bool
+    silent: bool,
 ) -> usize {
-
-    let pb = if silent { None } else {
+    let pb = if silent {
+        None
+    } else {
         let pb = ProgressBar::new(n as u64);
-        pb.set_style(
-            ProgressStyle::default_bar().template(
-                "{spinner:.green} [{elapsed_precise}] [{wide_bar:.cyan/blue}] {msg} (ETA {eta})",
-            ),
-        );
+        pb.set_style(ProgressStyle::default_bar().template(
+            "{spinner:.green} [{elapsed_precise}] [{wide_bar:.cyan/blue}] {msg} (ETA {eta})",
+        ));
         pb.enable_steady_tick(200);
         Some(pb)
     };
@@ -93,11 +55,10 @@ pub fn monte_carlo_match<
             let starting_player = *G::players().choose(&mut rand::thread_rng()).unwrap();
             let game = game_factory.create(starting_player);
 
-            let result = if game_duel(
-                p1,
-                p2,
-                &game
-            ).has_won(G::players()[0])
+            let result = if game::simulate(p1, p2, &game)
+                .last()
+                .unwrap()
+                .has_won(G::players()[0])
             {
                 c1.inc();
                 1
@@ -120,34 +81,22 @@ pub fn monte_carlo_match<
             result
         })
         .sum();
-       
-    if let Some(pb) = pb { 
+
+    if let Some(pb) = pb {
         pb.finish();
     }
     count_victory
 }
 
-type G = Breakthrough;
-
-
-use std::marker::PhantomData;
-use zerol::misc::breakthrough_evaluator;
-
-use tensorflow::{Code, Graph, Session, SessionOptions, Status};
-const MODEL_PATH: &str = "models/breakthrough";
-
-use clap::{Arg, App, SubCommand};
-
-use std::collections::HashMap;
-
-
 fn main() {
     let args = App::new("zerol-evaluate")
-        .arg(Arg::with_name("policy")
-            .short("p")
-            .long("policy")
-            .takes_value(true)
-            .possible_values(&["rand", "flat", "flat_ucb", "uct", "rave", "ppa", "nmcs"]))
+        .arg(
+            Arg::with_name("policy")
+                .short("p")
+                .long("policy")
+                .takes_value(true)
+                .possible_values(&["rand", "flat", "flat_ucb", "uct", "rave", "ppa", "nmcs"]),
+        )
         .arg(Arg::with_name("only-result").long("only-result"))
         .get_matches();
 
@@ -160,10 +109,12 @@ fn main() {
     let puct = PUCT {
         _g: PhantomData,
         C_PUCT: 0.4,
-        evaluate: &|pov, board_history: &[&Breakthrough]| breakthrough_evaluator(&session, &graph, pov, board_history),
+        N_HISTORY: 2,
+        evaluate: &|pov, board_history: &[Breakthrough]| {
+            breakthrough_evaluator(&session, &graph, pov, board_history)
+        },
     };
     let p1 = Box::new(puct);
-    
     /* Build contender. */
     let config = args.value_of("policy").unwrap_or("rand");
     let p2 = get_multi(config);
@@ -177,8 +128,5 @@ fn main() {
         println!("Player 2: {}", p2);
     }
 
-    println!(
-        "{}",
-        monte_carlo_match::<_, _>(100, p1, p2, &gb, silent)
-    );
+    println!("{}", monte_carlo_match::<_, _>(100, p1, p2, &gb, silent));
 }

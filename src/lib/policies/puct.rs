@@ -14,6 +14,10 @@ use ndarray::Array;
 
 use float_ord::FloatOrd;
 
+/*
+ puct::PUCT is deprecated. Use async::puct::PUCT instead.
+ */
+
 #[derive(Debug)]
 pub struct PUCTMoveInfo {
     pub Q: f32,
@@ -27,12 +31,13 @@ pub struct PUCTNodeInfo<G: game::Feature> {
     pub moves: HashMap<G::Move, PUCTMoveInfo>,
 }
 
-pub trait Evaluator<G: game::Feature>: Fn(G::Player, &[&G]) -> (Array<f32, G::ActionDim>, f32) {}
-impl<G:game::Feature, F: Fn(G::Player, &[&G]) -> (Array<f32, G::ActionDim>, f32)> Evaluator <G>for F {}
+pub trait Evaluator<G: game::Feature>: Fn(G::Player, &[G]) -> (Array<f32, G::ActionDim>, f32) {}
+impl<G:game::Feature, F: Fn(G::Player, &[G]) -> (Array<f32, G::ActionDim>, f32)> Evaluator <G>for F {}
 
 pub struct PUCTPolicy_<'a, G: game::Feature, F: Evaluator<G>> {
     pub color: G::Player,
     pub C_PUCT: f32,
+    pub N_HISTORY: usize,
     pub evaluate: &'a F,
     pub tree: HashMap<usize, PUCTNodeInfo<G>>,
 }
@@ -82,9 +87,17 @@ impl<'a, G: game::Feature, F: Evaluator<G>> MCTSPolicy<G> for PUCTPolicy_<'a, G,
         PUCTNodeInfo { count: 0., moves }
     }
 
-    fn simulate(&self, board: &G) -> Self::PlayoutInfo {
+    fn simulate(&self, history: &[G]) -> Self::PlayoutInfo {
+        let board = history.last().unwrap();
         if !board.is_finished() {
-            let (policy, value) = (self.evaluate)(self.color, &[board]);
+            let history: Vec<G> = if history.len() < self.N_HISTORY {
+                let mut _h = vec![history.first().unwrap().clone(); self.N_HISTORY - history.len()];
+                _h.extend(history.iter().cloned());
+                _h
+            } else {
+                Vec::from(&history[(history.len()-self.N_HISTORY)..(history.len())])
+            };
+            let (policy, value) = (self.evaluate)(self.color, &history);
             let policy = board.feature_to_moves(&policy);
             (Some(policy), value, board.clone())
         } else {
@@ -96,7 +109,7 @@ impl<'a, G: game::Feature, F: Evaluator<G>> MCTSPolicy<G> for PUCTPolicy_<'a, G,
         }
     }
 
-    fn backpropagate(&mut self, history: Vec<(usize, G::Move)>, (policy, value, board): Self::PlayoutInfo) {
+    fn backpropagate(&mut self, history: Vec<(G, G::Move)>, (policy, value, board): Self::PlayoutInfo) {
         if let Some(policy) = policy { // save probabilities of newly created node.
             let z: f32 = board
                 .possible_moves()
@@ -114,7 +127,7 @@ impl<'a, G: game::Feature, F: Evaluator<G>> MCTSPolicy<G> for PUCTPolicy_<'a, G,
         let value = if board.turn() == self.color { value } else { 1. - value };
 
         for (state, action) in history.iter() {
-            let mut node = self.tree.get_mut(state).unwrap();
+            let mut node = self.tree.get_mut(&state.hash()).unwrap();
             node.count += 1.;
             let mut v = node.moves.get_mut(action).unwrap();
             (*v).N_a += 1.;
@@ -132,9 +145,10 @@ pub type PUCTPolicy<'a,G,F> = WithMCTSPolicy<G, PUCTPolicy_<'a,G,F>> ;
 pub struct PUCT<'a, G, F> 
     where 
     G: game::Feature,
-    F: Fn(G::Player, &[&G]) -> (Array<f32, G::ActionDim>, f32)
+    F: Fn(G::Player, &[G]) -> (Array<f32, G::ActionDim>, f32)
 {
     pub C_PUCT: f32,
+    pub N_HISTORY: usize,
     pub evaluate: &'a F,
     pub _g: PhantomData<fn() -> G>,
 }
@@ -167,6 +181,7 @@ impl<'a, G: game::Feature, F: Evaluator<G>> MultiplayerPolicyBuilder<G>
         WithMCTSPolicy::new(PUCTPolicy_::<'a, G, F> {
             color,
             C_PUCT: self.C_PUCT,
+            N_HISTORY: self.N_HISTORY,
             evaluate: self.evaluate,
             tree: HashMap::new(),
         })

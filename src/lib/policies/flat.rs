@@ -9,7 +9,8 @@ use super::{MultiplayerPolicy, MultiplayerPolicyBuilder, SingleplayerPolicy, Sin
 pub struct RandomPolicy {}
 
 impl<G: MultiplayerGame> MultiplayerPolicy<G> for RandomPolicy {
-    fn play(self: &mut RandomPolicy, board: &G) -> G::Move {
+    fn play(self: &mut RandomPolicy, history: &[G]) -> G::Move {
+        let board = history.last().unwrap();
         let moves = board.possible_moves();
         moves.choose(&mut rand::thread_rng()).copied().unwrap()
     }
@@ -56,7 +57,9 @@ pub struct FlatMonteCarloPolicy<G: MultiplayerGame> {
 }
 
 impl<G: MultiplayerGame> MultiplayerPolicy<G> for FlatMonteCarloPolicy<G> {
-    fn play(self: &mut FlatMonteCarloPolicy<G>, board: &G) -> G::Move {
+    fn play(self: &mut FlatMonteCarloPolicy<G>, history: &[G]) -> G::Move {
+        let board = history.last().unwrap();
+
         const FLAT_PLAYOUTS: usize = N_PLAYOUTS;
 
         let moves = board.possible_moves();
@@ -109,7 +112,9 @@ pub struct FlatUCBMonteCarloPolicy<G: MultiplayerGame> {
 }
 
 impl<G: MultiplayerGame> MultiplayerPolicy<G> for FlatUCBMonteCarloPolicy<G> {
-    fn play(self: &mut FlatUCBMonteCarloPolicy<G>, board: &G) -> G::Move {
+    fn play(self: &mut FlatUCBMonteCarloPolicy<G>, history: &[G]) -> G::Move {
+        let board = history.last().unwrap();
+
         const UCB_WEIGHT: f32 = 0.4;
         const UCB_PLAYOUTS: usize = N_PLAYOUTS;
 

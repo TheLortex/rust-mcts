@@ -19,8 +19,8 @@ pub trait MCTSPolicy<G: MultiplayerGame> {
 
     fn select_move(&self, board: &G, exploration: bool) -> G::Move;
 
-    fn select(&self, board: &mut G) -> Vec<(usize, G::Move)> {
-        let mut history: Vec<(usize, G::Move)> = Vec::new();
+    fn select(&self, board: &mut G) -> Vec<(G, G::Move)> {
+        let mut history: Vec<(G, G::Move)> = Vec::new();
 
         while !board.is_finished() {
             let s_t = board.hash();
@@ -32,7 +32,7 @@ pub trait MCTSPolicy<G: MultiplayerGame> {
                 Some(_node) => {
                     /* play next move */
                     let a = self.select_move(&board, true);
-                    history.push((s_t, a));
+                    history.push((board.clone(), a));
                     board.play(&a)
                 }
             };
@@ -47,16 +47,19 @@ pub trait MCTSPolicy<G: MultiplayerGame> {
         self.tree_mut().insert(board.hash(), new_node);
     }
 
-    fn simulate(&self, board: &G) -> Self::PlayoutInfo;
+    fn simulate(&self, history: &[G]) -> Self::PlayoutInfo;
 
-    fn backpropagate(&mut self, history: Vec<(usize, G::Move)>, playout: Self::PlayoutInfo);
+    fn backpropagate(&mut self, history: Vec<(G, G::Move)>, playout: Self::PlayoutInfo);
 
-    fn tree_search(&mut self, board: &G) {
-        let mut b = board.clone();
-        let history = self.select(&mut b);
+    fn tree_search(&mut self, history: &[G]) {
+        let mut b = history.last().unwrap().clone();
+        let selection_history = self.select(&mut b);
+
+        let mut game_history = Vec::from(history);
+        game_history.extend(selection_history.iter().map(|(g,_)| g.clone()));
         self.expand(&b);
-        let playout = self.simulate(&b);
-        self.backpropagate(history, playout);
+        let playout = self.simulate(&game_history);
+        self.backpropagate(selection_history, playout);
     }
 }
 
@@ -69,12 +72,13 @@ impl<G: MultiplayerGame, M: MCTSPolicy<G>> WithMCTSPolicy<G, M> {
 }
 
 impl<G: MultiplayerGame, M: MCTSPolicy<G>> MultiplayerPolicy<G> for WithMCTSPolicy<G, M> {
-    fn play(&mut self, board: &G) -> G::Move {
+    fn play(&mut self, history: &[G]) -> G::Move {
+        let board = history.last().unwrap();
         for _ in 0..N_PLAYOUTS {
-            self.0.tree_search(board)
+            self.0.tree_search(history)
         }
 
-        self.0.select_move(&board, false)
+        self.0.select_move(board, false)
     }
 }
 
@@ -154,14 +158,14 @@ impl<G: MultiplayerGame> MCTSPolicy<G> for UCTPolicy_<G> {
         UCTNodeInfo { count: 0., moves }
     }
 
-    fn simulate(&self, board: &G) -> Self::PlayoutInfo {
-        board.playout_board().has_won(self.color)
+    fn simulate(&self, history: &[G]) -> Self::PlayoutInfo {
+        history.last().unwrap().playout_board().has_won(self.color)
     }
 
-    fn backpropagate(&mut self, history: Vec<(usize, G::Move)>, playout: Self::PlayoutInfo) {
+    fn backpropagate(&mut self, history: Vec<(G, G::Move)>, playout: Self::PlayoutInfo) {
         let z = if playout { 1. } else { 0. };
         for (state, action) in history.iter() {
-            let mut node = self.tree.get_mut(state).unwrap();
+            let mut node = self.tree.get_mut(&state.hash()).unwrap();
             node.count += 1.;
 
             let mut v = node.moves.get_mut(action).unwrap();
@@ -270,20 +274,20 @@ impl<G: MultiplayerGame> MCTSPolicy<G> for RAVEPolicy_<G> {
         RAVENodeInfo { count: 0., moves }
     }
 
-    fn simulate(&self, board: &G) -> Self::PlayoutInfo {
-        let (s, default) = board.playout_board_history();
+    fn simulate(&self, history: &[G]) -> Self::PlayoutInfo {
+        let (s, default) = history.last().unwrap().playout_board_history();
         (s.has_won(self.color), default)
     }
 
     fn backpropagate(
         &mut self,
-        history: Vec<(usize, G::Move)>,
+        history: Vec<(G, G::Move)>,
         (has_won, history_default): Self::PlayoutInfo,
     ) {
         let z = if has_won { 1. } else { 0. };
-        let whole_history = [history.to_vec(), history_default].concat();
+        let whole_history = [history.iter().map(|(a,b)| (a.hash(), *b)).collect(), history_default].concat();
         for (t, (state, action)) in history.iter().enumerate() {
-            let mut node = self.tree.get_mut(state).unwrap();
+            let mut node = self.tree.get_mut(&state.hash()).unwrap();
             node.count += 1.;
 
             let mut v = node.moves.get_mut(action).unwrap();
