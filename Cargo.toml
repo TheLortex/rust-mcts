@@ -12,6 +12,7 @@ name = "zerol"
 path = "src/lib/lib.rs"
 
 [dependencies]
+rand_distr = "0.2.2"
 tokio = { version = "0.2", features = ["full"] }
 async-trait = "0.1.24"
 clap = "2.33.0"

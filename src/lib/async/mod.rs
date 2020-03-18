@@ -1,5 +1,5 @@
 use crate::settings;
-use crate::policies::{AsyncMultiplayerPolicy, AsyncMultiplayerPolicyBuilder, mcts::puct::BatchedPUCT};
+use crate::policies::{AsyncMultiplayerPolicy, AsyncMultiplayerPolicyBuilder, mcts::puct::{BatchedPUCT, PUCTSettings}};
 use crate::game::breakthrough::{Breakthrough, BreakthroughBuilder, Color, Move};
 use crate::game::{BaseGame, Feature, MultiplayerGame, MultiplayerGameBuilder};
 use crate::misc::tensorflow_call;
@@ -51,6 +51,7 @@ async fn breakthrough_evaluator_batch<'a>(
 }
 
 async fn game_generator_task(
+    puct_settings: PUCTSettings,
     sender: mpsc::Sender<EvaluatorChannel>,
     mut output_chan: mpsc::Sender<GameHistoryChannel>,
     bar: Arc<Box<ProgressBar>>,
@@ -58,8 +59,7 @@ async fn game_generator_task(
     let gb = BreakthroughBuilder {};
 
     let puct = BatchedPUCT {
-        C_PUCT: 4.,
-        N_HISTORY: settings::DEFAULT_N_HISTORY_PUCT,
+        s: puct_settings,
         N_PLAYOUTS: settings::DEFAULT_N_PLAYOUTS,
         evaluate: &|pov: Color, board_history: &[Breakthrough]| {
             let bidule: Vec<Breakthrough> = board_history.iter().map(|x| (*x).clone()).collect();
@@ -145,6 +145,7 @@ use std::sync::Arc;
 use std::sync::RwLock;
 
 pub async fn game_generator(
+    puct_settings: PUCTSettings,
     graph_and_session: Arc<RwLock<(Graph, Session)>>,
     output_chan: mpsc::Sender<GameHistoryChannel>,
 ) {
@@ -174,7 +175,7 @@ pub async fn game_generator(
             let output_tx = output_chan.clone();
             let czop = bar_box.clone();
             join_handles.push(tokio::spawn(async move {
-                game_generator_task(cmd_tx, output_tx, czop).await
+                game_generator_task(puct_settings, cmd_tx, output_tx, czop).await
             }));
         }
         drop(tx);

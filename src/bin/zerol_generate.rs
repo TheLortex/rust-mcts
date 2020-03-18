@@ -17,6 +17,7 @@ const MODEL_PATH: &str = "models/breakthrough";
 
 use zerol::game::{MultiplayerGame, breakthrough::Breakthrough};
 use zerol::settings;
+use zerol::policies::mcts::puct::PUCTSettings;
 
 fn main() {
     let mut threaded_rt = tokio::runtime::Builder::new()
@@ -95,15 +96,13 @@ async fn run() {
 
     let (tx_games, mut rx_games) = tokio::sync::mpsc::channel(1024);
     
-    let game_gen = tokio::spawn(zerol::r#async::game_generator(graph_and_session, tx_games));
+    let game_gen = tokio::spawn(zerol::r#async::game_generator(PUCTSettings::default(), graph_and_session, tx_games));
 
     let game_writer = tokio::spawn(async move {
         while let Some((winner, history)) = rx_games.recv().await {
             while is_writing.load(Ordering::Relaxed) {
                 thread::sleep(time::Duration::from_millis(1));
             };
-
-
 
             let fm_mtx = fm_mtx.clone();
             let mut fm = fm_mtx.lock().unwrap();

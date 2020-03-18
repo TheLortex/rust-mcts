@@ -12,6 +12,8 @@ use std::f32;
 use std::future::Future;
 use std::iter::*;
 use std::marker::PhantomData;
+use rand_distr::{Distribution, Gamma};
+
 
 #[derive(Debug)]
 pub struct PUCTMoveInfo {
@@ -69,10 +71,33 @@ where
 /**
  * Common PUCT
  */
+#[derive(Copy, Clone, fmt::Debug)]
+pub struct PUCTSettings {
+    pub C_BASE: f32,
+    pub C_INIT: f32,
+    pub ROOT_DIRICHLET_ALPHA: f32,
+    pub ROOT_EXPLORATION_FRACTION: f32,
+    pub N_HISTORY: usize,
+}
+
+/**
+ * Default inspired from AlphaZero paper.
+ */
+impl Default for PUCTSettings {
+    fn default() -> Self {
+        Self {
+            C_BASE: 19652.,
+            C_INIT: 1.25,
+            ROOT_DIRICHLET_ALPHA: 0.3,
+            ROOT_EXPLORATION_FRACTION: 0.25,
+            N_HISTORY: 2,
+        }
+    }
+}
+
 pub struct BasePUCTPolicy_<G: game::Feature> {
     pub color: G::Player,
-    pub C_PUCT: f32,
-    pub N_HISTORY: usize,
+    pub s: PUCTSettings,
     pub tree: HashMap<usize, PUCTNodeInfo<G>>,
 }
 
@@ -99,7 +124,8 @@ where
 
         let moves_scores = moves.iter().map(|action| {
             let v = node_info.moves.get(action).unwrap();
-            let value = v.Q + self.C_PUCT * v.pi * (N.sqrt() / (v.N_a + 1.));
+            let pb_c = ((N + self.s.C_BASE + 1.)/self.s.C_BASE).ln() + self.s.C_INIT;
+            let value = v.Q + pb_c * v.pi * (N.sqrt() / (v.N_a + 1.));
             (value, action)
         });
 
@@ -130,8 +156,17 @@ where
         history: Vec<(G, G::Move)>,
         (policy, value, board): Self::PlayoutInfo,
     ) {
-        if let Some(policy) = policy {
+        if let Some(mut policy) = policy {
             // save probabilities of newly created node.
+            if history.len() == 0 {
+                // add dirichlet noise on the root node.
+                let frac = self.s.ROOT_EXPLORATION_FRACTION;
+                let gamma = Gamma::new(self.s.ROOT_DIRICHLET_ALPHA.into(), 1.0).unwrap();
+                for (_, val) in policy.iter_mut() {
+                    let noise = gamma.sample(&mut rand::thread_rng());
+                    *val = frac * (*val) + (1. - frac) * noise;
+                }
+            }
             let z: f32 = board
                 .possible_moves()
                 .into_iter()
@@ -208,13 +243,13 @@ where
     fn simulate(&self, history: &[G]) -> Self::PlayoutInfo {
         let board = history.last().unwrap();
         if !board.is_finished() {
-            let history: Vec<G> = if history.len() < self.b.N_HISTORY {
+            let history: Vec<G> = if history.len() < self.b.s.N_HISTORY {
                 let mut _h =
-                    vec![history.first().unwrap().clone(); self.b.N_HISTORY - history.len()];
+                    vec![history.first().unwrap().clone(); self.b.s.N_HISTORY - history.len()];
                 _h.extend(history.iter().cloned());
                 _h
             } else {
-                Vec::from(&history[(history.len() - self.b.N_HISTORY)..(history.len())])
+                Vec::from(&history[(history.len() - self.b.s.N_HISTORY)..(history.len())])
             };
             let (policy, value) = (self.evaluate)(self.b.color, &history);
             let policy = board.feature_to_moves(&policy);
@@ -284,13 +319,13 @@ where
     async fn simulate(&self, history: &[G]) -> <Self as BaseMCTSPolicy<G>>::PlayoutInfo {
         let board = history.last().unwrap();
         if !board.is_finished() {
-            let history: Vec<G> = if history.len() < self.b.N_HISTORY {
+            let history: Vec<G> = if history.len() < self.b.s.N_HISTORY {
                 let mut _h =
-                    vec![history.first().unwrap().clone(); self.b.N_HISTORY - history.len()];
+                    vec![history.first().unwrap().clone(); self.b.s.N_HISTORY - history.len()];
                 _h.extend(history.iter().cloned());
                 _h
             } else {
-                Vec::from(&history[(history.len() - self.b.N_HISTORY)..(history.len())])
+                Vec::from(&history[(history.len() - self.b.s.N_HISTORY)..(history.len())])
             };
             let (policy, value) = (self.evaluate)(self.b.color, &history).await;
             let policy = board.feature_to_moves(&policy);
@@ -316,8 +351,7 @@ where
     G: game::Feature,
     F: Fn(G::Player, &[G]) -> (Array<f32, G::ActionDim>, f32),
 {
-    pub C_PUCT: f32,
-    pub N_HISTORY: usize,
+    pub s: PUCTSettings,
     pub N_PLAYOUTS: usize,
     pub evaluate: &'a F,
     pub _g: PhantomData<fn() -> G>,
@@ -335,8 +369,7 @@ use std::fmt;
 impl<G: game::Feature, F: Evaluator<G>> fmt::Display for PUCT<'_, G, F> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         writeln!(f, "SYNC PUCT")?;
-        writeln!(f, "|| C_PUCT: {}", self.C_PUCT)?;
-        writeln!(f, "|| N_PLAYOUTS: {}", self.N_PLAYOUTS)
+        writeln!(f, "||{:?}", self.s)
     }
 }
 
@@ -352,8 +385,7 @@ where
             PUCTPolicy_::<'a, G, F> {
                 b: BasePUCTPolicy_::<G> {
                     color,
-                    C_PUCT: self.C_PUCT,
-                    N_HISTORY: self.N_HISTORY,
+                    s: self.s,
                     tree: HashMap::new(),
                 },
                 evaluate: self.evaluate,
@@ -374,8 +406,7 @@ where
     O: FutureOutput<G>,
     F: (Fn(G::Player, &[G]) -> O),
 {
-    pub C_PUCT: f32,
-    pub N_HISTORY: usize,
+    pub s: PUCTSettings,
     pub N_PLAYOUTS: usize,
     pub evaluate: &'a F,
     pub _g: PhantomData<fn() -> G>,
@@ -389,8 +420,7 @@ where
 {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         writeln!(f, "BATCHED PUCT")?;
-        writeln!(f, "|| C_PUCT: {}", self.C_PUCT)?;
-        writeln!(f, "|| N_PLAYOUTS: {}", self.N_PLAYOUTS)
+        writeln!(f, "||{:?}", self.s)
     }
 }
 
@@ -409,8 +439,7 @@ where
             BatchedPUCTPolicy_::<'a, G, O, F> {
                 b: BasePUCTPolicy_::<G> {
                     color,
-                    C_PUCT: self.C_PUCT,
-                    N_HISTORY: self.N_HISTORY,
+                    s: self.s,
                     tree: HashMap::new(),
                 },
                 evaluate: self.evaluate,

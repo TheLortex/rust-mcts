@@ -109,8 +109,7 @@ fn main() {
 
     let puct = PUCT {
         _g: PhantomData,
-        C_PUCT: 0.4,
-        N_HISTORY: settings::DEFAULT_N_HISTORY_PUCT,
+        s: PUCTSettings::default(),
         N_PLAYOUTS: settings::DEFAULT_N_PLAYOUTS,
         evaluate: &|pov, board_history: &[Breakthrough]| {
             breakthrough_evaluator(&session, &graph, pov, board_history)
