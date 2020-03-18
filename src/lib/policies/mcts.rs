@@ -2,8 +2,9 @@ use std::collections::HashMap;
 use std::f32;
 use std::iter::*;
 
-use super::super::game::MultiplayerGame;
-use super::{MultiplayerPolicy, MultiplayerPolicyBuilder, N_PLAYOUTS};
+use crate::game::MultiplayerGame;
+use crate::policies::{MultiplayerPolicy, MultiplayerPolicyBuilder};
+use crate::settings;
 
 use float_ord::FloatOrd;
 use std::marker::PhantomData;
@@ -63,18 +64,18 @@ pub trait MCTSPolicy<G: MultiplayerGame> {
     }
 }
 
-pub struct WithMCTSPolicy<G: MultiplayerGame, M: MCTSPolicy<G>>(pub M, std::marker::PhantomData<G>);
+pub struct WithMCTSPolicy<G: MultiplayerGame, M: MCTSPolicy<G>>(pub M, usize, std::marker::PhantomData<G>);
 
 impl<G: MultiplayerGame, M: MCTSPolicy<G>> WithMCTSPolicy<G, M> {
-    pub fn new(p: M) -> Self {
-        WithMCTSPolicy(p, PhantomData)
+    pub fn new(p: M, N_PLAYOUTS: usize) -> Self {
+        WithMCTSPolicy(p, N_PLAYOUTS, PhantomData)
     }
 }
 
 impl<G: MultiplayerGame, M: MCTSPolicy<G>> MultiplayerPolicy<G> for WithMCTSPolicy<G, M> {
     fn play(&mut self, history: &[G]) -> G::Move {
         let board = history.last().unwrap();
-        for _ in 0..N_PLAYOUTS {
+        for _ in 0..self.1 {
             self.0.tree_search(history)
         }
 
@@ -179,11 +180,15 @@ pub type UCTPolicy<G> = WithMCTSPolicy<G, UCTPolicy_<G>>;
 
 pub struct UCT {
     UCT_WEIGHT: f32,
+    N_PLAYOUTS: usize
 }
 
 impl Default for UCT {
-    fn default() -> UCT {
-        UCT { UCT_WEIGHT: 0.4 }
+    fn default() -> Self {
+        Self { 
+            UCT_WEIGHT: 0.4,
+            N_PLAYOUTS: settings::DEFAULT_N_PLAYOUTS 
+        }
     }
 }
 
@@ -192,7 +197,7 @@ impl fmt::Display for UCT {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         writeln!(f, "UCT")?;
         writeln!(f, "|| UCT_WEIGHT: {}", self.UCT_WEIGHT)?;
-        writeln!(f, "|| N_PLAYOUT: {}", N_PLAYOUTS)
+        writeln!(f, "|| N_PLAYOUT: {}", self.N_PLAYOUTS)
     }
 }
 
@@ -204,7 +209,7 @@ impl<G: MultiplayerGame> MultiplayerPolicyBuilder<G> for UCT {
             color,
             tree: HashMap::new(),
             UCT_WEIGHT: self.UCT_WEIGHT,
-        })
+        }, self.N_PLAYOUTS)
     }
 }
 
@@ -336,11 +341,15 @@ pub type RAVEPolicy<G> = WithMCTSPolicy<G, RAVEPolicy_<G>>;
 
 pub struct RAVE {
     UCT_WEIGHT: f32,
+    N_PLAYOUTS: usize,
 }
 
 impl Default for RAVE {
     fn default() -> RAVE {
-        RAVE { UCT_WEIGHT: 0.4 }
+        RAVE { 
+            UCT_WEIGHT: 0.4,
+            N_PLAYOUTS: settings::DEFAULT_N_PLAYOUTS 
+        }
     }
 }
 
@@ -348,7 +357,7 @@ impl fmt::Display for RAVE {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         writeln!(f, "RAVE")?;
         writeln!(f, "|| UCT_WEIGHT: {}", self.UCT_WEIGHT)?;
-        writeln!(f, "|| N_PLAYOUT: {}", N_PLAYOUTS)
+        writeln!(f, "|| N_PLAYOUT: {}", self.N_PLAYOUTS)
     }
 }
 
@@ -361,7 +370,8 @@ impl<G: MultiplayerGame> MultiplayerPolicyBuilder<G> for RAVE {
                 color,
                 tree: HashMap::new(),
                 UCT_WEIGHT: self.UCT_WEIGHT,
-            }
+            },
+            self.N_PLAYOUTS
         )
     }
 }

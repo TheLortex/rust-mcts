@@ -16,6 +16,7 @@ use tokio;
 const MODEL_PATH: &str = "models/breakthrough";
 
 use zerol::game::{MultiplayerGame, breakthrough::Breakthrough};
+use zerol::settings;
 
 fn main() {
     let mut threaded_rt = tokio::runtime::Builder::new()
@@ -108,7 +109,7 @@ async fn run() {
             let mut fm = fm_mtx.lock().unwrap();
             let mut board_history: Vec<Breakthrough> = vec![];
             for (board, policy) in history.iter() {
-                while board_history.len() < 1 { // TODO: N_HISTORY-1
+                while board_history.len() < settings::DEFAULT_N_HISTORY_PUCT-1 {
                     board_history.push(board.clone());
                 };
                 board_history.push(board.clone());

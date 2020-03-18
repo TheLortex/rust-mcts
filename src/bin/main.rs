@@ -21,6 +21,7 @@ use zerol::policies::{
     flat::*, puct::*, MultiplayerPolicyBuilder, SingleplayerPolicy,
     SingleplayerPolicyBuilder,
 };
+use zerol::settings;
 
 fn game_solo<G: SingleplayerGame, P: SingleplayerPolicyBuilder<G>>(pb: &P, game: &G) -> f32 {
     let mut p = pb.create();
@@ -128,7 +129,8 @@ fn main() {
     let p1 = PUCT {
         _g: PhantomData,
         C_PUCT: 0.4,
-        N_HISTORY: 2,
+        N_HISTORY: settings::DEFAULT_N_HISTORY_PUCT,
+        N_PLAYOUTS: settings::DEFAULT_N_PLAYOUTS,
         evaluate: &(|pov, board_history: &[Breakthrough]| {
             breakthrough_evaluator(&session, &graph, pov, board_history)
         }),

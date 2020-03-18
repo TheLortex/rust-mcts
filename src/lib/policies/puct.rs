@@ -3,8 +3,9 @@ use std::f32;
 use std::iter::*;
 
 use crate::game;
-use super::{MultiplayerPolicyBuilder, N_PLAYOUTS};
-use super::mcts::{MCTSPolicy, WithMCTSPolicy};
+use crate::policies::MultiplayerPolicyBuilder;
+use crate::policies::mcts::{MCTSPolicy, WithMCTSPolicy};
+use crate::settings;
 
 use std::collections::HashMap;
 use std::marker::PhantomData;
@@ -148,6 +149,7 @@ pub struct PUCT<'a, G, F>
 {
     pub C_PUCT: f32,
     pub N_HISTORY: usize,
+    pub N_PLAYOUTS: usize,
     pub evaluate: &'a F,
     pub _g: PhantomData<fn() -> G>,
 }
@@ -167,7 +169,7 @@ impl<G: game::Feature, F: Evaluator<G>> fmt::Display
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         writeln!(f, "PUCT")?;
         writeln!(f, "|| C_PUCT: {}", self.C_PUCT)?;
-        writeln!(f, "|| N_PLAYOUTS: {}", N_PLAYOUTS)
+        writeln!(f, "|| N_PLAYOUTS: {}", self.N_PLAYOUTS)
     }
 }
 
@@ -183,6 +185,7 @@ impl<'a, G: game::Feature, F: Evaluator<G>> MultiplayerPolicyBuilder<G>
             N_HISTORY: self.N_HISTORY,
             evaluate: self.evaluate,
             tree: HashMap::new(),
-        })
+        },
+        self.N_PLAYOUTS)
     }
 }

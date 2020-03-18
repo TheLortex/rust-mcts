@@ -12,6 +12,7 @@ use zerol::game::breakthrough::*;
 use zerol::game;
 use zerol::misc::breakthrough_evaluator;
 use zerol::policies::{get_multi, puct::*, DynMultiplayerPolicyBuilder};
+use zerol::settings;
 
 const MODEL_PATH: &str = "models/breakthrough";
 
@@ -109,7 +110,8 @@ fn main() {
     let puct = PUCT {
         _g: PhantomData,
         C_PUCT: 0.4,
-        N_HISTORY: 2,
+        N_HISTORY: settings::DEFAULT_N_HISTORY_PUCT,
+        N_PLAYOUTS: settings::DEFAULT_N_PLAYOUTS,
         evaluate: &|pov, board_history: &[Breakthrough]| {
             breakthrough_evaluator(&session, &graph, pov, board_history)
         },

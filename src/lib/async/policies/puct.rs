@@ -1,7 +1,7 @@
 
 use crate::game::MultiplayerGame;
 use crate::game;
-use crate::policies::N_PLAYOUTS;
+
 use super::{AsyncMultiplayerPolicyBuilder};
 use super::mcts::{AsyncMCTSPolicy, WithAsyncMCTSPolicy};
 
@@ -177,6 +177,7 @@ pub struct PUCT<'a, G, O, F>
 {
     pub C_PUCT: f32,
     pub N_HISTORY: usize,
+    pub N_PLAYOUTS: usize,
     pub evaluate: &'a F,
     pub _g: PhantomData<fn() -> G>
 }
@@ -216,7 +217,7 @@ where
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         writeln!(f, "PUCT")?;
         writeln!(f, "|| C_PUCT: {}", self.C_PUCT)?;
-        writeln!(f, "|| N_PLAYOUTS: {}", N_PLAYOUTS)
+        writeln!(f, "|| N_PLAYOUTS: {}", self.N_PLAYOUTS)
     }
 }
 
@@ -238,6 +239,6 @@ where
             evaluate: self.evaluate,
             tree: HashMap::new(),
             _o: PhantomData
-        })
+        }, self.N_PLAYOUTS)
     }
 }

@@ -3,7 +3,6 @@ use std::collections::HashMap;
 
 use crate::game::MultiplayerGame;
 use super::AsyncMultiplayerPolicy;
-use crate::policies::N_PLAYOUTS;
 
 use std::marker::PhantomData;
 
@@ -77,7 +76,8 @@ where
     G::Move: Sync + Send,
 {
     pub inner: M, 
-    _g: std::marker::PhantomData<G>
+    N_PLAYOUTS: usize,
+    _g: std::marker::PhantomData<G>,
 }
 
 impl<G, M> WithAsyncMCTSPolicy<G, M>
@@ -86,8 +86,8 @@ where
     M: AsyncMCTSPolicy<G>,
     G::Move: Sync + Send,
 {
-    pub fn new(p: M) -> Self {
-        WithAsyncMCTSPolicy {inner: p, _g: PhantomData}
+    pub fn new(p: M, N_PLAYOUTS: usize) -> Self {
+        WithAsyncMCTSPolicy {inner: p, N_PLAYOUTS, _g: PhantomData}
     }
 }
 
@@ -102,7 +102,7 @@ where
     async fn play(&mut self, history: &[G]) -> G::Move {
         let board = history.last().unwrap();
 
-        for _ in 0..N_PLAYOUTS {
+        for _ in 0..self.N_PLAYOUTS {
             self.inner.tree_search(history).await
         }
 

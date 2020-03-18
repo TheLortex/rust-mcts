@@ -7,8 +7,6 @@ pub mod nrpa;
 pub mod ppa;
 pub mod puct;
 
-pub const N_PLAYOUTS: usize = 100;
-
 use std::fmt::Display;
 /* MULTIPLAYER POLICY TRAITS */
 /**

@@ -2,9 +2,10 @@ use rand::seq::SliceRandom;
 use std::f32;
 use std::iter::*;
 
-use super::super::game::{MultiplayerGame, MoveCode};
-use super::{MultiplayerPolicy, MultiplayerPolicyBuilder, N_PLAYOUTS};
-use super::mcts::{UCTMoveInfo, UCTNodeInfo};
+use crate::game::{MultiplayerGame, MoveCode};
+use crate::policies::{MultiplayerPolicy, MultiplayerPolicyBuilder};
+use crate::policies::mcts::{UCTMoveInfo, UCTNodeInfo};
+use crate::settings;
 
 use std::collections::HashMap;
 use std::marker::PhantomData;
@@ -183,7 +184,7 @@ impl<G: MultiplayerGame, M: MoveCode<G>> PPAPolicy<G, M> {
 impl<G: MultiplayerGame, M: MoveCode<G>> MultiplayerPolicy<G> for PPAPolicy<G, M> {
     fn play(self: &mut PPAPolicy<G, M>, history: &[G]) -> G::Move {
         let board = history.last().unwrap();
-        for _ in 0..N_PLAYOUTS {
+        for _ in 0..self.s.N_PLAYOUTS {
             self.simulate(board)
         }
 
@@ -207,6 +208,7 @@ impl<G: MultiplayerGame, M: MoveCode<G>> MultiplayerPolicy<G> for PPAPolicy<G, M
 
 pub struct PPA<G: MultiplayerGame, M:MoveCode<G>> {
     UCT_WEIGHT: f32,
+    N_PLAYOUTS: usize,
     alpha: f32,
     _m: PhantomData<fn() -> M>,
     _g: PhantomData<fn() -> G>
@@ -225,6 +227,7 @@ impl<G: MultiplayerGame, M: MoveCode<G>> Default for PPA<G,M> {
         PPA::<G,M> {
             alpha: 0.1,
             UCT_WEIGHT: 0.4,
+            N_PLAYOUTS: settings::DEFAULT_N_PLAYOUTS,
             _m: PhantomData,
             _g: PhantomData
         }
@@ -237,7 +240,7 @@ impl<G: MultiplayerGame, M: MoveCode<G>> fmt::Display for PPA<G,M> {
         writeln!(f, "PPA")?;
         writeln!(f, "|| ALPHA: {}", self.alpha)?;
         writeln!(f, "|| UCT_WEIGHT: {}", self.UCT_WEIGHT)?;
-        writeln!(f, "|| N_PLAYOUTS: {}", N_PLAYOUTS)
+        writeln!(f, "|| N_PLAYOUTS: {}", self.N_PLAYOUTS)
     }
 } 
 

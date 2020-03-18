@@ -5,10 +5,7 @@ use std::iter::FromIterator;
 
 use tokio::sync::{mpsc, oneshot};
 
-
-const BATCH_SIZE: usize = 64;
-const N_EVALUATORS: usize = 7;
-const N_GENERATORS: usize = 3 * BATCH_SIZE / 2;
+use crate::settings;
 
 /*
 const BATCH_SIZE: usize = 1;
@@ -75,7 +72,8 @@ async fn game_generator_task(
 
     let puct = PUCT {
         C_PUCT: 4.,
-        N_HISTORY: 2,
+        N_HISTORY: settings::DEFAULT_N_HISTORY_PUCT,
+        N_PLAYOUTS: settings::DEFAULT_N_PLAYOUTS,
         evaluate: &|pov: Color, board_history: &[Breakthrough]| {
             let bidule: Vec<Breakthrough> = board_history.iter().map(|x| (*x).clone()).collect();
             breakthrough_evaluator_batch(sender.clone(), pov, bidule)
@@ -128,9 +126,9 @@ async fn game_evaluator_task<G: Feature>(
 ) {
     println!("Starting game evaluator..");
 
-    let feature_size: usize = G::state_dimension().size() * 2; //TODO: beurk
+    let feature_size: usize = G::state_dimension().size() * settings::DEFAULT_N_HISTORY_PUCT;
     let policy_size: usize = G::action_dimension().size();
-    let mut input_tensor: Tensor<f32> = Tensor::new(&[BATCH_SIZE as u64, feature_size as u64]);
+    let mut input_tensor: Tensor<f32> = Tensor::new(&[settings::GPU_BATCH_SIZE as u64, feature_size as u64]);
     let mut tx_buf = vec![];
     let mut idx = 0;
 
@@ -139,14 +137,14 @@ async fn game_evaluator_task<G: Feature>(
         tx_buf.push(tx);
         idx += 1;
 
-        if idx == BATCH_SIZE {
+        if idx == settings::GPU_BATCH_SIZE {
             //bar.inc(BATCH_SIZE as u64);
             idx = 0;
             let (policies, values) = {
                 let (ref graph, ref session) = *g_and_s.read().unwrap();
                 tensorflow_call(&session, &graph, &input_tensor)
             };
-            for i in (0..BATCH_SIZE).rev() {
+            for i in (0..settings::GPU_BATCH_SIZE).rev() {
                 let policy = Tensor::from(&policies[i * policy_size..(i + 1) * policy_size]);
                 let value = Tensor::from(values[i]);
                 tx_buf.pop().unwrap().send((policy, value)).unwrap();
@@ -182,9 +180,9 @@ pub async fn game_generator(
     let mut join_handles = vec![];
     let mut join_handles_ev = vec![];
 
-    for _ in 0..N_EVALUATORS {
-        let (tx, rx) = mpsc::channel::<EvaluatorChannel>(2 * BATCH_SIZE);
-        for _ in 0..N_GENERATORS {
+    for _ in 0..settings::GPU_N_EVALUATORS {
+        let (tx, rx) = mpsc::channel::<EvaluatorChannel>(2 * settings::GPU_BATCH_SIZE);
+        for _ in 0..settings::GPU_N_GENERATORS {
             let cmd_tx = tx.clone();
             let output_tx = output_chan.clone();
             let czop = bar_box.clone();
