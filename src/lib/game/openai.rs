@@ -1,8 +1,8 @@
-mod gym;
-
-use super::Game;
+use crate::Game;
 
 use std::fmt;
+
+mod gym;
 
 #[derive(Clone)]
 struct Gym {

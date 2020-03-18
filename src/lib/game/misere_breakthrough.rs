@@ -1,7 +1,7 @@
-use std::fmt;
+use crate::game::{BaseGame,MultiplayerGame,MultiplayerGameBuilder};
+use crate::game::breakthrough::{Breakthrough, BreakthroughBuilder, Color, Move};
 
-use super::{BaseGame,MultiplayerGame,MultiplayerGameBuilder};
-use super::breakthrough::{Breakthrough, BreakthroughBuilder, Color, Move};
+use std::fmt;
 
 #[derive(Clone, PartialEq, Eq)]
 pub struct MisereBreakthrough {

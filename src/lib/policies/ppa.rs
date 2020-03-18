@@ -1,15 +1,13 @@
+use crate::game::{MultiplayerGame, MoveCode};
+use crate::policies::{MultiplayerPolicy, MultiplayerPolicyBuilder};
+use crate::policies::mcts::uct::{UCTMoveInfo, UCTNodeInfo};
+use crate::settings;
+
 use rand::seq::SliceRandom;
 use std::f32;
 use std::iter::*;
-
-use crate::game::{MultiplayerGame, MoveCode};
-use crate::policies::{MultiplayerPolicy, MultiplayerPolicyBuilder};
-use crate::policies::mcts::{UCTMoveInfo, UCTNodeInfo};
-use crate::settings;
-
 use std::collections::HashMap;
 use std::marker::PhantomData;
-
 
 pub struct PPAPolicy<G: MultiplayerGame, M: MoveCode<G>> {
     color: G::Player,

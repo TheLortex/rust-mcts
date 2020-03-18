@@ -1,13 +1,14 @@
-use super::game::{MultiplayerGame, SingleplayerGame};
+use crate::game::{MultiplayerGame, SingleplayerGame};
+
+use std::fmt::Display;
+use async_trait::async_trait;
 
 pub mod flat;
 pub mod mcts;
 pub mod nmcs;
 pub mod nrpa;
 pub mod ppa;
-pub mod puct;
 
-use std::fmt::Display;
 /* MULTIPLAYER POLICY TRAITS */
 /**
  * A static policy.
@@ -16,10 +17,25 @@ pub trait MultiplayerPolicy<T: MultiplayerGame> {
     fn play(&mut self, history: &[T]) -> T::Move;
 }
 /**
+ * A static asynchronous policy.
+ */
+#[async_trait]
+pub trait AsyncMultiplayerPolicy<T: MultiplayerGame> {
+    async fn play(&mut self, history: &[T]) -> T::Move;
+}
+/**
  * A static policy builder.
  */
 pub trait MultiplayerPolicyBuilder<T: MultiplayerGame>: Display {
     type P: MultiplayerPolicy<T>;
+
+    fn create(&self, color: T::Player) -> Self::P;
+}
+/**
+ * A static asynchronous policy builder.
+ */
+pub trait AsyncMultiplayerPolicyBuilder<T: MultiplayerGame>: Display {
+    type P: AsyncMultiplayerPolicy<T>;
 
     fn create(&self, color: T::Player) -> Self::P;
 }
@@ -62,8 +78,8 @@ pub fn get_multi<'a, G: MultiplayerGame + 'a>(name: &str) -> Box<dyn DynMultipla
         "rand" => Box::new(flat::Random::default()),
         "flat" => Box::new(flat::FlatMonteCarlo::default()),
         "flat_ucb" => Box::new(flat::FlatUCBMonteCarlo::default()),
-        "uct" => Box::new(mcts::UCT::default()),
-        "rave" => Box::new(mcts::RAVE::default()),
+        "uct" => Box::new(mcts::uct::UCT::default()),
+        "rave" => Box::new(mcts::rave::RAVE::default()),
         "ppa" => Box::new(ppa::PPA::<_, NoFeatures>::default()),
         "nmcs" => Box::new(nmcs::MultiNMCS::default()),
         _ => panic!("Policy '{}' not found.", name)

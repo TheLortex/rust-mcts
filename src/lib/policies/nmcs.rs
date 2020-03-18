@@ -1,8 +1,8 @@
+use crate::game::{SingleplayerGame, MultiplayerGame};
+use crate::policies::{MultiplayerPolicy, MultiplayerPolicyBuilder, SingleplayerPolicy, SingleplayerPolicyBuilder};
+
 use std::f32;
 use std::iter::*;
-
-use super::super::game::{SingleplayerGame, MultiplayerGame};
-use super::{MultiplayerPolicy, MultiplayerPolicyBuilder, SingleplayerPolicy, SingleplayerPolicyBuilder};
 
 pub struct NMCSPolicy {
     s: NMCS,

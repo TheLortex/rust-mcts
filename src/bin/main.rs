@@ -18,7 +18,7 @@ use zerol::game;
 use zerol::game::breakthrough::*;
 use zerol::game::{MoveTrait, MoveCode, MultiplayerGame, MultiplayerGameBuilder, SingleplayerGame};
 use zerol::policies::{
-    flat::*, puct::*, MultiplayerPolicyBuilder, SingleplayerPolicy,
+    flat::*, mcts::puct::*, MultiplayerPolicyBuilder, SingleplayerPolicy,
     SingleplayerPolicyBuilder,
 };
 use zerol::settings;

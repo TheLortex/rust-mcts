@@ -1,4 +1,4 @@
-use super::{SingleplayerGame, BaseGame, SingleplayerGameBuilder};
+use crate::game::{SingleplayerGame, BaseGame, SingleplayerGameBuilder};
 
 use std::collections::hash_map::DefaultHasher;
 use std::collections::{BTreeSet, BTreeMap};

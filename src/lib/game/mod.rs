@@ -1,10 +1,8 @@
 use rand::seq::SliceRandom;
 use std::fmt::Debug;
-
 use std::collections::hash_map::DefaultHasher;
 use std::convert::TryFrom;
 use std::hash::{Hash, Hasher};
-
 use ndarray::{Array, Dimension};
 
 pub mod breakthrough;

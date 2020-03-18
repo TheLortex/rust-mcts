@@ -1,12 +1,10 @@
+use crate::game::{SingleplayerGame,SingleplayerGameBuilder,BaseGame};
+
 use std::fmt;
 use std::hash::*;
-
 use std::collections::hash_map::DefaultHasher;
 use std::hash::Hasher;
-
 use std::cmp::Ordering;
-
-use super::{SingleplayerGame,SingleplayerGameBuilder,BaseGame};
 
 const K: usize = 9;
 const WS_RULE: bool = true;

@@ -1,9 +1,9 @@
-use rand::seq::SliceRandom;
-use std::collections::HashMap;
-
 use crate::game::{MultiplayerGame, SingleplayerGame};
 use crate::policies::{MultiplayerPolicy, MultiplayerPolicyBuilder, SingleplayerPolicy, SingleplayerPolicyBuilder};
 use crate::settings;
+
+use rand::seq::SliceRandom;
+use std::collections::HashMap;
 
 /* RANDOM POLICY */
 

@@ -11,7 +11,7 @@ use tensorflow::{Graph, Session, SessionOptions};
 use zerol::game::breakthrough::*;
 use zerol::game;
 use zerol::misc::breakthrough_evaluator;
-use zerol::policies::{get_multi, puct::*, DynMultiplayerPolicyBuilder};
+use zerol::policies::{get_multi, mcts::puct::*, DynMultiplayerPolicyBuilder};
 use zerol::settings;
 
 const MODEL_PATH: &str = "models/breakthrough";

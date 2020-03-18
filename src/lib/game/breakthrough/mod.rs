@@ -1,11 +1,10 @@
+use crate::game::{BaseGame, MultiplayerGame, InteractiveGame, MultiplayerGameBuilder, Feature};
+
 use ansi_term::Colour::Fixed;
 use ansi_term::Style;
 use rand::Rng;
 use std::fmt;
-
 use std::hash::*;
-
-use super::{BaseGame, MultiplayerGame, InteractiveGame, MultiplayerGameBuilder, Feature};
 
 pub mod ui;
 

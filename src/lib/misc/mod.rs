@@ -1,4 +1,4 @@
-use super::game;
+use crate::game;
 
 use tensorflow::{Graph, Session, SessionRunArgs, Tensor};
 

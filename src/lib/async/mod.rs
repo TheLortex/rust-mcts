@@ -1,33 +1,20 @@
-pub mod policies;
+use crate::settings;
+use crate::policies::{AsyncMultiplayerPolicy, AsyncMultiplayerPolicyBuilder, mcts::puct::BatchedPUCT};
+use crate::game::breakthrough::{Breakthrough, BreakthroughBuilder, Color, Move};
+use crate::game::{BaseGame, Feature, MultiplayerGame, MultiplayerGameBuilder};
+use crate::misc::tensorflow_call;
 
 use std::collections::HashMap;
 use std::iter::FromIterator;
-
 use tokio::sync::{mpsc, oneshot};
-
-use crate::settings;
-
-/*
-const BATCH_SIZE: usize = 1;
-const N_EVALUATORS: usize = 1;
-const N_GENERATORS: usize = 1;
-*/
-
-use self::policies::{puct::PUCT, AsyncMultiplayerPolicy, AsyncMultiplayerPolicyBuilder};
-use super::game::breakthrough::{Breakthrough, BreakthroughBuilder, Color, Move};
-use super::game::{BaseGame, Feature, MultiplayerGame, MultiplayerGameBuilder};
 use std::marker::PhantomData;
-
 use indicatif::{ProgressBar, ProgressStyle};
-
 use tensorflow::{Graph, Session, Tensor};
-
-use super::misc::tensorflow_call;
+use ndarray::{Array, ArrayBase, Dimension};
 
 type EvaluatorChannel = (Tensor<f32>, oneshot::Sender<(Tensor<f32>, Tensor<f32>)>);
 type GameHistoryChannel = (Color, Vec<(Breakthrough, HashMap<Move, f32>)>);
 
-use ndarray::{Array, ArrayBase, Dimension};
 
 async fn breakthrough_evaluator_batch<'a>(
     mut sender: mpsc::Sender<EvaluatorChannel>,
@@ -70,7 +57,7 @@ async fn game_generator_task(
 ) {
     let gb = BreakthroughBuilder {};
 
-    let puct = PUCT {
+    let puct = BatchedPUCT {
         C_PUCT: 4.,
         N_HISTORY: settings::DEFAULT_N_HISTORY_PUCT,
         N_PLAYOUTS: settings::DEFAULT_N_PLAYOUTS,
@@ -97,7 +84,7 @@ async fn game_generator_task(
             let action = policy.play(&state_history).await;
 
             let mut game = state_history.last().unwrap().clone();
-            let game_node = policy.inner.tree.get(&game.hash()).unwrap();
+            let game_node = policy.inner.b.tree.get(&game.hash()).unwrap();
             let monte_carlo_distribution: HashMap<Move, f32> = HashMap::from_iter(
                 game_node
                     .moves

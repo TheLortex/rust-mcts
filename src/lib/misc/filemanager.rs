@@ -1,13 +1,9 @@
-
+use crate::game;
 
 use nix::unistd::mkfifo;
 use nix::sys::stat;
-
 use std::fs::{File, OpenOptions};
 use std::io::Write;
-
-use super::game;
-
 use std::collections::HashMap;
 
 pub struct FileManager {

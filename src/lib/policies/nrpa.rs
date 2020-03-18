@@ -1,11 +1,10 @@
+use super::super::game::{SingleplayerGame, MoveCode};
+use super::{SingleplayerPolicy, SingleplayerPolicyBuilder};
+
 use rand::seq::SliceRandom;
 use std::f32;
 use std::iter::*;
 use std::marker::PhantomData;
-
-use super::super::game::{SingleplayerGame, MoveCode};
-use super::{SingleplayerPolicy, SingleplayerPolicyBuilder};
-
 use std::collections::HashMap;
 
 pub struct NRPAPolicy<G: SingleplayerGame, M: MoveCode<G>> {
