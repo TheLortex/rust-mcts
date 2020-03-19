@@ -129,11 +129,7 @@ where
             (value, action)
         });
 
-        if board.turn() == self.color {
-            *moves_scores.max_by_key(|x| FloatOrd(x.0)).unwrap().1
-        } else {
-            *moves_scores.min_by_key(|x| FloatOrd(x.0)).unwrap().1
-        }
+        *moves_scores.max_by_key(|x| FloatOrd(x.0)).unwrap().1
     }
 
     fn default_node(&self, board: &G) -> Self::NodeInfo {
@@ -158,7 +154,7 @@ where
     ) {
         if let Some(mut policy) = policy {
             // save probabilities of newly created node.
-            if history.len() == 0 {
+            if self.tree.len() == 0 {
                 // add dirichlet noise on the root node.
                 let frac = self.s.ROOT_EXPLORATION_FRACTION;
                 let gamma = Gamma::new(self.s.ROOT_DIRICHLET_ALPHA.into(), 1.0).unwrap();
@@ -178,13 +174,17 @@ where
             }
         };
 
-        let value = if board.turn() == self.color {
-            value
-        } else {
-            1. - value
-        };
+        let pov = board.turn();
 
         for (state, action) in history.iter() {
+            // reverse value each step back as we switch 
+            // point of view.
+            let value = if state.turn() == pov {
+                value
+            } else {
+                1. - value
+            };
+
             let mut node = self.tree.get_mut(&state.hash()).unwrap();
             node.count += 1.;
             let mut v = node.moves.get_mut(action).unwrap();
@@ -251,7 +251,9 @@ where
             } else {
                 Vec::from(&history[(history.len() - self.b.s.N_HISTORY)..(history.len())])
             };
-            let (policy, value) = (self.evaluate)(self.b.color, &history);
+            // NN predicts a good policy for current player 
+            //  + expectation of winning from this state.
+            let (policy, value) = (self.evaluate)(board.turn(), &history);
             let policy = board.feature_to_moves(&policy);
             (Some(policy), value, board.clone())
         } else {
@@ -327,7 +329,8 @@ where
             } else {
                 Vec::from(&history[(history.len() - self.b.s.N_HISTORY)..(history.len())])
             };
-            let (policy, value) = (self.evaluate)(self.b.color, &history).await;
+            // NN predicts a good policy for current player + expectation of winning from this state.
+            let (policy, value) = (self.evaluate)(board.turn(), &history).await;
             let policy = board.feature_to_moves(&policy);
             (Some(policy), value, board.clone())
         } else {
