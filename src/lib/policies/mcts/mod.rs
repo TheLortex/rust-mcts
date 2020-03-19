@@ -65,37 +65,44 @@ pub trait MCTSPolicy<G: MultiplayerGame>: BaseMCTSPolicy<G> {
 
         let mut game_history = Vec::from(history);
         game_history.extend(selection_history.iter().map(|(g,_)| g.clone()));
+        game_history.push(b.clone());
         self.expand(&b);
         let playout = self.simulate(&game_history);
         self.backpropagate(selection_history, playout);
     }
 }
 
-pub struct WithMCTSPolicy<G: MultiplayerGame, M: MCTSPolicy<G>>(pub M, usize, std::marker::PhantomData<G>);
+pub struct WithMCTSPolicy<G: MultiplayerGame, M: MCTSPolicy<G>> {
+    pub inner: M, 
+    N_PLAYOUTS: usize, 
+    _g: std::marker::PhantomData<G>
+}
 
 impl<G: MultiplayerGame, M: MCTSPolicy<G>> WithMCTSPolicy<G, M> {
     pub fn new(p: M, N_PLAYOUTS: usize) -> Self {
-        WithMCTSPolicy(p, N_PLAYOUTS, PhantomData)
+        WithMCTSPolicy {
+            inner: p, 
+            N_PLAYOUTS, 
+            _g: PhantomData
+        }
     }
 }
 
 impl<G: MultiplayerGame, M: MCTSPolicy<G>> MultiplayerPolicy<G> for WithMCTSPolicy<G, M> {
     fn play(&mut self, history: &[G]) -> G::Move {
+        self.inner.tree_mut().clear();
         let board = history.last().unwrap();
-        for _ in 0..self.1 {
-            self.0.tree_search(history)
+        for _ in 0..self.N_PLAYOUTS {
+            self.inner.tree_search(history)
         }
 
-        self.0.select_move(board, false)
+        self.inner.select_move(board, false)
     }
 }
 
 /**
  * ASYNCHRONOUS VERSION:
  */
-
-
-
 #[async_trait]
 pub trait AsyncMCTSPolicy<G>: BaseMCTSPolicy<G> + Sync
 where
@@ -142,6 +149,7 @@ where
     G::Move: Send
 {
     async fn play(&mut self, history: &[G]) -> G::Move {
+        self.inner.tree_mut().clear();
         let board = history.last().unwrap();
 
         for _ in 0..self.N_PLAYOUTS {

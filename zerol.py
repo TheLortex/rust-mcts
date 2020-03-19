@@ -5,6 +5,7 @@ import tensorflow.keras as keras
 from tensorflow.keras import layers
 from tensorflow.keras import models
 from tensorflow.keras.callbacks import ModelCheckpoint
+from tensorflow.keras.regularizers import l2 
 import tensorflow_addons as tfa
 import numpy as np
 import pickle
@@ -22,24 +23,25 @@ HISTORY_LENGTH = 2
 INPUT_SHAPE = (HISTORY_LENGTH, K, K, 3)
 ACTION_SHAPE = (K, K, 3)
 
+WEIGHT_DECAY = 1e-4
 
 def build_network():
     input   = keras.Input(shape=INPUT_SHAPE, name='board')
     x       = layers.Reshape((K, K, HISTORY_LENGTH*3))(input)
-    x       = layers.Conv2D(32, (3, 3), padding='same', activation='relu')(x)
-    x       = layers.Conv2D(64, (3, 3), padding='same', activation='relu')(x)
-    x       = layers.Conv2D(128, (3, 3), padding='same', activation='relu')(x)
+    x       = layers.Conv2D(32, (3, 3), padding='same', activation='relu', kernel_regularizer=l2(WEIGHT_DECAY), bias_regularizer=l2(WEIGHT_DECAY))(x)
+    x       = layers.Conv2D(64, (3, 3), padding='same', activation='relu', kernel_regularizer=l2(WEIGHT_DECAY), bias_regularizer=l2(WEIGHT_DECAY))(x)
+    x       = layers.Conv2D(128, (3, 3), padding='same', activation='relu', kernel_regularizer=l2(WEIGHT_DECAY), bias_regularizer=l2(WEIGHT_DECAY))(x)
     #x       = layers.Conv2D(256, (3, 3), padding='same', activation='relu')(x)
     #x       = layers.Conv2D(256, (3, 3), padding='same', activation='relu')(x)
     #x       = layers.Conv2D(256, (3, 3), padding='same', activation='relu')(x)
     #policy  = layers.Dense(ACTION_SHAPE, activation='softmax', name='policy')(x)
-    policy  = layers.Conv2D(3, (3, 3), padding='same', activation='relu')(x)
+    policy  = layers.Conv2D(3, (3, 3), padding='same', activation='relu', kernel_regularizer=l2(WEIGHT_DECAY), bias_regularizer=l2(WEIGHT_DECAY))(x)
     policy  = layers.Flatten()(policy)
     policy  = layers.Activation(activation='softmax')(policy)
     policy  = layers.Reshape(ACTION_SHAPE, name='policy')(policy)
 
     value   = layers.Flatten()(x)
-    value   = layers.Dense((1), activation='sigmoid', name='value')(value)
+    value   = layers.Dense((1), activation='sigmoid', name='value', kernel_regularizer=l2(WEIGHT_DECAY), bias_regularizer=l2(WEIGHT_DECAY))(value)
 
     return keras.Model(inputs=input, outputs={"policy": policy, "value": value})
 

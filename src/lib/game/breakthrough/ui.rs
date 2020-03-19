@@ -56,13 +56,13 @@ impl IBreakthrough {
                             })
                             .filter(|m| m.is_valid(&self.game.content).is_some())
                             .filter(|m2| {
-                                let m2_t = m2.target(&self.game.content);
-                                let m_t = m.target(&self.game.content);
+                                let m2_t = m2.target();
+                                let m_t = m.target();
                                 (m2_t.0 as isize - m_t.0 as isize) * dx > 0
                             })
                             .min_by_key(|m2| {
-                                let m2_t = m2.target(&self.game.content);
-                                let m_t = m.target(&self.game.content);
+                                let m2_t = m2.target();
+                                let m_t = m.target();
                                 (m2_t.0 as isize - m_t.0 as isize) * dx
                             });
                         if let Some(new_m) = new_m {
@@ -89,7 +89,11 @@ impl cursive::view::View for IBreakthrough {
             theme::Color::RgbLowRes(5, 3, 5),
             theme::Color::TerminalDefault,
         );
-
+        // print letters
+        for x in 0..K {
+            printer.print((2+3*x, 0), &(('a' as usize +x) as u8 as char).to_string());
+            printer.print((0, 2+2*x), &format!("{}", 1+x));
+        }
         printer.print((1, 1), &format!("╔{}══╗", "══╤".repeat(K - 1)));
         for y in 0..K {
             if y != 0 {

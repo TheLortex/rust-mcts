@@ -33,7 +33,7 @@ impl Color {
     }
 }
 
-impl fmt::Debug for Color {
+impl fmt::Display for Color {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let b = Fixed(9);
         let w = Fixed(15);
@@ -41,6 +41,15 @@ impl fmt::Debug for Color {
         match self {
             Color::Black => write!(f, "{}", b.paint("▓▓")),
             Color::White => write!(f, "{}", w.paint("▓▓")),
+        }
+    }
+}
+
+impl fmt::Debug for Color {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Color::Black => write!(f, "B"),
+            Color::White => write!(f, "W"),
         }
     }
 }
@@ -90,12 +99,20 @@ pub struct Move {
     pub direction: MoveDirection,
 }
 
-impl Move {
-    pub fn target(&self, content: &[[Cell; K]; K]) -> (usize, usize) {
-        let c = content[self.x][self.y];
-        assert_ne!(c, Cell::Empty);
+impl fmt::Display for Move {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.name())
+    }
+}
 
-        let delta_y = if c == Cell::C(Color::Black) { 1 } else { -1 };
+impl Move {
+    pub fn name(&self) -> String {
+        let (px,py) = self.target();// todo: extract helper
+        format!("{:?} {}{}->{}{}", self.color, ('a' as usize + self.x) as u8 as char, 1+self.y, ('a' as usize + px) as u8 as char, 1+py)
+    }
+
+    pub fn target(&self) -> (usize, usize) {
+        let delta_y = if self.color == Color::Black { 1 } else { -1 };
         let delta_x = match self.direction {
             MoveDirection::Front => 0,
             MoveDirection::FrontLeft => delta_y,
@@ -111,7 +128,7 @@ impl Move {
         if c != Cell::C(self.color) {
             return None;
         }
-        let (px, py) = self.target(content);
+        let (px, py) = self.target();
         if px < K && py < K {
             if self.direction == MoveDirection::Front {
                 if content[px][py] == Cell::Empty {
@@ -284,9 +301,14 @@ impl BaseGame for Breakthrough {
                 self.content[m.x][m.y] = Cell::Empty;
 
                 // update possible moves state
-                let (pmb, pmw) = Breakthrough::compute_possible_moves(&self.content);
-                self.possible_moves_black = pmb;
-                self.possible_moves_white = pmw;
+                if self.winner() == None {
+                    let (pmb, pmw) = Breakthrough::compute_possible_moves(&self.content);
+                    self.possible_moves_black = pmb;
+                    self.possible_moves_white = pmw;
+                } else {
+                    self.possible_moves_black.clear();
+                    self.possible_moves_white.clear();
+                }
 
                 self.turn = self.turn.adv();
             }

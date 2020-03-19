@@ -61,7 +61,7 @@ async fn game_generator_task(
     let puct = BatchedPUCT {
         s: puct_settings,
         N_PLAYOUTS: settings::DEFAULT_N_PLAYOUTS,
-        evaluate: &|pov: Color, board_history: &[Breakthrough]| {
+        evaluate: |pov: Color, board_history: &[Breakthrough]| {
             let bidule: Vec<Breakthrough> = board_history.iter().map(|x| (*x).clone()).collect();
             breakthrough_evaluator_batch(sender.clone(), pov, bidule)
         }, 

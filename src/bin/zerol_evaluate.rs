@@ -14,7 +14,7 @@ use zerol::misc::breakthrough_evaluator;
 use zerol::policies::{get_multi, mcts::puct::*, DynMultiplayerPolicyBuilder};
 use zerol::settings;
 
-const MODEL_PATH: &str = "models/breakthrough";
+    const MODEL_PATH: &str = "models/breakthrough";
 
 pub fn monte_carlo_match<
     'a,
@@ -98,6 +98,13 @@ fn main() {
                 .takes_value(true)
                 .possible_values(&["rand", "flat", "flat_ucb", "uct", "rave", "ppa", "nmcs"]),
         )
+        .arg(
+            Arg::with_name("against")
+                .short("a")
+                .long("against")
+                .takes_value(true)
+                .possible_values(&["rand", "flat", "flat_ucb", "uct", "rave", "ppa", "nmcs"]),
+        )
         .arg(Arg::with_name("only-result").long("only-result"))
         .get_matches();
 
@@ -111,11 +118,15 @@ fn main() {
         _g: PhantomData,
         s: PUCTSettings::default(),
         N_PLAYOUTS: settings::DEFAULT_N_PLAYOUTS,
-        evaluate: &|pov, board_history: &[Breakthrough]| {
+        evaluate: |pov, board_history: &[Breakthrough]| {
             breakthrough_evaluator(&session, &graph, pov, board_history)
         },
     };
-    let p1 = Box::new(puct);
+    let p1 = if let Some(val) = args.value_of("against") {
+        get_multi(val)
+    } else {
+        Box::new(puct)
+    };
     /* Build contender. */
     let config = args.value_of("policy").unwrap_or("rand");
     let p2 = get_multi(config);
