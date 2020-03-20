@@ -94,8 +94,8 @@ impl<G: MultiplayerGame> BaseMCTSPolicy<G> for UCTPolicy_<G> {
 }
 
 impl<G: MultiplayerGame> MCTSPolicy<G> for UCTPolicy_<G> {
-    fn simulate(&self, history: &[G]) -> Self::PlayoutInfo {
-        history.last().unwrap().playout_board().has_won(self.color)
+    fn simulate(&self, board: &G) -> Self::PlayoutInfo {
+        board.playout_board().has_won(self.color)
     }
 }
 

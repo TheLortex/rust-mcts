@@ -1,5 +1,5 @@
 // Policies
-pub const DEFAULT_N_PLAYOUTS: usize = 200;
+pub const DEFAULT_N_PLAYOUTS: usize = 800;
 pub const DEFAULT_N_HISTORY_PUCT: usize = 2;
 
 // Breakthrough

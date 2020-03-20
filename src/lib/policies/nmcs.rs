@@ -129,8 +129,7 @@ impl<G: MultiplayerGame> MultiNMCSPolicy<G> {
 }
 
 impl<G: MultiplayerGame> MultiplayerPolicy<G> for MultiNMCSPolicy<G> {
-    fn play(self: &mut MultiNMCSPolicy<G>, history: &[G]) -> G::Move {
-        let board = history.last().unwrap();
+    fn play(self: &mut MultiNMCSPolicy<G>, board: &G) -> G::Move {
         let mut best_move = None;
         let mut max_visited = 0.;
         for m in board.possible_moves().iter() {

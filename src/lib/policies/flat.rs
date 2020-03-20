@@ -10,8 +10,7 @@ use std::collections::HashMap;
 pub struct RandomPolicy {}
 
 impl<G: MultiplayerGame> MultiplayerPolicy<G> for RandomPolicy {
-    fn play(self: &mut RandomPolicy, history: &[G]) -> G::Move {
-        let board = history.last().unwrap();
+    fn play(self: &mut RandomPolicy, board: &G) -> G::Move {
         let moves = board.possible_moves();
         moves.choose(&mut rand::thread_rng()).copied().unwrap()
     }
@@ -59,9 +58,7 @@ pub struct FlatMonteCarloPolicy<G: MultiplayerGame> {
 }
 
 impl<G: MultiplayerGame> MultiplayerPolicy<G> for FlatMonteCarloPolicy<G> {
-    fn play(self: &mut FlatMonteCarloPolicy<G>, history: &[G]) -> G::Move {
-        let board = history.last().unwrap();
-
+    fn play(self: &mut FlatMonteCarloPolicy<G>, board: &G) -> G::Move {
         let moves = board.possible_moves();
 
         let n_playouts_per_move = self.N_PLAYOUTS / moves.len();
@@ -123,9 +120,7 @@ pub struct FlatUCBMonteCarloPolicy<G: MultiplayerGame> {
 }
 
 impl<G: MultiplayerGame> MultiplayerPolicy<G> for FlatUCBMonteCarloPolicy<G> {
-    fn play(self: &mut FlatUCBMonteCarloPolicy<G>, history: &[G]) -> G::Move {
-        let board = history.last().unwrap();
-
+    fn play(self: &mut FlatUCBMonteCarloPolicy<G>, board: &G) -> G::Move {
         let moves = board.possible_moves();
         let mut move_success = HashMap::new();
         let mut move_count = HashMap::new();

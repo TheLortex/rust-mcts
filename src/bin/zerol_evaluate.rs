@@ -10,11 +10,14 @@ use std::sync::Arc;
 use tensorflow::{Graph, Session, SessionOptions};
 use zerol::game::breakthrough::*;
 use zerol::game;
-use zerol::misc::breakthrough_evaluator;
+use zerol::game::{WithHistoryGB, WithHistory, MultiplayerGameBuilder};
+use zerol::misc::game_evaluator;
 use zerol::policies::{get_multi, mcts::puct::*, DynMultiplayerPolicyBuilder};
 use zerol::settings;
 
-    const MODEL_PATH: &str = "models/breakthrough";
+use typenum::U2;
+
+const MODEL_PATH: &str = "models/breakthrough";
 
 pub fn monte_carlo_match<
     'a,
@@ -118,8 +121,8 @@ fn main() {
         _g: PhantomData,
         s: PUCTSettings::default(),
         N_PLAYOUTS: settings::DEFAULT_N_PLAYOUTS,
-        evaluate: |pov, board_history: &[Breakthrough]| {
-            breakthrough_evaluator(&session, &graph, pov, board_history)
+        evaluate: |pov, board: &WithHistory<Breakthrough, U2>| {
+            game_evaluator(&session, &graph, pov, board)
         },
     };
     let p1 = if let Some(val) = args.value_of("against") {
@@ -131,7 +134,7 @@ fn main() {
     let config = args.value_of("policy").unwrap_or("rand");
     let p2 = get_multi(config);
 
-    let gb = BreakthroughBuilder {};
+    let gb = WithHistoryGB::<_,U2>::new(&BreakthroughBuilder {});
 
     let silent = args.is_present("only-result");
 

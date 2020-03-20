@@ -1,43 +1,41 @@
-use crate::settings;
-use crate::policies::{AsyncMultiplayerPolicy, AsyncMultiplayerPolicyBuilder, mcts::puct::{BatchedPUCT, PUCTSettings}};
 use crate::game::breakthrough::{Breakthrough, BreakthroughBuilder, Color, Move};
 use crate::game::{BaseGame, Feature, MultiplayerGame, MultiplayerGameBuilder};
 use crate::misc::tensorflow_call;
+use crate::policies::{
+    mcts::puct::{BatchedPUCT, PUCTSettings},
+    AsyncMultiplayerPolicy, AsyncMultiplayerPolicyBuilder,
+};
+use crate::settings;
 
+use indicatif::{ProgressBar, ProgressStyle};
+use ndarray::{Array, ArrayBase, Dimension};
 use std::collections::HashMap;
 use std::iter::FromIterator;
-use tokio::sync::{mpsc, oneshot};
 use std::marker::PhantomData;
-use indicatif::{ProgressBar, ProgressStyle};
 use tensorflow::{Graph, Session, Tensor};
-use ndarray::{Array, ArrayBase, Dimension};
+use tokio::sync::{mpsc, oneshot};
 
 type EvaluatorChannel = (Tensor<f32>, oneshot::Sender<(Tensor<f32>, Tensor<f32>)>);
 type GameHistoryChannel = (Color, Vec<(Breakthrough, HashMap<Move, f32>)>);
 
-
 async fn breakthrough_evaluator_batch<'a>(
     mut sender: mpsc::Sender<EvaluatorChannel>,
     pov: Color,
-    board_history: Vec<Breakthrough>,
+    board: Breakthrough,
 ) -> (Array<f32, <Breakthrough as Feature>::ActionDim>, f32) {
     let input_dimensions = Breakthrough::state_dimension();
-    let input_stride = input_dimensions.size();
-    // add one dimension to the tensor, this looks bad.
-    let w_history_dim: Vec<u64> = [
-        &[board_history.len()],
-        input_dimensions.as_array_view().to_slice().unwrap(),
-    ]
-    .concat()
-    .iter()
-    .map(|x| *x as u64)
-    .collect();
-    let mut board_tensor = Tensor::new(&w_history_dim);
-    for (i, board) in board_history.iter().enumerate() {
-        board_tensor[i * input_stride..(i + 1) * input_stride]
-            .clone_from_slice(&board.state_to_feature(pov).into_raw_vec());
-    }
-    
+
+    let board_tensor = Tensor::new(
+        &input_dimensions
+            .as_array_view()
+            .to_slice()
+            .unwrap()
+            .iter()
+            .map(|i| *i as u64)
+            .collect::<Vec<u64>>(),
+    )
+    .with_values(&board.state_to_feature(pov).into_raw_vec())
+    .unwrap();
 
     let (resp_tx, resp_rx) = oneshot::channel();
     sender.send((board_tensor, resp_tx)).await.ok().unwrap();
@@ -61,10 +59,9 @@ async fn game_generator_task(
     let puct = BatchedPUCT {
         s: puct_settings,
         N_PLAYOUTS: settings::DEFAULT_N_PLAYOUTS,
-        evaluate: |pov: Color, board_history: &[Breakthrough]| {
-            let bidule: Vec<Breakthrough> = board_history.iter().map(|x| (*x).clone()).collect();
-            breakthrough_evaluator_batch(sender.clone(), pov, bidule)
-        }, 
+        evaluate: |pov: Color, board: &Breakthrough| {
+            breakthrough_evaluator_batch(sender.clone(), pov, board.clone())
+        },
         _g: PhantomData,
     };
 
@@ -72,33 +69,31 @@ async fn game_generator_task(
         let mut p1 = puct.create(Color::Black);
         let mut p2 = puct.create(Color::White);
 
-        let mut state_history: Vec<Breakthrough>  = vec![gb.create(Color::random())];
+        let mut state: Breakthrough = gb.create(Color::random());
         let mut history = vec![];
 
-        while { state_history.last().unwrap().winner().is_none() } {
-            let policy = if state_history.last().unwrap().turn() == Color::Black {
+        while { state.winner().is_none() } {
+            let policy = if state.turn() == Color::Black {
                 &mut p1
             } else {
                 &mut p2
             };
-            let action = policy.play(&state_history).await;
+            let action = policy.play(&state).await;
 
-            let mut game = state_history.last().unwrap().clone();
-            let game_node = policy.inner.b.tree.get(&game.hash()).unwrap();
+            let game_node = policy.inner.b.tree.get(&state.hash()).unwrap();
             let monte_carlo_distribution: HashMap<Move, f32> = HashMap::from_iter(
                 game_node
                     .moves
                     .iter()
                     .map(|(k, v)| (*k, v.N_a / game_node.count)),
             );
-            history.push((game.clone(), monte_carlo_distribution));
+            history.push((state.clone(), monte_carlo_distribution));
 
-            game.play(&action);
-            state_history.push(game);
+            state.play(&action);
         }
 
         output_chan
-            .send((state_history.last().unwrap().winner().unwrap(), history))
+            .send((state.winner().unwrap(), history))
             .await
             .ok()
             .unwrap();
@@ -113,9 +108,10 @@ async fn game_evaluator_task<G: Feature>(
 ) {
     println!("Starting game evaluator..");
 
-    let feature_size: usize = G::state_dimension().size() * settings::DEFAULT_N_HISTORY_PUCT;
+    let feature_size: usize = G::state_dimension().size();
     let policy_size: usize = G::action_dimension().size();
-    let mut input_tensor: Tensor<f32> = Tensor::new(&[settings::GPU_BATCH_SIZE as u64, feature_size as u64]);
+    let mut input_tensor: Tensor<f32> =
+        Tensor::new(&[settings::GPU_BATCH_SIZE as u64, feature_size as u64]);
     let mut tx_buf = vec![];
     let mut idx = 0;
 

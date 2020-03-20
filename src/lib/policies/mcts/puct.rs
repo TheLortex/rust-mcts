@@ -32,10 +32,10 @@ pub struct PUCTNodeInfo<G: game::Feature> {
  * The game state evaluator
  */
 pub trait Evaluator<G: game::Feature>:
-    Fn(G::Player, &[G]) -> (Array<f32, G::ActionDim>, f32)
+    Fn(G::Player, &G) -> (Array<f32, G::ActionDim>, f32)
 {
 }
-impl<G: game::Feature, F: Fn(G::Player, &[G]) -> (Array<f32, G::ActionDim>, f32)> Evaluator<G>
+impl<G: game::Feature, F: Fn(G::Player, &G) -> (Array<f32, G::ActionDim>, f32)> Evaluator<G>
     for F
 {
 }
@@ -55,7 +55,7 @@ where
 {
 }
 
-pub trait AsyncEvaluator<G, O>: Fn(G::Player, &[G]) -> O
+pub trait AsyncEvaluator<G, O>: Fn(G::Player, &G) -> O
 where
     G: game::Feature,
     O: FutureOutput<G>,
@@ -66,7 +66,7 @@ impl<'a, G, O, F> AsyncEvaluator<G, O> for F
 where
     G: game::Feature,
     O: FutureOutput<G>,
-    F: Fn(G::Player, &[G]) -> O,
+    F: Fn(G::Player, &G) -> O,
 {
 }
 /**
@@ -78,7 +78,6 @@ pub struct PUCTSettings {
     pub C_INIT: f32,
     pub ROOT_DIRICHLET_ALPHA: f32,
     pub ROOT_EXPLORATION_FRACTION: f32,
-    pub N_HISTORY: usize,
 }
 
 /**
@@ -91,7 +90,6 @@ impl Default for PUCTSettings {
             C_INIT: 1.25,
             ROOT_DIRICHLET_ALPHA: 0.3,
             ROOT_EXPLORATION_FRACTION: 0.25,
-            N_HISTORY: 2,
         }
     }
 }
@@ -256,20 +254,11 @@ where
     G: game::Feature,
     F: Evaluator<G>,
 {
-    fn simulate(&self, history: &[G]) -> Self::PlayoutInfo {
-        let board = history.last().unwrap();
+    fn simulate(&self, board: &G) -> Self::PlayoutInfo {
         if !board.is_finished() {
-            let history: Vec<G> = if history.len() < self.b.s.N_HISTORY {
-                let mut _h =
-                    vec![history.first().unwrap().clone(); self.b.s.N_HISTORY - history.len()];
-                _h.extend(history.iter().cloned());
-                _h
-            } else {
-                Vec::from(&history[(history.len() - self.b.s.N_HISTORY)..(history.len())])
-            };
             // NN predicts a good policy for current player 
             //  + expectation of winning from this state.
-            let (policy, value) = (self.evaluate)(board.turn(), &history);
+            let (policy, value) = (self.evaluate)(board.turn(), &board);
             let policy = board.feature_to_moves(&policy);
             (Some(policy), value, board.clone())
         } else {
@@ -330,19 +319,10 @@ where
     G::Move: Send + Sync,
     G::Player: Send + Sync,
 {
-    async fn simulate(&self, history: &[G]) -> <Self as BaseMCTSPolicy<G>>::PlayoutInfo {
-        let board = history.last().unwrap();
+    async fn simulate(&self, board: &G) -> <Self as BaseMCTSPolicy<G>>::PlayoutInfo {
         if !board.is_finished() {
-            let history: Vec<G> = if history.len() < self.b.s.N_HISTORY {
-                let mut _h =
-                    vec![history.first().unwrap().clone(); self.b.s.N_HISTORY - history.len()];
-                _h.extend(history.iter().cloned());
-                _h
-            } else {
-                Vec::from(&history[(history.len() - self.b.s.N_HISTORY)..(history.len())])
-            };
             // NN predicts a good policy for current player + expectation of winning from this state.
-            let (policy, value) = (self.evaluate)(board.turn(), &history).await;
+            let (policy, value) = (self.evaluate)(board.turn(), board).await;
             let policy = board.feature_to_moves(&policy);
             (Some(policy), value, board.clone())
         } else {
@@ -360,7 +340,7 @@ pub type PUCTPolicy<G, F> = WithMCTSPolicy<G, PUCTPolicy_<G, F>>;
 pub struct PUCT<G, F>
 where
     G: game::Feature,
-    F: Fn(G::Player, &[G]) -> (Array<f32, G::ActionDim>, f32),
+    F: Fn(G::Player, &G) -> (Array<f32, G::ActionDim>, f32),
 {
     pub s: PUCTSettings,
     pub N_PLAYOUTS: usize,
@@ -416,7 +396,7 @@ pub struct BatchedPUCT<G, O, F>
 where
     G: game::Feature,
     O: FutureOutput<G>,
-    F: (Fn(G::Player, &[G]) -> O),
+    F: (Fn(G::Player, &G) -> O),
 {
     pub s: PUCTSettings,
     pub N_PLAYOUTS: usize,
@@ -428,7 +408,7 @@ impl<G, O, F> fmt::Display for BatchedPUCT<G, O, F>
 where
     G: game::Feature,
     O: FutureOutput<G>,
-    F: (Fn(G::Player, &[G]) -> O),
+    F: (Fn(G::Player, &G) -> O),
 {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         writeln!(f, "BATCHED PUCT")?;
@@ -442,7 +422,7 @@ where
     O: FutureOutput<G> + Sync + Send,
     G::Move: Send + Sync,
     G::Player: Send + Sync,
-    F: (Fn(G::Player, &[G]) -> O) + Send + Sync,
+    F: (Fn(G::Player, &G) -> O) + Send + Sync,
     F: Clone
 {
     type P = BatchedPUCTPolicy<G, O, F>;

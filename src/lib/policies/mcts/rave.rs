@@ -104,8 +104,8 @@ impl<G: MultiplayerGame> BaseMCTSPolicy<G> for RAVEPolicy_<G> {
 }
 
 impl<G: MultiplayerGame> MCTSPolicy<G> for RAVEPolicy_<G> {
-    fn simulate(&self, history: &[G]) -> Self::PlayoutInfo {
-        let (s, default) = history.last().unwrap().playout_board_history();
+    fn simulate(&self, board: &G) -> Self::PlayoutInfo {
+        let (s, default) = board.playout_board_history();
         (s.has_won(self.color), default)
     }
 }

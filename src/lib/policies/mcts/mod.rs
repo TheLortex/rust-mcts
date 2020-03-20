@@ -57,17 +57,14 @@ pub trait BaseMCTSPolicy<G: MultiplayerGame> {
  */
 
 pub trait MCTSPolicy<G: MultiplayerGame>: BaseMCTSPolicy<G> {
-    fn simulate(&self, history: &[G]) -> Self::PlayoutInfo;
+    fn simulate(&self, board: &G) -> Self::PlayoutInfo;
 
-    fn tree_search(&mut self, history: &[G]) {
-        let mut b = history.last().unwrap().clone();
-        let selection_history = self.select(&mut b);
+    fn tree_search(&mut self, board: &G) {
+        let mut b_scratch = board.clone();
+        let selection_history = self.select(&mut b_scratch);
 
-        let mut game_history = Vec::from(history);
-        game_history.extend(selection_history.iter().map(|(g,_)| g.clone()));
-        game_history.push(b.clone());
-        self.expand(&b);
-        let playout = self.simulate(&game_history);
+        self.expand(&b_scratch);
+        let playout = self.simulate(&b_scratch);
         self.backpropagate(selection_history, playout);
     }
 }
@@ -89,11 +86,11 @@ impl<G: MultiplayerGame, M: MCTSPolicy<G>> WithMCTSPolicy<G, M> {
 }
 
 impl<G: MultiplayerGame, M: MCTSPolicy<G>> MultiplayerPolicy<G> for WithMCTSPolicy<G, M> {
-    fn play(&mut self, history: &[G]) -> G::Move {
+    fn play(&mut self, board: &G) -> G::Move {
         self.inner.tree_mut().clear();
-        let board = history.last().unwrap();
+        
         for _ in 0..self.N_PLAYOUTS {
-            self.inner.tree_search(history)
+            self.inner.tree_search(board)
         }
 
         self.inner.select_move(board, false)
@@ -109,16 +106,13 @@ where
     G: MultiplayerGame + Send + Sync,
     G::Move: Send
 {
-    async fn simulate(&self, history: &[G]) -> Self::PlayoutInfo;
+    async fn simulate(&self, board: &G) -> Self::PlayoutInfo;
     
-    async fn tree_search(&mut self, history: &[G]) {
-        let mut b = history.last().unwrap().clone();
-        let selection_history = self.select(&mut b);
-
-        let mut game_history = Vec::from(history);
-        game_history.extend(selection_history.iter().map(|(g,_)| g.clone()));
-        self.expand(&b);
-        let playout = self.simulate(&game_history).await;
+    async fn tree_search(&mut self, board: &G) {
+        let mut b_scratch = board.clone();
+        let selection_history = self.select(&mut b_scratch);
+        self.expand(&b_scratch);
+        let playout = self.simulate(&b_scratch).await;
         self.backpropagate(selection_history, playout);
     }
 }
@@ -148,12 +142,11 @@ where
     M: AsyncMCTSPolicy<G> + Send,
     G::Move: Send
 {
-    async fn play(&mut self, history: &[G]) -> G::Move {
+    async fn play(&mut self, board: &G) -> G::Move {
         self.inner.tree_mut().clear();
-        let board = history.last().unwrap();
 
         for _ in 0..self.N_PLAYOUTS {
-            self.inner.tree_search(history).await
+            self.inner.tree_search(board).await
         }
 
         self.inner.select_move(board, false)

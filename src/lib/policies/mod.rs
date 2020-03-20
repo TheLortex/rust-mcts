@@ -14,14 +14,14 @@ pub mod ppa;
  * A static policy.
  */
 pub trait MultiplayerPolicy<T: MultiplayerGame> {
-    fn play(&mut self, history: &[T]) -> T::Move;
+    fn play(&mut self, board: &T) -> T::Move;
 }
 /**
  * A static asynchronous policy.
  */
 #[async_trait]
 pub trait AsyncMultiplayerPolicy<T: MultiplayerGame> {
-    async fn play(&mut self, history: &[T]) -> T::Move;
+    async fn play(&mut self, board: &T) -> T::Move;
 }
 /**
  * A static policy builder.

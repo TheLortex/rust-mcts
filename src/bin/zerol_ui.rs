@@ -8,15 +8,15 @@ use std::cell::RefCell;
 
 
 use zerol::game::breakthrough::*;
-use zerol::game::{MoveTrait, InteractiveGame, BaseGame, Feature, MultiplayerGame};
+use zerol::game::{MoveTrait, InteractiveGame, BaseGame, NoFeatures, Feature, MultiplayerGame};
 use zerol::policies::{
-    mcts::uct::*, mcts::puct::{PUCT, PUCTSettings, PUCTNodeInfo, PUCTMoveInfo}, MultiplayerPolicy, MultiplayerPolicyBuilder,
+    ppa::*, mcts::puct::{PUCT, PUCTSettings, PUCTNodeInfo, PUCTMoveInfo}, MultiplayerPolicy, MultiplayerPolicyBuilder,
 };
 use ndarray::Array;
 
 use std::marker::PhantomData;
 use zerol::settings;
-use zerol::misc::breakthrough_evaluator;
+use zerol::misc::game_evaluator;
 
 use tensorflow::{Graph, Session, SessionOptions};
 
@@ -81,7 +81,7 @@ impl GameDuelUI {
 where
     P2: MultiplayerPolicyBuilder<G>,
     P2::P: 'static,
-    F: Fn(<G as MultiplayerGame>::Player, &[G]) -> (Array<f32, <G as Feature>::ActionDim>, f32) + Clone + 'static
+    F: Fn(<G as MultiplayerGame>::Player, &G) -> (Array<f32, <G as Feature>::ActionDim>, f32) + Clone + 'static
 {
         
         let p1 = RefCell::new(pb1.create(G::players()[0]));
@@ -89,8 +89,6 @@ where
 
         let state = IG::new(start);
 
-        let history = RefCell::new(vec![]);
-        history.borrow_mut().push(state.get().clone());
 
         let tree = Rc::new(RefCell::new(HashMap::new()));
 
@@ -107,9 +105,8 @@ where
                     let mut p2 = p2.borrow_mut();
                     let p1_to_play = state.get().turn() == <G as MultiplayerGame>::players()[0];
 
-                    let mut history = history.borrow_mut();
                     let action = if p1_to_play {
-                        let action = p1.play(&history);
+                        let action = p1.play(&state.get());
                         /* UPDATE TREE VIEW*/
                         let mut tree = tree_1.borrow_mut();
                         *tree = p1.inner.b.tree.clone();
@@ -126,11 +123,10 @@ where
                         /* UPDATE STATE*/
                         action
                     } else {
-                        p2.play(&history)
+                        p2.play(&state.get())
                     };
                     log::info!("{}", action);
                     state.get_mut().play(&action);
-                    history.push(state.get().clone());
                 };
 
                 if state.get().is_finished() {
@@ -198,18 +194,18 @@ fn main() {
         _g: PhantomData,
         s: PUCTSettings::default(),
         N_PLAYOUTS: settings::DEFAULT_N_PLAYOUTS,
-        evaluate: move |pov, board_history: &[Breakthrough]| {
-            breakthrough_evaluator(&session, &graph, pov, board_history)
+        evaluate: move |pov, board: &Breakthrough| {
+            game_evaluator(&session, &graph, pov, board)
         },
     };
     
-    let pb2 = UCT::default();
+    let pb2 = PPA::<_, NoFeatures>::default();
 
     siv.add_layer(
         Dialog::new()
             .title("Breakthrough")
             .content(GameDuelUI::render(
-                G::players()[0],
+                G::players()[1],
                 puct,
                 pb2,
             )),
