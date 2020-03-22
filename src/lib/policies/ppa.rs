@@ -18,7 +18,7 @@ pub struct PPAPolicy<G: MultiplayerGame, M: MoveCode<G>> {
     _m: PhantomData<M>,
 }
 
-impl<G: MultiplayerGame, M: MoveCode<G>> PPAPolicy<G, M> {
+impl<G: MultiplayerGame + Clone, M: MoveCode<G>> PPAPolicy<G, M> {
     pub fn next_move(self: &mut PPAPolicy<G, M>, board: &G) -> G::Move {
         let moves = board.possible_moves().collect::<Vec<G::Move>>();
 
@@ -178,7 +178,7 @@ impl<G: MultiplayerGame, M: MoveCode<G>> PPAPolicy<G, M> {
     }
 }
 
-impl<G: MultiplayerGame, M: MoveCode<G>> MultiplayerPolicy<G> for PPAPolicy<G, M> {
+impl<G: MultiplayerGame + Clone, M: MoveCode<G>> MultiplayerPolicy<G> for PPAPolicy<G, M> {
     fn play(self: &mut PPAPolicy<G, M>, board: &G) -> G::Move {
         for _ in 0..self.s.N_PLAYOUTS {
             self.simulate(board)
@@ -240,7 +240,7 @@ impl<G: MultiplayerGame, M: MoveCode<G>> fmt::Display for PPA<G,M> {
     }
 } 
 
-impl<G: MultiplayerGame, M: MoveCode<G>> MultiplayerPolicyBuilder<G> for PPA<G,M> {
+impl<G: MultiplayerGame + Clone, M: MoveCode<G>> MultiplayerPolicyBuilder<G> for PPA<G,M> {
     type P = PPAPolicy<G, M>;
 
     fn create(&self, color: G::Player) -> PPAPolicy<G, M> {

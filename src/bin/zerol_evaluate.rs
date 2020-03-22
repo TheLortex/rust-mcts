@@ -24,7 +24,7 @@ pub fn monte_carlo_match<
     'c,
     'b,
     'd,
-    G: game::MultiplayerGame,
+    G: game::MultiplayerGame + Clone,
     GB: game::MultiplayerGameBuilder<G> + Sync,
 >(
     n: usize,

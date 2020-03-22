@@ -102,7 +102,7 @@ pub struct BasePUCTPolicy_<G: game::Feature> {
 
 impl<G> BaseMCTSPolicy<G> for BasePUCTPolicy_<G>
 where
-    G: game::Feature,
+    G: game::Feature + Clone,
 {
     type NodeInfo = PUCTNodeInfo<G>;
     type PlayoutInfo = (Option<HashMap<G::Move, f32>>, f32, G);
@@ -220,7 +220,7 @@ where
 
 impl<G, F> BaseMCTSPolicy<G> for PUCTPolicy_<G, F>
 where
-    G: game::Feature,
+    G: game::Feature + Clone,
     F: Evaluator<G>,
 {
     type NodeInfo = <BasePUCTPolicy_<G> as BaseMCTSPolicy<G>>::NodeInfo;
@@ -249,7 +249,7 @@ where
 
 impl<G, F> MCTSPolicy<G> for PUCTPolicy_<G, F>
 where
-    G: game::Feature,
+    G: game::Feature + Clone,
     F: Evaluator<G>,
 {
     fn simulate(&self, board: &G) -> Self::PlayoutInfo {
@@ -280,7 +280,7 @@ where
 
 impl<G, O, F> BaseMCTSPolicy<G> for BatchedPUCTPolicy_<G, O, F>
 where
-    G: game::Feature,
+    G: game::Feature + Clone,
     O: FutureOutput<G>,
     F: AsyncEvaluator<G, O>,
 {
@@ -311,7 +311,7 @@ where
 #[async_trait]
 impl<G, O, F> AsyncMCTSPolicy<G> for BatchedPUCTPolicy_<G, O, F>
 where
-    G: game::Feature + Send + Sync,
+    G: game::Feature + Send + Sync + Clone,
     O: FutureOutput<G> + Sync + Send,
     F: AsyncEvaluator<G, O> + Send + Sync,
     G::Move: Send + Sync,
@@ -364,7 +364,7 @@ impl<G: game::Feature, F: Evaluator<G>> fmt::Display for PUCT<G, F> {
 
 impl<G, F> MultiplayerPolicyBuilder<G> for PUCT<G, F>
 where
-    G: game::Feature,
+    G: game::Feature + Clone,
     F: Evaluator<G>,
     F: Clone
 {
@@ -416,7 +416,7 @@ where
 
 impl<G, O, F> AsyncMultiplayerPolicyBuilder<G> for BatchedPUCT<G, O, F>
 where
-    G: game::Feature + Send + Sync,
+    G: game::Feature + Send + Sync + Clone,
     O: FutureOutput<G> + Sync + Send,
     G::Move: Send + Sync,
     G::Player: Send + Sync,

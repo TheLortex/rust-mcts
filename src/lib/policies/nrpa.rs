@@ -12,7 +12,7 @@ pub struct NRPAPolicy<G: SingleplayerGame, M: MoveCode<G>> {
     _m: PhantomData<M>,
 }
 
-impl<G: SingleplayerGame, M: MoveCode<G>> NRPAPolicy<G, M> {
+impl<G: SingleplayerGame + Clone, M: MoveCode<G>> NRPAPolicy<G, M> {
 
     fn next_move(playout_policy: &HashMap<usize, f32>, board: &G) -> G::Move {
         let moves = board.possible_moves().collect::<Vec<G::Move>>();
@@ -110,7 +110,7 @@ impl<G: SingleplayerGame, M: MoveCode<G>> NRPAPolicy<G, M> {
     }
 }
 
-impl<G: SingleplayerGame, M: MoveCode<G>> SingleplayerPolicy<G> for NRPAPolicy<G, M> {
+impl<G: SingleplayerGame + Clone, M: MoveCode<G>> SingleplayerPolicy<G> for NRPAPolicy<G, M> {
     fn solve(self: &mut NRPAPolicy<G, M>, board: &G) -> Vec<G::Move> {
         let (_, policy) = self.nested(board, self.s.level, HashMap::new());
         policy
@@ -145,7 +145,7 @@ impl<G: SingleplayerGame, M: MoveCode<G>>  Default for NRPA<G,M> {
     }
 }
 
-impl<G: SingleplayerGame, M: MoveCode<G>> SingleplayerPolicyBuilder<G> for NRPA<G,M> {
+impl<G: SingleplayerGame + Clone, M: MoveCode<G>> SingleplayerPolicyBuilder<G> for NRPA<G,M> {
     type P = NRPAPolicy<G, M>;
 
     fn create(&self) -> Self::P {

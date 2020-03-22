@@ -61,7 +61,7 @@ async fn game_generator_task<G, GB>(
     mut output_chan: mpsc::Sender<GameHistoryChannel<G>>,
     bar: Arc<Box<ProgressBar>>,
 ) where
-    G: game::Feature + Send + Sync,
+    G: game::Feature + Send + Sync + Clone,
     G::Move: Send + Sync,
     G::Player: Send + Sync,
     GB: MultiplayerGameBuilder<G>,
@@ -161,7 +161,7 @@ pub async fn game_generator<G, GB>(
     graph_and_session: Arc<RwLock<(Graph, Session)>>,
     output_chan: mpsc::Sender<GameHistoryChannel<G>>,
 ) where
-    G: game::Feature + Send + Sync + 'static,
+    G: game::Feature + Send + Sync + Clone + 'static,
     G::Move: Send + Sync,
     G::Player: Send + Sync,
     GB: MultiplayerGameBuilder<G> + Copy + Send + 'static,

@@ -27,8 +27,7 @@ impl FileManager {
         FileManager { f }
     }
 
-    pub fn append<G: game::Feature,N: Unsigned>(&mut self, board: &WithHistory<G,N>, policy: &HashMap<G::Move, f32>, value: &f32) {
-        
+    pub fn append<G: game::Feature + Clone,N: Unsigned>(&mut self, board: &WithHistory<G,N>, policy: &HashMap<G::Move, f32>, value: &f32) {
         let current_turn = board.state.turn();
         let vec_board = board.state_to_feature(current_turn).into_raw_vec();
         let vec_policy = G::moves_to_feature(policy).into_raw_vec();

@@ -1,4 +1,4 @@
-use crate::game::{SingleplayerGame, MultiplayerGame};
+use crate::game::{SingleplayerGame, Playout, MultiplayerGame};
 use crate::policies::{MultiplayerPolicy, MultiplayerPolicyBuilder, SingleplayerPolicy, SingleplayerPolicyBuilder};
 
 use std::f32;
@@ -9,7 +9,7 @@ pub struct NMCSPolicy {
 }
 
 impl NMCSPolicy {
-    fn nested<G: SingleplayerGame>(self: &NMCSPolicy, board: &G, level: usize) -> (f32, Vec<G::Move>) {
+    fn nested<G: SingleplayerGame + Clone>(self: &NMCSPolicy, board: &G, level: usize) -> (f32, Vec<G::Move>) {
         if level == 0 {
             let (board, mut history) = board.playout_board_history();
             history.reverse();
@@ -44,7 +44,7 @@ impl NMCSPolicy {
     }
 }
 
-impl<G: SingleplayerGame> SingleplayerPolicy<G> for NMCSPolicy {
+impl<G: SingleplayerGame + Clone> SingleplayerPolicy<G> for NMCSPolicy {
     fn solve(self: &mut NMCSPolicy, board: &G) -> Vec<G::Move> {
         let (_, mut sequence) = self.nested(board, self.s.level);
         sequence.reverse();
@@ -63,7 +63,7 @@ impl Default for NMCS {
     }
 }
 
-impl<G: SingleplayerGame> SingleplayerPolicyBuilder<G> for NMCS {
+impl<G: SingleplayerGame + Clone> SingleplayerPolicyBuilder<G> for NMCS {
     type P = NMCSPolicy;
 
     fn create(&self) -> Self::P {
@@ -77,7 +77,7 @@ pub struct MultiNMCSPolicy<G: MultiplayerGame> {
     s: MultiNMCS,
 }
 
-impl<G: MultiplayerGame> MultiNMCSPolicy<G> {
+impl<G: MultiplayerGame + Clone> MultiNMCSPolicy<G> {
     fn nested(self: &MultiNMCSPolicy<G>, board: &G, level: usize, depth: f32, bound: f32) -> f32 {
         let mut d = depth;
         let mut s = board.clone();
@@ -128,7 +128,7 @@ impl<G: MultiplayerGame> MultiNMCSPolicy<G> {
     }
 }
 
-impl<G: MultiplayerGame> MultiplayerPolicy<G> for MultiNMCSPolicy<G> {
+impl<G: MultiplayerGame + Clone> MultiplayerPolicy<G> for MultiNMCSPolicy<G> {
     fn play(self: &mut MultiNMCSPolicy<G>, board: &G) -> G::Move {
         let mut best_move = None;
         let mut max_visited = 0.;
@@ -179,7 +179,7 @@ impl fmt::Display for MultiNMCS {
     }
 } 
 
-impl<G: MultiplayerGame> MultiplayerPolicyBuilder<G> for MultiNMCS {
+impl<G: MultiplayerGame + Clone> MultiplayerPolicyBuilder<G> for MultiNMCS {
     type P = MultiNMCSPolicy<G>;
 
     fn create(&self, color: G::Player) -> Self::P {

@@ -15,7 +15,7 @@ pub trait MoveTrait = PartialEq + Eq + Copy + Clone + Hash + Debug;
 /**
  * Common interface for single and multiplayer games
  */
-pub trait BaseGame: Sized + Clone + Debug {
+pub trait BaseGame: Sized + Debug {
     /**
      * The type for a Move.
      */
@@ -57,6 +57,9 @@ pub trait BaseGame: Sized + Clone + Debug {
         (gh, chosen_action)
     }
 
+}
+
+pub trait Playout: BaseGame + Clone {
     fn playout_full_history(&self) -> (Self, Vec<(Self, Self::Move)>) {
         let mut s = self.clone();
         let mut hist = Vec::new();
@@ -85,6 +88,7 @@ pub trait BaseGame: Sized + Clone + Debug {
         s
     }
 }
+impl<G: BaseGame + Clone> Playout for G {}
 
 pub trait MultiplayerGameBuilder<G: MultiplayerGame> {
     fn create(&self, starting: G::Player) -> G;
@@ -149,7 +153,7 @@ pub trait InteractiveGame: cursive::view::View {
 
 use crate::policies::MultiplayerPolicy;
 
-pub fn simulate<'a, 'b, G: MultiplayerGame>(
+pub fn simulate<'a, 'b, G: MultiplayerGame + Clone>(
     mut p1: Box<dyn MultiplayerPolicy<G> + 'a>,
     mut p2: Box<dyn MultiplayerPolicy<G> + 'b>,
     game: &G,
@@ -187,7 +191,7 @@ impl<G: BaseGame, H> Debug for WithHistory<G, H> {
     }
 }
 
-impl<G: BaseGame, H> Clone for WithHistory<G, H> {
+impl<G: BaseGame + Clone, H> Clone for WithHistory<G, H> {
     fn clone(&self) -> Self {
         WithHistory {
             prec: self.prec.clone(),
@@ -197,7 +201,7 @@ impl<G: BaseGame, H> Clone for WithHistory<G, H> {
     }
 }
 
-impl<G: BaseGame, H> BaseGame for WithHistory<G, H> {
+impl<G: BaseGame + Clone, H> BaseGame for WithHistory<G, H> {
     type Move = G::Move;
     type MoveIterator<'a> = G::MoveIterator<'a>;
 
@@ -221,7 +225,7 @@ impl<G: BaseGame, H> BaseGame for WithHistory<G, H> {
     }
 }
 
-impl<G: MultiplayerGame, H> MultiplayerGame for WithHistory<G, H> {
+impl<G: MultiplayerGame + Clone, H> MultiplayerGame for WithHistory<G, H> {
     type Player = G::Player;
 
     fn players() -> Vec<Self::Player> {
@@ -237,7 +241,7 @@ impl<G: MultiplayerGame, H> MultiplayerGame for WithHistory<G, H> {
     }
 }
 
-impl<G: SingleplayerGame, H> SingleplayerGame for WithHistory<G, H> {
+impl<G: SingleplayerGame + Clone, H> SingleplayerGame for WithHistory<G, H> {
     fn score(&self) -> f32 {
         self.state.score()
     }
@@ -252,7 +256,7 @@ impl<'a, GB, H> WithHistoryGB<'a, GB, H> {
     }
 }
 
-impl<'a, G: MultiplayerGame, GB: MultiplayerGameBuilder<G>,H> MultiplayerGameBuilder<WithHistory<G,H>> for WithHistoryGB<'a, GB,H> {
+impl<'a, G: MultiplayerGame + Clone, GB: MultiplayerGameBuilder<G>,H> MultiplayerGameBuilder<WithHistory<G,H>> for WithHistoryGB<'a, GB,H> {
     fn create(&self, starting: G::Player) -> WithHistory<G,H> {
         WithHistory {
             prec: None,
@@ -264,7 +268,7 @@ impl<'a, G: MultiplayerGame, GB: MultiplayerGameBuilder<G>,H> MultiplayerGameBui
 
 use typenum::Unsigned;
 
-impl<G: Feature, H: Unsigned> Feature for WithHistory<G, H> {
+impl<G: Feature + Clone, H: Unsigned> Feature for WithHistory<G, H> {
     // one dimension larger to store history
     type StateDim = <G::StateDim as Dimension>::Larger;
     type ActionDim = G::ActionDim;

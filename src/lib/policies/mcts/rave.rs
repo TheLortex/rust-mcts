@@ -1,4 +1,4 @@
-use crate::game::MultiplayerGame;
+use crate::game::{Playout, MultiplayerGame};
 use crate::policies::{MultiplayerPolicyBuilder, mcts::{MCTSPolicy, BaseMCTSPolicy, WithMCTSPolicy}};
 use crate::settings;
 
@@ -30,7 +30,7 @@ pub struct RAVEPolicy_<G: MultiplayerGame> {
     UCT_WEIGHT: f32,
 }
 
-impl<G: MultiplayerGame> BaseMCTSPolicy<G> for RAVEPolicy_<G> {
+impl<G: MultiplayerGame + Clone> BaseMCTSPolicy<G> for RAVEPolicy_<G> {
     type NodeInfo = RAVENodeInfo<G>;
     type PlayoutInfo = (bool, Vec<(usize, G::Move)>); // (has_won, history_default)
 
@@ -103,7 +103,7 @@ impl<G: MultiplayerGame> BaseMCTSPolicy<G> for RAVEPolicy_<G> {
     }
 }
 
-impl<G: MultiplayerGame> MCTSPolicy<G> for RAVEPolicy_<G> {
+impl<G: MultiplayerGame + Clone> MCTSPolicy<G> for RAVEPolicy_<G> {
     fn simulate(&self, board: &G) -> Self::PlayoutInfo {
         let (s, default) = board.playout_board_history();
         (s.has_won(self.color), default)
@@ -158,7 +158,7 @@ impl fmt::Display for RAVE {
     }
 }
 
-impl<G: MultiplayerGame> MultiplayerPolicyBuilder<G> for RAVE {
+impl<G: MultiplayerGame + Clone> MultiplayerPolicyBuilder<G> for RAVE {
     type P = RAVEPolicy<G>;
 
     fn create(&self, color: G::Player) -> Self::P {

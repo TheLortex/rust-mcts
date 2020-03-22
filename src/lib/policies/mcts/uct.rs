@@ -1,4 +1,4 @@
-use crate::game::MultiplayerGame;
+use crate::game::{Playout, MultiplayerGame};
 use crate::policies::{
     mcts::{BaseMCTSPolicy, MCTSPolicy, WithMCTSPolicy},
     MultiplayerPolicyBuilder,
@@ -31,7 +31,7 @@ pub struct UCTPolicy_<G: MultiplayerGame> {
     UCT_WEIGHT: f32,
 }
 
-impl<G: MultiplayerGame> BaseMCTSPolicy<G> for UCTPolicy_<G> {
+impl<G: MultiplayerGame + Clone> BaseMCTSPolicy<G> for UCTPolicy_<G> {
     type NodeInfo = UCTNodeInfo<G>;
     type PlayoutInfo = bool;
 
@@ -93,7 +93,7 @@ impl<G: MultiplayerGame> BaseMCTSPolicy<G> for UCTPolicy_<G> {
     }
 }
 
-impl<G: MultiplayerGame> MCTSPolicy<G> for UCTPolicy_<G> {
+impl<G: MultiplayerGame + Clone> MCTSPolicy<G> for UCTPolicy_<G> {
     fn simulate(&self, board: &G) -> Self::PlayoutInfo {
         board.playout_board().has_won(self.color)
     }
@@ -123,7 +123,7 @@ impl fmt::Display for UCT {
     }
 }
 
-impl<G: MultiplayerGame> MultiplayerPolicyBuilder<G> for UCT {
+impl<G: MultiplayerGame + Clone> MultiplayerPolicyBuilder<G> for UCT {
     type P = UCTPolicy<G>;
 
     fn create(&self, color: G::Player) -> Self::P {

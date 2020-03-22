@@ -73,7 +73,7 @@ pub trait SingleplayerPolicy<T: SingleplayerGame> {
 
 use super::game::NoFeatures;
 
-pub fn get_multi<'a, G: MultiplayerGame + 'a>(name: &str) -> Box<dyn DynMultiplayerPolicyBuilder<'a, G> + Sync + 'a> {
+pub fn get_multi<'a, G: MultiplayerGame + Clone + 'a>(name: &str) -> Box<dyn DynMultiplayerPolicyBuilder<'a, G> + Sync + 'a> {
     match name {
         "rand" => Box::new(flat::Random::default()),
         "flat" => Box::new(flat::FlatMonteCarlo::default()),

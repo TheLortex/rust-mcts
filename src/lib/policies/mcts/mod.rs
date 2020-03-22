@@ -11,7 +11,7 @@ pub mod rave;
 pub mod puct;
 
 /* ABSTRACT MCTS */
-pub trait BaseMCTSPolicy<G: MultiplayerGame> {
+pub trait BaseMCTSPolicy<G: MultiplayerGame + Clone> {
     type NodeInfo;
     type PlayoutInfo;
 
@@ -56,7 +56,7 @@ pub trait BaseMCTSPolicy<G: MultiplayerGame> {
  *  SYNCHRONOUS MCTS
  */
 
-pub trait MCTSPolicy<G: MultiplayerGame>: BaseMCTSPolicy<G> {
+pub trait MCTSPolicy<G: MultiplayerGame + Clone>: BaseMCTSPolicy<G> {
     fn simulate(&self, board: &G) -> Self::PlayoutInfo;
 
     fn tree_search(&mut self, board: &G) {
@@ -69,13 +69,13 @@ pub trait MCTSPolicy<G: MultiplayerGame>: BaseMCTSPolicy<G> {
     }
 }
 
-pub struct WithMCTSPolicy<G: MultiplayerGame, M: MCTSPolicy<G>> {
+pub struct WithMCTSPolicy<G: MultiplayerGame + Clone, M: MCTSPolicy<G>> {
     pub inner: M, 
     N_PLAYOUTS: usize, 
     _g: std::marker::PhantomData<G>
 }
 
-impl<G: MultiplayerGame, M: MCTSPolicy<G>> WithMCTSPolicy<G, M> {
+impl<G: MultiplayerGame + Clone, M: MCTSPolicy<G>> WithMCTSPolicy<G, M> {
     pub fn new(p: M, N_PLAYOUTS: usize) -> Self {
         WithMCTSPolicy {
             inner: p, 
@@ -85,7 +85,7 @@ impl<G: MultiplayerGame, M: MCTSPolicy<G>> WithMCTSPolicy<G, M> {
     }
 }
 
-impl<G: MultiplayerGame, M: MCTSPolicy<G>> MultiplayerPolicy<G> for WithMCTSPolicy<G, M> {
+impl<G: MultiplayerGame + Clone, M: MCTSPolicy<G>> MultiplayerPolicy<G> for WithMCTSPolicy<G, M> {
     fn play(&mut self, board: &G) -> G::Move {
         self.inner.tree_mut().clear();
         
@@ -103,7 +103,7 @@ impl<G: MultiplayerGame, M: MCTSPolicy<G>> MultiplayerPolicy<G> for WithMCTSPoli
 #[async_trait]
 pub trait AsyncMCTSPolicy<G>: BaseMCTSPolicy<G> + Sync
 where
-    G: MultiplayerGame + Send + Sync,
+    G: MultiplayerGame + Send + Sync + Clone,
     G::Move: Send
 {
     async fn simulate(&self, board: &G) -> Self::PlayoutInfo;
@@ -126,7 +126,7 @@ pub struct WithAsyncMCTSPolicy<G, M>
 
 impl<G, M> WithAsyncMCTSPolicy<G, M>
 where
-    G: MultiplayerGame + Send + Sync,
+    G: MultiplayerGame + Send + Sync + Clone,
     M: AsyncMCTSPolicy<G> + Send,
     G::Move: Send
 {
@@ -138,7 +138,7 @@ where
 #[async_trait]
 impl<G, M> AsyncMultiplayerPolicy<G> for WithAsyncMCTSPolicy<G, M>
 where
-    G: MultiplayerGame + Send + Sync,
+    G: MultiplayerGame + Send + Sync + Clone,
     M: AsyncMCTSPolicy<G> + Send,
     G::Move: Send
 {
