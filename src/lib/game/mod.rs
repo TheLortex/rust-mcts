@@ -20,15 +20,17 @@ pub trait BaseGame: Sized + Clone + Debug {
      * The type for a Move.
      */
     type Move: MoveTrait;
+
+    type MoveIterator<'a>: Iterator<Item=Self::Move>;
     /**
      * Given the game state and turn, list possible actions.
      */
-    fn possible_moves(&self) -> &[Self::Move];
+    fn possible_moves<'a>(&'a self) -> Self::MoveIterator<'a>;
     /**
      * Returns if the game has ended or not.
      */
     fn is_finished(&self) -> bool {
-        return self.possible_moves().is_empty();
+        self.possible_moves().next().is_none()
     }
     /**
      * Mutates game state playing the given action.
@@ -44,7 +46,7 @@ pub trait BaseGame: Sized + Clone + Debug {
      */
     fn random_move(&mut self) -> (usize, Option<Self::Move>) {
         let actions = self.possible_moves();
-        let chosen_action = actions.choose(&mut rand::thread_rng()).copied();
+        let chosen_action = actions.collect::<Vec<Self::Move>>().choose(&mut rand::thread_rng()).copied();
 
         let gh = self.hash();
 
@@ -170,10 +172,11 @@ pub fn simulate<'a, 'b, G: MultiplayerGame>(
 }
 
 use std::marker::PhantomData;
+use std::sync::Arc;
 
 pub struct WithHistory<G: BaseGame, H> {
-    prec: Option<Box<Self>>,
-    state: G,
+    prec: Option<Arc<Self>>,
+    pub state: G, // TODO: create accessor
     _h: PhantomData<fn() -> H>,
 }
 
@@ -196,8 +199,9 @@ impl<G: BaseGame, H> Clone for WithHistory<G, H> {
 
 impl<G: BaseGame, H> BaseGame for WithHistory<G, H> {
     type Move = G::Move;
+    type MoveIterator<'a> = G::MoveIterator<'a>;
 
-    fn possible_moves(&self) -> &[Self::Move] {
+    fn possible_moves<'a>(&'a self) -> Self::MoveIterator<'a> {
         self.state.possible_moves()
     }
 
@@ -208,7 +212,7 @@ impl<G: BaseGame, H> BaseGame for WithHistory<G, H> {
             state: self.state.clone(),
             _h: PhantomData,
         };
-        self.prec = Some(Box::new(new_node));
+        self.prec = Some(Arc::new(new_node));
         self.state.play(action)
     }
 
@@ -239,6 +243,7 @@ impl<G: SingleplayerGame, H> SingleplayerGame for WithHistory<G, H> {
     }
 }
 
+#[derive(Copy,Clone)]
 pub struct WithHistoryGB<'a, GB, H> (&'a GB, PhantomData<H>);
 
 impl<'a, GB, H> WithHistoryGB<'a, GB, H> {

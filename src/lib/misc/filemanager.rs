@@ -1,5 +1,7 @@
 use crate::game;
+use crate::game::{WithHistory, Feature};
 
+use typenum::Unsigned;
 use nix::unistd::mkfifo;
 use nix::sys::stat;
 use std::fs::{File, OpenOptions};
@@ -25,13 +27,10 @@ impl FileManager {
         FileManager { f }
     }
 
-    pub fn append<G: game::Feature>(&mut self, history: &[G], policy: &HashMap<G::Move, f32>, value: &f32) {
-        let mut vec_board: Vec<f32> = Vec::new();
-        let current_turn = history.last().unwrap().turn();
-        for board in &history[history.len()-2..history.len()] {
-            vec_board.extend(board.state_to_feature(current_turn).into_raw_vec())
-        }
+    pub fn append<G: game::Feature,N: Unsigned>(&mut self, board: &WithHistory<G,N>, policy: &HashMap<G::Move, f32>, value: &f32) {
         
+        let current_turn = board.state.turn();
+        let vec_board = board.state_to_feature(current_turn).into_raw_vec();
         let vec_policy = G::moves_to_feature(policy).into_raw_vec();
 
         let toser = (vec_board, vec_policy, value);

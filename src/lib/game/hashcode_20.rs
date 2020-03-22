@@ -72,8 +72,6 @@ pub struct Hashcode20 {
 
     pub day: usize,
     rules: Hashcode20Settings,
-
-    possible_moves: Vec<Move>,
 }
 
 impl fmt::Debug for Hashcode20 {
@@ -81,7 +79,6 @@ impl fmt::Debug for Hashcode20 {
         writeln!(f, "Day: {}", self.day)?;
         writeln!(f, "Scanned books: {:?}", self.scanned_books)?;
         writeln!(f, "NScannedPerLib: {:?}", self.n_books_scanned)?;
-        writeln!(f, "Possible moves: {:?}", self.possible_moves)?;
         writeln!(f, "Signup pending: {:?}", self.pending_sign_up)?;
         writeln!(f, "Signed up: {:?}", self.signedup_libraries)
     }
@@ -134,7 +131,7 @@ impl SingleplayerGameBuilder<Hashcode20> for Hashcode20Settings {
         let unsignedup_libraries = BTreeSet::from_iter(0..self.L);
         let n_books_scanned = BTreeMap::new();
 
-        let mut res = Hashcode20 {
+        Hashcode20 {
             pending_sign_up: None,
             scanned_books,
             unscanned_books,
@@ -143,10 +140,7 @@ impl SingleplayerGameBuilder<Hashcode20> for Hashcode20Settings {
             n_books_scanned,
             day: 0,
             rules: self.clone(),
-            possible_moves: vec![]
-        };
-        res.possible_moves = res.compute_possible_moves();
-        res
+        }
     }
 }
 
@@ -157,11 +151,15 @@ impl SingleplayerGame for Hashcode20 {
     }
 }
 
+type PossibleMovesIterator<'a> = impl Iterator<Item=Move> + 'a;
+
 impl BaseGame for Hashcode20 {
     type Move = Move;
+    type MoveIterator<'a> = PossibleMovesIterator<'a>;
 
-    fn possible_moves(&self) -> &[Self::Move] {
-        &self.possible_moves
+
+    fn possible_moves<'a>(&'a self) -> Self::MoveIterator<'a> {
+        self.compute_possible_moves().into_iter()
     }
 
     // assuming the move is valid.
@@ -189,7 +187,6 @@ impl BaseGame for Hashcode20 {
                 self.pending_sign_up = Some((*library, self.rules.libraries[*library].1))
             }
         };
-        self.possible_moves = self.compute_possible_moves()
     }
 
     fn hash(&self) -> usize {

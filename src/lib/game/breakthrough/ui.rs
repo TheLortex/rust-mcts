@@ -23,7 +23,6 @@ impl IBreakthrough {
                     let new_m = self
                         .game
                         .possible_moves()
-                        .iter()
                         .filter(|m| {
                             (dx != 0 && (m.x as isize - x as isize) * dx > 0)
                                 || (dy != 0 && (m.y as isize - y as isize) * dy > 0)
@@ -36,8 +35,7 @@ impl IBreakthrough {
                             } else {
                                 (a * dx, b.abs())
                             }
-                        })
-                        .cloned();
+                        });
                     if let Some(new_m) = new_m {
                         self.choosing_move = Some(PendingMove::SelectingPosition(new_m.x, new_m.y))
                     }
@@ -204,10 +202,9 @@ impl cursive::view::View for IBreakthrough {
                         }
                         PendingMove::SelectingPosition(x, y) => {
                             self.choosing_move = Some(PendingMove::SelectingMove(
-                                *self
+                                self
                                     .game
                                     .possible_moves()
-                                    .iter()
                                     .find(|m| m.x == x && m.y == y)
                                     .unwrap(),
                             ));
@@ -252,7 +249,7 @@ impl InteractiveGame for IBreakthrough {
     }
 
     fn choose_move(&mut self, cb: Box<dyn FnOnce(<Self::G as BaseGame>::Move, &mut Self)>) {
-        let first_move = self.game.possible_moves()[0];
+        let first_move = self.game.possible_moves().next().expect("Not possible moves ?");
         self.choosing_move = Some(PendingMove::SelectingPosition(first_move.x, first_move.y));
         self.choosing_move_cb = Some(cb)
     }

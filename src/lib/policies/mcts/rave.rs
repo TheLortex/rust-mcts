@@ -47,22 +47,22 @@ impl<G: MultiplayerGame> BaseMCTSPolicy<G> for RAVEPolicy_<G> {
         // select between optimism and pessimism in the confidence bound.
         let optimistic = board.turn() == self.color;
 
-        let moves_scores = moves.iter().map(|action| {
+        let moves_scores = moves.map(|action| {
             let value = self.eval(&board.hash(), &action, optimistic);
             (value, action)
         });
 
         if board.turn() == self.color {
-            *moves_scores.max_by_key(|x| FloatOrd(x.0)).unwrap().1
+            moves_scores.max_by_key(|x| FloatOrd(x.0)).unwrap().1
         } else {
-            *moves_scores.min_by_key(|x| FloatOrd(x.0)).unwrap().1
+            moves_scores.min_by_key(|x| FloatOrd(x.0)).unwrap().1
         }
     }
 
     fn default_node(&self, board: &G) -> Self::NodeInfo {
         let moves = HashMap::from_iter(board.possible_moves().into_iter().map(|m| {
             (
-                *m,
+                m,
                 MoveInfo {
                     wins: 0.,
                     wins_AMAF: 0.,

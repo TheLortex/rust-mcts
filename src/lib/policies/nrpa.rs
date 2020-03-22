@@ -15,7 +15,7 @@ pub struct NRPAPolicy<G: SingleplayerGame, M: MoveCode<G>> {
 impl<G: SingleplayerGame, M: MoveCode<G>> NRPAPolicy<G, M> {
 
     fn next_move(playout_policy: &HashMap<usize, f32>, board: &G) -> G::Move {
-        let moves = board.possible_moves();
+        let moves = board.possible_moves().collect::<Vec<G::Move>>();
         let chosen_move = moves
             .choose_weighted(&mut rand::thread_rng(), |item| {
                 let code = M::code(board, item);
@@ -96,7 +96,6 @@ impl<G: SingleplayerGame, M: MoveCode<G>> NRPAPolicy<G, M> {
 
             let z: f32 = board
                 .possible_moves()
-                .iter()
                 .map(|m| playout_policy.get(&M::code(&board, &m)).unwrap_or(&0.).exp())
                 .sum();
 

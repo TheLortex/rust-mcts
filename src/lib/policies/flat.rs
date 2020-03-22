@@ -11,7 +11,7 @@ pub struct RandomPolicy {}
 
 impl<G: MultiplayerGame> MultiplayerPolicy<G> for RandomPolicy {
     fn play(self: &mut RandomPolicy, board: &G) -> G::Move {
-        let moves = board.possible_moves();
+        let moves = board.possible_moves().collect::<Vec<G::Move>>();
         moves.choose(&mut rand::thread_rng()).copied().unwrap()
     }
 }
@@ -60,13 +60,14 @@ pub struct FlatMonteCarloPolicy<G: MultiplayerGame> {
 impl<G: MultiplayerGame> MultiplayerPolicy<G> for FlatMonteCarloPolicy<G> {
     fn play(self: &mut FlatMonteCarloPolicy<G>, board: &G) -> G::Move {
         let moves = board.possible_moves();
+        let moves_vec = moves.collect::<Vec<G::Move>>();
 
-        let n_playouts_per_move = self.N_PLAYOUTS / moves.len();
+        let n_playouts_per_move = self.N_PLAYOUTS / moves_vec.len();
 
         let mut best_move = None;
         let mut best_score = 0;
 
-        for m in moves.iter() {
+        for m in moves_vec.into_iter() {
             let mut b_after_move = board.clone();
             b_after_move.play(&m);
             let mut success = 0;
@@ -82,7 +83,7 @@ impl<G: MultiplayerGame> MultiplayerPolicy<G> for FlatMonteCarloPolicy<G> {
             }
         }
 
-        best_move.copied().unwrap()
+        best_move.unwrap()
     }
 }
 
@@ -122,11 +123,14 @@ pub struct FlatUCBMonteCarloPolicy<G: MultiplayerGame> {
 impl<G: MultiplayerGame> MultiplayerPolicy<G> for FlatUCBMonteCarloPolicy<G> {
     fn play(self: &mut FlatUCBMonteCarloPolicy<G>, board: &G) -> G::Move {
         let moves = board.possible_moves();
+        let moves_vec = moves.collect::<Vec<G::Move>>();
+        let n_moves = moves_vec.len();
+
         let mut move_success = HashMap::new();
         let mut move_count = HashMap::new();
         let mut move_board = HashMap::new();
 
-        for m in moves.iter() {
+        for m in moves_vec.iter() {
             let mut b_after_move = board.clone();
             b_after_move.play(&m);
             if b_after_move.playout_board().has_won(self.color) {
@@ -137,16 +141,17 @@ impl<G: MultiplayerGame> MultiplayerPolicy<G> for FlatUCBMonteCarloPolicy<G> {
             move_count.insert(m, 1);
             move_board.insert(m, b_after_move);
         }
+        
 
-        for i in 0..(self.N_PLAYOUTS - moves.len()) {
+        for i in 0..(self.N_PLAYOUTS - n_moves) {
             let mut max_ucb = 0f32;
             let mut max_move = None;
 
-            for m in moves.iter() {
+            for m in moves_vec.iter() {
                 let count = *move_count.get(&m).unwrap() as f32;
                 let succ = *move_success.get(&m).unwrap() as f32;
                 let mean = succ / count;
-                let ucb = mean + self.UCB_WEIGHT * (((moves.len() + i) as f32).ln() / count).sqrt();
+                let ucb = mean + self.UCB_WEIGHT * (((n_moves + i) as f32).ln() / count).sqrt();
 
                 if ucb >= max_ucb {
                     max_move = Some(m);
@@ -165,7 +170,7 @@ impl<G: MultiplayerGame> MultiplayerPolicy<G> for FlatUCBMonteCarloPolicy<G> {
         let mut max_count = 0;
         let mut max_move = None;
 
-        for m in moves.iter() {
+        for m in moves_vec.iter() {
             let count = *move_count.get(&m).unwrap();
 
             if count >= max_count {

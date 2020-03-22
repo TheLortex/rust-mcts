@@ -1,4 +1,5 @@
-use crate::game::{BaseGame, MultiplayerGame, InteractiveGame, MultiplayerGameBuilder, Feature};
+use crate::game::{BaseGame, Feature, InteractiveGame, MultiplayerGame, MultiplayerGameBuilder};
+use crate::settings::BREAKTHROUGH_K as K;
 
 use ansi_term::Colour::Fixed;
 use ansi_term::Style;
@@ -7,8 +8,6 @@ use std::fmt;
 use std::hash::*;
 
 pub mod ui;
-
-pub const K: usize = 5;
 /* PLAYERS */
 #[derive(Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Color {
@@ -107,8 +106,15 @@ impl fmt::Display for Move {
 
 impl Move {
     pub fn name(&self) -> String {
-        let (px,py) = self.target();// todo: extract helper
-        format!("{:?} {}{}->{}{}", self.color, ('a' as usize + self.x) as u8 as char, 1+self.y, ('a' as usize + px) as u8 as char, 1+py)
+        let (px, py) = self.target(); // todo: extract helper
+        format!(
+            "{:?} {}{}->{}{}",
+            self.color,
+            ('a' as usize + self.x) as u8 as char,
+            1 + self.y,
+            ('a' as usize + px) as u8 as char,
+            1 + py
+        )
     }
 
     pub fn target(&self) -> (usize, usize) {
@@ -153,11 +159,14 @@ pub enum PendingMove {
     SelectingMove(Move),
 }
 
+use arrayvec::ArrayVec;
 #[derive(Clone, PartialEq, Eq)]
 pub struct Breakthrough {
     pub content: [[Cell; K]; K],
-    possible_moves_black: Vec<Move>,
-    possible_moves_white: Vec<Move>,
+
+    positions_black: ArrayVec<[(usize, usize); 2 * K]>,
+    positions_white: ArrayVec<[(usize, usize); 2 * K]>,
+
     transposition: [[[usize; K]; K]; 2],
     hash: usize,
     turn: Color,
@@ -204,7 +213,7 @@ impl fmt::Debug for Breakthrough {
     }
 }
 
-#[derive(Default)]
+#[derive(Default, Copy, Clone)]
 pub struct BreakthroughBuilder {}
 
 impl MultiplayerGameBuilder<Breakthrough> for BreakthroughBuilder {
@@ -213,11 +222,19 @@ impl MultiplayerGameBuilder<Breakthrough> for BreakthroughBuilder {
 
         let mut content = [[Cell::Empty; K]; K];
         let mut transposition = [[[0; K]; K]; 2];
+        let mut positions_black = ArrayVec::new();
+        let mut positions_white = ArrayVec::new();
+
         for (x, column) in content.iter_mut().enumerate() {
             column[0] = Cell::C(Color::Black);
             column[1] = Cell::C(Color::Black);
             column[K - 2] = Cell::C(Color::White);
             column[K - 1] = Cell::C(Color::White);
+
+            positions_black.push((x, 0));
+            positions_black.push((x, 1));
+            positions_white.push((x, K - 1));
+            positions_white.push((x, K - 2));
 
             for y in 0..K {
                 transposition[Color::Black as usize][x][y] = rng.gen::<usize>();
@@ -225,14 +242,11 @@ impl MultiplayerGameBuilder<Breakthrough> for BreakthroughBuilder {
             }
         }
 
-        let (possible_moves_black, possible_moves_white) =
-            Breakthrough::compute_possible_moves(&content);
-
         Breakthrough {
             turn,
             content,
-            possible_moves_black,
-            possible_moves_white,
+            positions_black,
+            positions_white,
             transposition,
             hash: 0,
         }
@@ -248,13 +262,41 @@ impl Breakthrough {
                 return Some(Color::White);
             }
         }
-        if self.possible_moves_black.is_empty() {
+        if self.positions_black.is_empty() {
             Some(Color::White)
-        } else if self.possible_moves_white.is_empty() {
+        } else if self.positions_white.is_empty() {
             Some(Color::Black)
         } else {
             None
         }
+    }
+
+    fn remove_player(&mut self, x: usize, y: usize, color: Color) {
+        let target = if color == Color::Black {
+            &mut self.positions_black
+        } else {
+            &mut self.positions_white
+        };
+
+        {
+            for (i, (px, py)) in target.iter().enumerate() {
+                if x == *px && y == *py {
+                    target.swap_remove(i);
+                    break;
+                }
+            }
+        }
+
+    }
+
+    fn add_player(&mut self, x: usize, y: usize, color: Color) {
+        let target = if color == Color::Black {
+            &mut self.positions_black
+        } else {
+            &mut self.positions_white
+        };
+
+        target.push((x, y));
     }
 }
 
@@ -272,8 +314,11 @@ impl MultiplayerGame for Breakthrough {
     }
 }
 
+type PossibleMovesIterator<'a> = impl Iterator<Item=Move> + 'a;
+
 impl BaseGame for Breakthrough {
     type Move = Move;
+    type MoveIterator<'a> = PossibleMovesIterator<'a>;
 
     fn play(&mut self, m: &Move) {
         if m.color != self.turn() {
@@ -297,35 +342,51 @@ impl BaseGame for Breakthrough {
                 assert_eq!(self.content[m.x][m.y], Cell::C(self.turn));
                 assert_ne!(self.content[px][py], Cell::C(self.turn));
 
+                if let Cell::C(_) = self.content[px][py] {
+                    self.remove_player(px, py, self.turn.adv());
+                };
+                self.remove_player(m.x, m.y, self.turn);
+                self.add_player(px, py, self.turn);
+
                 self.content[px][py] = self.content[m.x][m.y];
                 self.content[m.x][m.y] = Cell::Empty;
-
-                // update possible moves state
-                if self.winner() == None {
-                    let (pmb, pmw) = Breakthrough::compute_possible_moves(&self.content);
-                    self.possible_moves_black = pmb;
-                    self.possible_moves_white = pmw;
-                } else {
-                    self.possible_moves_black.clear();
-                    self.possible_moves_white.clear();
-                }
 
                 self.turn = self.turn.adv();
             }
         }
     }
 
-
     fn hash(&self) -> usize {
         (self.hash << 1) + (self.turn as usize)
     }
 
-    fn possible_moves(&self) -> &[Move] {
-        if self.turn == Color::Black {
-            &self.possible_moves_black
+    fn possible_moves<'a>(&'a self) -> Self::MoveIterator<'a> {
+        let target: &'a ArrayVec<_> = if self.turn == Color::Black {
+            &self.positions_black
         } else {
-            &self.possible_moves_white
-        }
+            &self.positions_white
+        }; 
+
+        let color = self.turn;
+        let content = self.content;
+
+        target
+            .iter()
+            .flat_map(move|(x, y)| {
+                [
+                    MoveDirection::Front,
+                    MoveDirection::FrontLeft,
+                    MoveDirection::FrontRight,
+                ]
+                .iter()
+                .map(move |direction| Move {
+                    color,
+                    x: *x,
+                    y: *y,
+                    direction: *direction,
+                })
+                .filter(move |action| action.is_valid(&content).is_some())
+            })
     }
 
     fn is_finished(&self) -> bool {
@@ -371,8 +432,7 @@ impl Breakthrough {
     }
 }
 
-
-use ndarray::{Array};
+use ndarray::Array;
 use std::collections::HashMap;
 use std::iter::FromIterator;
 
@@ -384,14 +444,14 @@ impl Feature for Breakthrough {
         ndarray::Dim([K, K, 3])
     }
 
-    fn action_dimension() -> Self::ActionDim{
+    fn action_dimension() -> Self::ActionDim {
         ndarray::Dim([K, K, 3])
     }
 
     fn state_to_feature(&self, pov: Self::Player) -> Array<f32, Self::StateDim> {
         let mut features = ndarray::Array::zeros(Self::state_dimension());
 
-        for ((x,y,z), row) in features.indexed_iter_mut() {
+        for ((x, y, z), row) in features.indexed_iter_mut() {
             if z == 0 && self.content[x][y] == Cell::C(pov) {
                 *row = 1.0
             } else if z == 1 && self.content[x][y] == Cell::C(pov.adv()) {
@@ -404,7 +464,7 @@ impl Feature for Breakthrough {
                 }
             }
         }
-        
+
         features
     }
 
@@ -419,13 +479,16 @@ impl Feature for Breakthrough {
     }
 
     fn feature_to_moves(&self, features: &Array<f32, Self::ActionDim>) -> HashMap<Self::Move, f32> {
-        let z: f32 = self.possible_moves().iter().map(|m| features[[m.x, m.y, m.direction as usize]]).sum();
+        let z: f32 = self
+            .possible_moves()
+            .map(|m| features[[m.x, m.y, m.direction as usize]])
+            .sum();
         HashMap::from_iter(
-            self.possible_moves().iter().map(|m| (*m, features[[m.x, m.y, m.direction as usize]] / z))
+            self.possible_moves()
+                .map(|m| (m, features[[m.x, m.y, m.direction as usize]] / z)),
         )
     }
 }
-
 
 #[cfg(test)]
 mod tests {
@@ -440,8 +503,28 @@ mod tests {
         features[[0, 0, MoveDirection::Front as usize]] = 0.6;
 
         let moves = g.feature_to_moves(&features);
-        assert_eq!(*moves.get(&Move {x: 0, y: 1, color: Color::Black, direction: MoveDirection::Front}).unwrap(), 0.5);
-        assert_eq!(*moves.get(&Move {x: 1, y: 1, color: Color::Black, direction: MoveDirection::Front}).unwrap(), 0.5);
+        assert_eq!(
+            *moves
+                .get(&Move {
+                    x: 0,
+                    y: 1,
+                    color: Color::Black,
+                    direction: MoveDirection::Front
+                })
+                .unwrap(),
+            0.5
+        );
+        assert_eq!(
+            *moves
+                .get(&Move {
+                    x: 1,
+                    y: 1,
+                    color: Color::Black,
+                    direction: MoveDirection::Front
+                })
+                .unwrap(),
+            0.5
+        );
     }
 
     #[test]
@@ -450,19 +533,19 @@ mod tests {
             for pov in &[Color::Black, Color::White] {
                 let g: Breakthrough = (BreakthroughBuilder {}).create(*color);
                 let f = g.state_to_feature(*pov);
-                
+
                 if *pov == Color::Black {
-                    assert_eq!(f[[2,0,0]], 1.0);
-                    assert_eq!(f[[2,K-1,1]], 1.0);
+                    assert_eq!(f[[2, 0, 0]], 1.0);
+                    assert_eq!(f[[2, K - 1, 1]], 1.0);
                 } else {
-                    assert_eq!(f[[2,K-1,0]], 1.0);
-                    assert_eq!(f[[2,0,1]], 1.0);
+                    assert_eq!(f[[2, K - 1, 0]], 1.0);
+                    assert_eq!(f[[2, 0, 1]], 1.0);
                 }
 
                 if *color == Color::Black {
-                    assert_eq!(f[[0,2,2]], -1.0);
-                } else{
-                    assert_eq!(f[[0,2,2]], 1.0);
+                    assert_eq!(f[[0, 2, 2]], -1.0);
+                } else {
+                    assert_eq!(f[[0, 2, 2]], 1.0);
                 }
             }
         }

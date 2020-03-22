@@ -8,9 +8,9 @@ use rayon::prelude::*;
 use std::marker::PhantomData;
 use std::sync::Arc;
 use tensorflow::{Graph, Session, SessionOptions};
-use zerol::game::breakthrough::*;
 use zerol::game;
-use zerol::game::{WithHistoryGB, WithHistory, MultiplayerGameBuilder};
+use zerol::game::breakthrough::*;
+use zerol::game::{MultiplayerGameBuilder, WithHistory, WithHistoryGB};
 use zerol::misc::game_evaluator;
 use zerol::policies::{get_multi, mcts::puct::*, DynMultiplayerPolicyBuilder};
 use zerol::settings;
@@ -122,7 +122,8 @@ fn main() {
         s: PUCTSettings::default(),
         N_PLAYOUTS: settings::DEFAULT_N_PLAYOUTS,
         evaluate: |pov, board: &WithHistory<Breakthrough, U2>| {
-            game_evaluator(&session, &graph, pov, board)
+        //evaluate: |pov, board: &Breakthrough| {
+                game_evaluator(&session, &graph, pov, board)
         },
     };
     let p1 = if let Some(val) = args.value_of("against") {
@@ -134,7 +135,8 @@ fn main() {
     let config = args.value_of("policy").unwrap_or("rand");
     let p2 = get_multi(config);
 
-    let gb = WithHistoryGB::<_,U2>::new(&BreakthroughBuilder {});
+    let gb = WithHistoryGB::<_, U2>::new(&BreakthroughBuilder {});
+//    let gb = BreakthroughBuilder {};
 
     let silent = args.is_present("only-result");
 
@@ -143,5 +145,5 @@ fn main() {
         println!("Player 2: {}", p2);
     }
 
-    println!("{}", monte_carlo_match::<_, _>(100, p1, p2, &gb, silent));
+    println!("{}", monte_carlo_match::<_, _>(1, p1, p2, &gb, silent));
 }

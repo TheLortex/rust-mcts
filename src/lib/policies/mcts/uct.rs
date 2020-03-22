@@ -51,8 +51,8 @@ impl<G: MultiplayerGame> BaseMCTSPolicy<G> for UCTPolicy_<G> {
         // select between optimism and pessimism in the confidence bound.
         let move_cb_multiplier = if board.turn() == self.color { 1. } else { -1. };
 
-        let moves_scores = moves.iter().map(|action| {
-            let v = node_info.moves.get(action).unwrap();
+        let moves_scores = moves.map(|action| {
+            let v = node_info.moves.get(&action).unwrap();
             let cb = self.UCT_WEIGHT * (N.ln() / (v.N_a + 1.)).sqrt();
             let value = if exploration {
                 v.Q + move_cb_multiplier * cb
@@ -63,9 +63,9 @@ impl<G: MultiplayerGame> BaseMCTSPolicy<G> for UCTPolicy_<G> {
         });
 
         if board.turn() == self.color {
-            *moves_scores.max_by_key(|x| FloatOrd(x.0)).unwrap().1
+            moves_scores.max_by_key(|x| FloatOrd(x.0)).unwrap().1
         } else {
-            *moves_scores.min_by_key(|x| FloatOrd(x.0)).unwrap().1
+            moves_scores.min_by_key(|x| FloatOrd(x.0)).unwrap().1
         }
     }
 
@@ -74,7 +74,7 @@ impl<G: MultiplayerGame> BaseMCTSPolicy<G> for UCTPolicy_<G> {
             board
                 .possible_moves()
                 .into_iter()
-                .map(|m| (*m, UCTMoveInfo { Q: 0., N_a: 0. })),
+                .map(|m| (m, UCTMoveInfo { Q: 0., N_a: 0. })),
         );
 
         UCTNodeInfo { count: 0., moves }

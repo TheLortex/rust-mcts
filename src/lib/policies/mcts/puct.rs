@@ -122,35 +122,33 @@ where
         let N = node_info.count;
 
         if exploration {
-            let moves_scores = moves.iter().map(|action| {
-                let v = node_info.moves.get(action).unwrap();
+            let moves_scores = moves.map(|action| {
+                let v = node_info.moves.get(&action).unwrap();
                 let pb_c = ((N + self.s.C_BASE + 1.)/self.s.C_BASE).ln() + self.s.C_INIT;
                 let value = v.Q + pb_c * v.pi * (N.sqrt() / (v.N_a + 1.));
                 (value, action)
             });
-            *moves_scores.max_by_key(|x| FloatOrd(x.0)).unwrap().1
+            moves_scores.max_by_key(|x| FloatOrd(x.0)).unwrap().1
         } else {
-            let moves_scores = moves.iter().map(|action| {
-                let v = node_info.moves.get(action).unwrap();
+            let moves_scores = moves.map(|action| {
+                let v = node_info.moves.get(&action).unwrap();
                 let value = v.N_a;
                 (value, action)
             });
-            *moves_scores.max_by_key(|x| FloatOrd(x.0)).unwrap().1
+            moves_scores.max_by_key(|x| FloatOrd(x.0)).unwrap().1
         }
     }
 
     fn default_node(&self, board: &G) -> Self::NodeInfo {
-        
-        let n_moves = board.possible_moves().len();
-        let moves = HashMap::from_iter(board.possible_moves().into_iter().map(|m| {
+        let moves = HashMap::from_iter(board.possible_moves().map(|m| {
             let mut b_scratch = board.clone();
-            b_scratch.play(m);
+            b_scratch.play(&m);
             (
-                *m,
+                m,
                 PUCTMoveInfo {
                     Q: 0.5,
                     N_a: 0.,
-                    pi: 1. / (n_moves as f32),
+                    pi: 1.,
                     target: b_scratch.hash()
                 },
             )

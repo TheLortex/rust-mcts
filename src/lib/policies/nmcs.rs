@@ -26,11 +26,11 @@ impl NMCSPolicy {
             while !state.is_finished() {
                 for m in state.possible_moves() {
                     let mut new_board = state.clone();
-                    new_board.play(m);
+                    new_board.play(&m);
                     let (score, history) = self.nested(&new_board, level - 1);
                     if score >= best_score {
                         best_sequence = history;
-                        best_sequence.push(*m);
+                        best_sequence.push(m);
                         best_score = score;
                     }
                 }
@@ -132,14 +132,14 @@ impl<G: MultiplayerGame> MultiplayerPolicy<G> for MultiNMCSPolicy<G> {
     fn play(self: &mut MultiNMCSPolicy<G>, board: &G) -> G::Move {
         let mut best_move = None;
         let mut max_visited = 0.;
-        for m in board.possible_moves().iter() {
+        for m in board.possible_moves() {
             let mut new_board = board.clone();
             new_board.play(&m);
             let value = self.nested(&new_board, self.s.level, 0., self.s.bound);
 
             if value >= max_visited {
                 max_visited = value;
-                best_move = Some(*m);
+                best_move = Some(m);
             }
         }
         best_move.unwrap()

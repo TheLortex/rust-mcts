@@ -24,6 +24,7 @@ impl MultiplayerGameBuilder<MisereBreakthrough> for BreakthroughBuilder {
 
 impl BaseGame for MisereBreakthrough {
     type Move = Move;
+    type MoveIterator<'a> = <Breakthrough as BaseGame>::MoveIterator<'a>;
 
     fn play(&mut self, m: &Move) {
         self.game.play(m)
@@ -33,7 +34,7 @@ impl BaseGame for MisereBreakthrough {
         self.game.hash()
     }
 
-    fn possible_moves(&self) -> &[Move] {
+    fn possible_moves<'a>(&'a self) -> Self::MoveIterator<'a> {
         self.game.possible_moves()
     }
 

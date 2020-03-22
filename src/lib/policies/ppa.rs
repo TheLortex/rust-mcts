@@ -20,7 +20,7 @@ pub struct PPAPolicy<G: MultiplayerGame, M: MoveCode<G>> {
 
 impl<G: MultiplayerGame, M: MoveCode<G>> PPAPolicy<G, M> {
     pub fn next_move(self: &mut PPAPolicy<G, M>, board: &G) -> G::Move {
-        let moves = board.possible_moves();
+        let moves = board.possible_moves().collect::<Vec<G::Move>>();
 
         let chosen_move = moves
             .choose_weighted(&mut rand::thread_rng(), |item| {
@@ -73,7 +73,6 @@ impl<G: MultiplayerGame, M: MoveCode<G>> PPAPolicy<G, M> {
 
         let z: f32 = board
             .possible_moves()
-            .iter()
             .map(|m| self.playout_policy.get(&M::code(board, &m)).unwrap_or(&0.).exp())
             .sum();
                 
@@ -115,7 +114,7 @@ impl<G: MultiplayerGame, M: MoveCode<G>> PPAPolicy<G, M> {
                         history.push((s_t, a));
                         b.play(&a)
                     } else { // surely there was an available move
-                        panic!("? {} {:?}", b.possible_moves().len(), b);
+                        panic!("? {} {:?}", b.possible_moves().collect::<Vec<G::Move>>().len(), b);
                         //history.push((s_t, None));
                         //return history;
                     }
@@ -133,8 +132,8 @@ impl<G: MultiplayerGame, M: MoveCode<G>> PPAPolicy<G, M> {
         if board.turn() == self.color {
             let mut max_move = None;
             let mut max_value = 0.;
-            for _move in moves.iter() {
-                let v = node_info.moves.get(_move).unwrap();
+            for _move in moves {
+                let v = node_info.moves.get(&_move).unwrap();
                 let value = if v.N_a == 0. {
                     2.0
                 } else {
@@ -142,15 +141,15 @@ impl<G: MultiplayerGame, M: MoveCode<G>> PPAPolicy<G, M> {
                 };
                 if value >= max_value {
                     max_value = value;
-                    max_move = Some(*_move);
+                    max_move = Some(_move);
                 }
             }
             max_move
         } else {
             let mut min_move = None;
             let mut min_value = 1.;
-            for _move in moves.iter() {
-                let v = node_info.moves.get(_move).unwrap();
+            for _move in moves {
+                let v = node_info.moves.get(&_move).unwrap();
                 let value = if v.N_a == 0. {
                     0.
                 } else {
@@ -159,7 +158,7 @@ impl<G: MultiplayerGame, M: MoveCode<G>> PPAPolicy<G, M> {
 
                 if value <= min_value {
                     min_value = value;
-                    min_move = Some(*_move);
+                    min_move = Some(_move);
                 }
             }
             min_move
@@ -171,7 +170,7 @@ impl<G: MultiplayerGame, M: MoveCode<G>> PPAPolicy<G, M> {
             board
                 .possible_moves()
                 .into_iter()
-                .map(|m| (*m, UCTMoveInfo { Q: 0., N_a: 0. })),
+                .map(|m| (m, UCTMoveInfo { Q: 0., N_a: 0. })),
         );
 
         self.tree
@@ -189,11 +188,11 @@ impl<G: MultiplayerGame, M: MoveCode<G>> MultiplayerPolicy<G> for PPAPolicy<G, M
 
         let mut best_move = None;
         let mut max_visited = 0.;
-        for m in board.possible_moves().iter() {
-            let x: &UCTMoveInfo = info.moves.get(m).unwrap();
+        for m in board.possible_moves() {
+            let x: &UCTMoveInfo = info.moves.get(&m).unwrap();
             if x.N_a >= max_visited {
                 max_visited = x.N_a;
-                best_move = Some(*m);
+                best_move = Some(m);
             }
         }
         best_move.unwrap()
