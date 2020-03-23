@@ -1,4 +1,4 @@
-use crate::game::{Base, Feature, InteractiveGame, Playable, Game, GameBuilder};
+use crate::game::{Base, Feature, Game, GameBuilder, InteractiveGame, Playable};
 use crate::settings::BREAKTHROUGH_K as K;
 
 use ansi_term::Colour::Fixed;
@@ -160,7 +160,7 @@ pub enum PendingMove {
 }
 
 use arrayvec::ArrayVec;
-#[derive(Clone, PartialEq, Eq)]
+#[derive(Clone, Eq)]
 pub struct Breakthrough {
     pub content: [[Cell; K]; K],
 
@@ -170,6 +170,12 @@ pub struct Breakthrough {
     transposition: [[[usize; K]; K]; 2],
     hash: usize,
     turn: Color,
+}
+
+impl PartialEq for Breakthrough {
+    fn eq(&self, other: &Self) -> bool {
+        self.content.eq(&other.content) && self.turn == other.turn
+    }
 }
 
 impl Hash for Breakthrough {
@@ -292,7 +298,6 @@ impl Breakthrough {
                 }
             }
         }
-
     }
 
     fn add_player(&mut self, x: usize, y: usize, color: Color) {
@@ -320,43 +325,41 @@ impl Game for Breakthrough {
     }
 }
 
-type PossibleMovesIterator<'a> = impl Iterator<Item=Move> + 'a;
+type PossibleMovesIterator<'a> = impl Iterator<Item = Move> + 'a;
 
 impl Base for Breakthrough {
     type Move = Move;
     type MoveIterator<'a> = PossibleMovesIterator<'a>;
-/*
-    fn hash(&self) -> usize {
-        (self.hash << 1) + (self.turn as usize)
-    }
-*/
+    /*
+        fn hash(&self) -> usize {
+            (self.hash << 1) + (self.turn as usize)
+        }
+    */
     fn possible_moves<'a>(&'a self) -> Self::MoveIterator<'a> {
         let target: &'a ArrayVec<_> = if self.turn == Color::Black {
             &self.positions_black
         } else {
             &self.positions_white
-        }; 
+        };
 
         let color = self.turn;
         let content = self.content;
 
-        target
+        target.iter().flat_map(move |(x, y)| {
+            [
+                MoveDirection::Front,
+                MoveDirection::FrontLeft,
+                MoveDirection::FrontRight,
+            ]
             .iter()
-            .flat_map(move|(x, y)| {
-                [
-                    MoveDirection::Front,
-                    MoveDirection::FrontLeft,
-                    MoveDirection::FrontRight,
-                ]
-                .iter()
-                .map(move |direction| Move {
-                    color,
-                    x: *x,
-                    y: *y,
-                    direction: *direction,
-                })
-                .filter(move |action| action.is_valid(&content).is_some())
+            .map(move |direction| Move {
+                color,
+                x: *x,
+                y: *y,
+                direction: *direction,
             })
+            .filter(move |action| action.is_valid(&content).is_some())
+        })
     }
 
     fn is_finished(&self) -> bool {
@@ -364,10 +367,7 @@ impl Base for Breakthrough {
     }
 }
 
-use async_trait::async_trait;
-
 impl Playable for Breakthrough {
-
     fn play(&mut self, m: &Move) {
         if m.color != self.turn() {
             panic!("Wait. Not your turn.");
@@ -409,38 +409,6 @@ impl Breakthrough {
     pub fn show(&self) {
         println!("{:?}", self);
     }
-
-    fn compute_possible_moves(content: &[[Cell; K]; K]) -> (Vec<Move>, Vec<Move>) {
-        let mut result_black = vec![];
-        let mut result_white = vec![];
-
-        for x in 0..K {
-            for y in 0..K {
-                if let Cell::C(color) = content[x][y] {
-                    for direction in &[
-                        MoveDirection::Front,
-                        MoveDirection::FrontLeft,
-                        MoveDirection::FrontRight,
-                    ] {
-                        let m = Move {
-                            color,
-                            x,
-                            y,
-                            direction: *direction,
-                        };
-                        if m.is_valid(content).is_some() {
-                            if color == Color::Black {
-                                result_black.push(m)
-                            } else {
-                                result_white.push(m)
-                            }
-                        }
-                    }
-                }
-            }
-        }
-        (result_black, result_white)
-    }
 }
 
 use ndarray::Array;
@@ -463,9 +431,9 @@ impl Feature for Breakthrough {
         let mut features = ndarray::Array::zeros(Self::state_dimension());
 
         for ((x, y, z), row) in features.indexed_iter_mut() {
-            if z == 0 && self.content[x][y] == Cell::C(pov) {
-                *row = 1.0
-            } else if z == 1 && self.content[x][y] == Cell::C(pov.adv()) {
+            if (z == 0 && self.content[x][y] == Cell::C(pov))
+                || (z == 1 && self.content[x][y] == Cell::C(pov.adv()))
+            {
                 *row = 1.0
             } else if z == 2 {
                 if self.turn() == Color::White {
@@ -500,7 +468,7 @@ impl Feature for Breakthrough {
         )
     }
 }
-
+#[allow(clippy::float_cmp)]
 #[cfg(test)]
 mod tests {
     use super::*;

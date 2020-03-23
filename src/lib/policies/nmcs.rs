@@ -10,8 +10,6 @@ pub struct NMCSPolicy {
     s: NMCS,
 }
 
-use futures::future::{BoxFuture, FutureExt};
-
 impl NMCSPolicy {
     fn nested<'a, G: Singleplayer + Clone>(
         self: &'a NMCSPolicy,
@@ -49,7 +47,7 @@ impl NMCSPolicy {
     }
 }
 
-use async_trait::async_trait;
+
 
 impl<G: Singleplayer + Clone> SingleplayerPolicy<G> for NMCSPolicy {
     fn solve(self: &mut NMCSPolicy, board: &G) -> Vec<G::Move> {

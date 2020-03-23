@@ -60,7 +60,7 @@ impl<G: super::MCTSGame> BaseMCTSPolicy<G> for RAVEPolicy_<G> {
     }
 
     fn default_node(&self, board: &G) -> Self::NodeInfo {
-        let moves = HashMap::from_iter(board.possible_moves().into_iter().map(|m| {
+        let moves = HashMap::from_iter(board.possible_moves().map(|m| {
             (
                 m,
                 MoveInfo {
@@ -103,7 +103,7 @@ impl<G: super::MCTSGame> BaseMCTSPolicy<G> for RAVEPolicy_<G> {
         }
     }
 }
-use async_trait::async_trait;
+
 
 impl<G> MCTSPolicy<G> for RAVEPolicy_<G>
 where

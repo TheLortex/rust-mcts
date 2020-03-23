@@ -10,7 +10,7 @@ use std::sync::Mutex;
 use std::sync::RwLock;
 use std::{thread, time};
 use std::sync::mpsc;
-use tensorflow;
+
 use tensorflow::{Graph, Session, SessionOptions};
 
 
@@ -22,7 +22,6 @@ use zerol::game::{
 };
 use zerol::game::meta::with_history::*;
 use zerol::policies::mcts::puct::PUCTSettings;
-use zerol::settings;
 use zerol::r#async::GameHistoryChannel;
 
 use typenum::U2;
@@ -111,7 +110,7 @@ fn run() {
             
             for (board, policy) in history.iter() {
                 let value = if board.turn() == winner { 1.0 } else { 0.0 };
-                fm.append(&board, policy, &value);
+                fm.append(&board, policy, value);
             }
         }
     });

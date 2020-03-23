@@ -113,7 +113,7 @@ impl<G: Game + Clone + Eq + Hash, M: MoveCode<G>> PPAPolicy<G, M> {
                         history.push((b.clone(), a));
                         b.play(&a)
                     } else { // surely there was an available move
-                        panic!("? {} {:?}", b.possible_moves().collect::<Vec<G::Move>>().len(), b);
+                        panic!("? {} {:?}", b.possible_moves().count(), b);
                         //history.push((s_t, None));
                         //return history;
                     }
@@ -168,7 +168,6 @@ impl<G: Game + Clone + Eq + Hash, M: MoveCode<G>> PPAPolicy<G, M> {
         let moves = HashMap::from_iter(
             board
                 .possible_moves()
-                .into_iter()
                 .map(|m| (m, UCTMoveInfo { Q: 0., N_a: 0. })),
         );
 
@@ -177,7 +176,7 @@ impl<G: Game + Clone + Eq + Hash, M: MoveCode<G>> PPAPolicy<G, M> {
     }
 }
 
-use async_trait::async_trait;
+
 
 impl<G: Game + Clone + Eq + Hash, M: MoveCode<G> + Send + Sync> MultiplayerPolicy<G> for PPAPolicy<G, M> {
     fn play(self: &mut PPAPolicy<G, M>, board: &G) -> G::Move {

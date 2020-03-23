@@ -1,10 +1,10 @@
-use crate::game::{Playout, Game, Singleplayer};
+use crate::game::{Playout, Game};
 use crate::policies::{MultiplayerPolicy, MultiplayerPolicyBuilder, SingleplayerPolicy, SingleplayerPolicyBuilder};
 use crate::settings;
 
 use rand::seq::SliceRandom;
 use std::collections::HashMap;
-use async_trait::async_trait;
+
 
 /* RANDOM POLICY */
 

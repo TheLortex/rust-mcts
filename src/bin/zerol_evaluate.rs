@@ -12,11 +12,8 @@ use zerol::game;
 use zerol::game::breakthrough::*;
 use zerol::game::meta::with_history::*;
 use zerol::misc::game_evaluator;
-use zerol::policies::{get_multi, mcts::puct::*, DynMultiplayerPolicyBuilder, MultiplayerPolicy};
+use zerol::policies::{get_multi, mcts::puct::*, DynMultiplayerPolicyBuilder};
 use zerol::settings;
-
-use tokio;
-use tokio::prelude::*;
 
 use typenum::U2;
 

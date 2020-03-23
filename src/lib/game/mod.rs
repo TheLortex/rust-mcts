@@ -5,7 +5,7 @@ use std::convert::TryFrom;
 use std::fmt::Debug;
 use std::hash::{Hash, Hasher};
 
-use async_trait::async_trait;
+
 
 pub mod breakthrough;
 /*pub mod hashcode_20;
@@ -28,6 +28,7 @@ pub trait Base: Sized + Debug + Send + Sync {
     /**
      * Given the game state and turn, list possible actions.
      */
+    #[allow(clippy::needless_lifetimes)]
     fn possible_moves<'a>(&'a self) -> Self::MoveIterator<'a>;
     /**
      * Returns if the game has ended or not.
@@ -108,9 +109,7 @@ impl<G: Singleplayer> Game for G {
         vec![()]
     }
 
-    fn turn(&self) -> Self::Player {
-        ()
-    }
+    fn turn(&self) -> Self::Player {}
 
     fn has_won(&self, _player: Self::Player) -> bool {
         self.is_finished()
@@ -131,7 +130,7 @@ pub trait SingleplayerGameBuilder<G: Singleplayer> {
     fn create(&self) -> G;
 }
 impl<G: Singleplayer, GB: SingleplayerGameBuilder<G>> GameBuilder<G> for GB {
-    fn create(&self, starting: <G as Game>::Player) -> G {
+    fn create(&self, _starting: <G as Game>::Player) -> G {
         self.create()
     }
 }

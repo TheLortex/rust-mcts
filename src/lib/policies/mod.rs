@@ -1,7 +1,7 @@
 use crate::game::{Game};
 
 use std::fmt::Display;
-use async_trait::async_trait;
+
 
 pub mod flat;
 pub mod mcts;

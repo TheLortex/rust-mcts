@@ -110,7 +110,7 @@ impl<G: Singleplayer + Clone, M: MoveCode<G>> NRPAPolicy<G, M> {
     }
 }
 
-use async_trait::async_trait;
+
 
 impl<G: Singleplayer + Clone, M: MoveCode<G> + Send> SingleplayerPolicy<G> for NRPAPolicy<G, M> {
     fn solve(self: &mut NRPAPolicy<G, M>, board: &G) -> Vec<G::Move> {

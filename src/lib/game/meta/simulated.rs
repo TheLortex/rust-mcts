@@ -65,7 +65,7 @@ where
 
 type PossibleMovesIterator<'a, G: Feature> = impl Iterator<Item=<G::ActionDim as Dimension>::SliceArg> + 'a;
 
-use async_trait::async_trait;
+
 
 impl<G, H, O, SE, SD> Base for Simulated<G, H, O, SE, SD> 
 where

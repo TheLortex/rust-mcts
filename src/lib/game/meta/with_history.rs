@@ -29,12 +29,13 @@ impl<G: Base + Clone, H> Base for WithHistory<G, H> {
     type Move = G::Move;
     type MoveIterator<'a> = G::MoveIterator<'a>;
 
+    #[allow(clippy::needless_lifetimes)]
     fn possible_moves<'a>(&'a self) -> Self::MoveIterator<'a> {
         self.state.possible_moves()
     }
 }
 
-use async_trait::async_trait;
+
 
 
 impl<G: Playable + Clone, H> Playable for WithHistory<G, H> {

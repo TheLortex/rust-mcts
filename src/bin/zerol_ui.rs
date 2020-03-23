@@ -139,10 +139,10 @@ where
             }));
 
         let mut treeview = TreeView::<TreeEntry>::new();
-        let tree_2 = tree.clone();
+
         treeview.set_on_collapse(move |siv: &mut Cursive, row, is_collapsed, children| {
             if !is_collapsed && children == 0 {
-                let tree_3 = tree_2.clone();
+                let tree_3 = tree.clone();
                 
                 siv.call_on_name("tree", move |treeview: &mut TreeView<TreeEntry>| {
                     let content: TreeEntry = {
@@ -187,10 +187,8 @@ fn main() {
         Session::from_saved_model(&SessionOptions::new(), &["serve"], &mut graph, MODEL_PATH)
             .unwrap();
 
-    let boxed_session = Rc::new(Box::new(session));
-    let boxed_graph   = Rc::new(Box::new(graph));
-    let session = boxed_session.clone();
-    let graph   = boxed_graph.clone();
+    let session = Rc::new(Box::new(session));
+    let graph   = Rc::new(Box::new(graph));
 
     let puct = PUCT {
         _g: PhantomData,

@@ -4,12 +4,11 @@ use crate::policies::mcts::{
 };
 use crate::policies::{MultiplayerPolicyBuilder};
 
-use async_trait::async_trait;
+
 use float_ord::FloatOrd;
 use ndarray::Array;
 use std::collections::HashMap;
 use std::f32;
-use std::future::Future;
 use std::iter::*;
 use std::marker::PhantomData;
 use rand_distr::{Distribution, Gamma};
@@ -135,7 +134,7 @@ where
                 log::info!("PUCT: adding noise.");
                 // add dirichlet noise on the root node.
                 let frac = self.s.ROOT_EXPLORATION_FRACTION;
-                let gamma = Gamma::new(self.s.ROOT_DIRICHLET_ALPHA.into(), 1.0).unwrap();
+                let gamma = Gamma::new(self.s.ROOT_DIRICHLET_ALPHA, 1.0).unwrap();
                 for (_, val) in policy.iter_mut() {
                     let noise = gamma.sample(&mut rand::thread_rng());
                     *val = frac * (*val) + (1. - frac) * noise;
@@ -143,7 +142,6 @@ where
             }
             let z: f32 = board
                 .possible_moves()
-                .into_iter()
                 .map(|m| policy.get(&m).unwrap())
                 .sum();
             let z = if z == 0. { 1. } else { z };

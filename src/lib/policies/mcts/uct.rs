@@ -77,7 +77,6 @@ where
         let moves = HashMap::from_iter(
             board
                 .possible_moves()
-                .into_iter()
                 .map(|m| (m, UCTMoveInfo { Q: 0., N_a: 0. })),
         );
 
@@ -96,7 +95,7 @@ where
         }
     }
 }
-use async_trait::async_trait;
+
 
 
 impl<G> MCTSPolicy<G> for UCTPolicy_<G>

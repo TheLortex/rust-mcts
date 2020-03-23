@@ -28,8 +28,8 @@ pub type GameHistoryChannel<G> = (
     Vec<(G, HashMap<<G as Base>::Move, f32>)>,
 );
 
-fn breakthrough_evaluator_batch<'a, G>(
-    mut sender: mpsc::SyncSender<EvaluatorChannel>,
+fn breakthrough_evaluator_batch<G>(
+    sender: mpsc::SyncSender<EvaluatorChannel>,
     pov: G::Player,
     board: G,
 ) -> (Array<f32, G::ActionDim>, f32)
@@ -66,7 +66,7 @@ fn game_generator_task<G, GB>(
     game_builder: GB,
     sender: mpsc::SyncSender<EvaluatorChannel>,
     output_chan: mpsc::SyncSender<GameHistoryChannel<G>>,
-    bar: Arc<Box<ProgressBar>>,
+    indicator_bar: Arc<Box<ProgressBar>>,
 ) where
     G: game::Feature + Send + Sync + Clone + Hash + Eq,
     G::Move: Send + Sync,
@@ -119,13 +119,13 @@ fn game_generator_task<G, GB>(
 
         output_chan.send((winner, history)).ok().unwrap();
 
-        bar.inc(1 as u64);
+        indicator_bar.inc(1 as u64);
     }
 }
 
 fn game_evaluator_task<G: Feature>(
     g_and_s: Arc<RwLock<(Graph, Session)>>,
-    mut receiver: mpsc::Receiver<EvaluatorChannel>,
+    receiver: mpsc::Receiver<EvaluatorChannel>,
     _bar: Arc<Box<ProgressBar>>,
 ) {
     println!("Starting game evaluator..");
@@ -174,13 +174,13 @@ pub fn game_generator<G, GB>(
     G::Player: Send + Sync,
     GB: GameBuilder<G> + Copy + Sync + Send + 'static,
 {
-    let bar = ProgressBar::new_spinner();
-    bar.set_style(
+    let indicator_bar = ProgressBar::new_spinner();
+    indicator_bar.set_style(
         ProgressStyle::default_spinner()
             .template("[{spinner}] {wide_bar} {pos} games generated ({elapsed_precise})"),
     );
-    bar.enable_steady_tick(200);
-    let bar_box = Arc::new(Box::new(bar));
+    indicator_bar.enable_steady_tick(200);
+    let bar_box = Arc::new(Box::new(indicator_bar));
 
     let bar2 = ProgressBar::new_spinner();
     bar2.set_style(
