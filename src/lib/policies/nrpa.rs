@@ -1,4 +1,4 @@
-use super::super::game::{SingleplayerGame, MoveCode};
+use super::super::game::{Singleplayer, MoveCode};
 use super::{SingleplayerPolicy, SingleplayerPolicyBuilder};
 
 use rand::seq::SliceRandom;
@@ -7,12 +7,12 @@ use std::iter::*;
 use std::marker::PhantomData;
 use std::collections::HashMap;
 
-pub struct NRPAPolicy<G: SingleplayerGame, M: MoveCode<G>> {
+pub struct NRPAPolicy<G: Singleplayer, M: MoveCode<G>> {
     s: NRPA<G,M>,
     _m: PhantomData<M>,
 }
 
-impl<G: SingleplayerGame + Clone, M: MoveCode<G>> NRPAPolicy<G, M> {
+impl<G: Singleplayer + Clone, M: MoveCode<G>> NRPAPolicy<G, M> {
 
     fn next_move(playout_policy: &HashMap<usize, f32>, board: &G) -> G::Move {
         let moves = board.possible_moves().collect::<Vec<G::Move>>();
@@ -110,14 +110,16 @@ impl<G: SingleplayerGame + Clone, M: MoveCode<G>> NRPAPolicy<G, M> {
     }
 }
 
-impl<G: SingleplayerGame + Clone, M: MoveCode<G>> SingleplayerPolicy<G> for NRPAPolicy<G, M> {
+use async_trait::async_trait;
+
+impl<G: Singleplayer + Clone, M: MoveCode<G> + Send> SingleplayerPolicy<G> for NRPAPolicy<G, M> {
     fn solve(self: &mut NRPAPolicy<G, M>, board: &G) -> Vec<G::Move> {
         let (_, policy) = self.nested(board, self.s.level, HashMap::new());
         policy
     }
 }
 
-pub struct NRPA<G: SingleplayerGame, M: MoveCode<G>>  {
+pub struct NRPA<G: Singleplayer, M: MoveCode<G>>  {
     N: usize,
     level: usize,
     alpha: f32,
@@ -125,15 +127,15 @@ pub struct NRPA<G: SingleplayerGame, M: MoveCode<G>>  {
     _g: PhantomData<G>
 }
 
-impl<G: SingleplayerGame, M: MoveCode<G>> Copy for NRPA<G, M> {}
+impl<G: Singleplayer, M: MoveCode<G>> Copy for NRPA<G, M> {}
 
-impl<G: SingleplayerGame, M: MoveCode<G>> Clone for NRPA<G, M> {
+impl<G: Singleplayer, M: MoveCode<G>> Clone for NRPA<G, M> {
     fn clone(&self) -> Self {
         *self
     }
 }
 
-impl<G: SingleplayerGame, M: MoveCode<G>>  Default for NRPA<G,M> {
+impl<G: Singleplayer, M: MoveCode<G>>  Default for NRPA<G,M> {
     fn default() -> NRPA<G,M> {
         NRPA::<G,M> {
             N: 1,
@@ -145,7 +147,7 @@ impl<G: SingleplayerGame, M: MoveCode<G>>  Default for NRPA<G,M> {
     }
 }
 
-impl<G: SingleplayerGame + Clone, M: MoveCode<G>> SingleplayerPolicyBuilder<G> for NRPA<G,M> {
+impl<G: Singleplayer + Clone, M: MoveCode<G> + Send> SingleplayerPolicyBuilder<G> for NRPA<G,M> {
     type P = NRPAPolicy<G, M>;
 
     fn create(&self) -> Self::P {

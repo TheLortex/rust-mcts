@@ -1,4 +1,4 @@
-use crate::game::{Playout, MultiplayerGame};
+use crate::game::{Playout, Game};
 use crate::policies::{MultiplayerPolicyBuilder, mcts::{MCTSPolicy, BaseMCTSPolicy, WithMCTSPolicy}};
 use crate::settings;
 
@@ -19,26 +19,26 @@ struct MoveInfo {
 }
 
 #[derive(Debug)]
-pub struct RAVENodeInfo<G: MultiplayerGame> {
+pub struct RAVENodeInfo<G: Game> {
     count: f32,
     moves: HashMap<G::Move, MoveInfo>,
 }
 
-pub struct RAVEPolicy_<G: MultiplayerGame> {
+pub struct RAVEPolicy_<G: Game> {
     color: G::Player,
-    tree: HashMap<usize, RAVENodeInfo<G>>,
+    tree: HashMap<G, RAVENodeInfo<G>>,
     UCT_WEIGHT: f32,
 }
 
-impl<G: MultiplayerGame + Clone> BaseMCTSPolicy<G> for RAVEPolicy_<G> {
+impl<G: super::MCTSGame> BaseMCTSPolicy<G> for RAVEPolicy_<G> {
     type NodeInfo = RAVENodeInfo<G>;
-    type PlayoutInfo = (bool, Vec<(usize, G::Move)>); // (has_won, history_default)
+    type PlayoutInfo = (bool, Vec<(G, G::Move)>); // (has_won, history_default)
 
-    fn tree(&self) -> &HashMap<usize, Self::NodeInfo> {
+    fn tree(&self) -> &HashMap<G, Self::NodeInfo> {
         &self.tree
     }
 
-    fn tree_mut(&mut self) -> &mut HashMap<usize, Self::NodeInfo> {
+    fn tree_mut(&mut self) -> &mut HashMap<G, Self::NodeInfo> {
         &mut self.tree
     }
 
@@ -48,7 +48,7 @@ impl<G: MultiplayerGame + Clone> BaseMCTSPolicy<G> for RAVEPolicy_<G> {
         let optimistic = board.turn() == self.color;
 
         let moves_scores = moves.map(|action| {
-            let value = self.eval(&board.hash(), &action, optimistic);
+            let value = self.eval(&board, &action, optimistic);
             (value, action)
         });
 
@@ -79,10 +79,11 @@ impl<G: MultiplayerGame + Clone> BaseMCTSPolicy<G> for RAVEPolicy_<G> {
         history: Vec<(G, G::Move)>,
         (has_won, history_default): Self::PlayoutInfo,
     ) {
+        let history_len = history.len();
         let z = if has_won { 1. } else { 0. };
-        let whole_history = [history.iter().map(|(a,b)| (a.hash(), *b)).collect(), history_default].concat();
-        for (t, (state, action)) in history.iter().enumerate() {
-            let mut node = self.tree.get_mut(&state.hash()).unwrap();
+        let whole_history = [history, history_default].concat();
+        for (t, (state, action)) in whole_history[0..history_len].iter().enumerate() {
+            let mut node = self.tree.get_mut(&state).unwrap();
             node.count += 1.;
 
             let mut v = node.moves.get_mut(action).unwrap();
@@ -102,15 +103,21 @@ impl<G: MultiplayerGame + Clone> BaseMCTSPolicy<G> for RAVEPolicy_<G> {
         }
     }
 }
+use async_trait::async_trait;
 
-impl<G: MultiplayerGame + Clone> MCTSPolicy<G> for RAVEPolicy_<G> {
-    fn simulate(&self, board: &G) -> Self::PlayoutInfo {
-        let (s, default) = board.playout_board_history();
+impl<G> MCTSPolicy<G> for RAVEPolicy_<G>
+where
+    G::Move: Send,
+    G: super::MCTSGame
+
+{
+    fn simulate(&self, board: &G) -> <Self as BaseMCTSPolicy<G>>::PlayoutInfo {
+        let (s, default) = board.playout_history();
         (s.has_won(self.color), default)
     }
 }
 
-impl<G: MultiplayerGame> RAVEPolicy_<G> {
+impl<G: super::MCTSGame> RAVEPolicy_<G> {
     fn beta(v: &MoveInfo) -> f32 {
         let b = 0.0001;
         let mut div = v.count_AMAF + v.count + 4. * v.count_AMAF * v.count * b * b;
@@ -120,7 +127,7 @@ impl<G: MultiplayerGame> RAVEPolicy_<G> {
         v.count_AMAF / div
     }
 
-    fn eval(self: &RAVEPolicy_<G>, state: &usize, action: &G::Move, optimistic: bool) -> f32 {
+    fn eval(self: &RAVEPolicy_<G>, state: &G, action: &G::Move, optimistic: bool) -> f32 {
         let node_info = self.tree.get(state).unwrap();
         let v = node_info.moves.get(action).unwrap();
 
@@ -158,7 +165,12 @@ impl fmt::Display for RAVE {
     }
 }
 
-impl<G: MultiplayerGame + Clone> MultiplayerPolicyBuilder<G> for RAVE {
+impl<G> MultiplayerPolicyBuilder<G> for RAVE
+where
+    G::Move: Send,
+    G::Player: Send,
+    G: super::MCTSGame
+{
     type P = RAVEPolicy<G>;
 
     fn create(&self, color: G::Player) -> Self::P {

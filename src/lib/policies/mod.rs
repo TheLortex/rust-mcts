@@ -1,4 +1,4 @@
-use crate::game::{MultiplayerGame, SingleplayerGame};
+use crate::game::{Game};
 
 use std::fmt::Display;
 use async_trait::async_trait;
@@ -10,45 +10,32 @@ pub mod nrpa;
 pub mod ppa;
 
 /* MULTIPLAYER POLICY TRAITS */
+
 /**
  * A static policy.
  */
-pub trait MultiplayerPolicy<T: MultiplayerGame> {
+
+pub trait MultiplayerPolicy<T: Game> {
     fn play(&mut self, board: &T) -> T::Move;
-}
-/**
- * A static asynchronous policy.
- */
-#[async_trait]
-pub trait AsyncMultiplayerPolicy<T: MultiplayerGame> {
-    async fn play(&mut self, board: &T) -> T::Move;
 }
 /**
  * A static policy builder.
  */
-pub trait MultiplayerPolicyBuilder<T: MultiplayerGame>: Display {
+pub trait MultiplayerPolicyBuilder<T: Game>: Display {
     type P: MultiplayerPolicy<T>;
-
-    fn create(&self, color: T::Player) -> Self::P;
-}
-/**
- * A static asynchronous policy builder.
- */
-pub trait AsyncMultiplayerPolicyBuilder<T: MultiplayerGame>: Display {
-    type P: AsyncMultiplayerPolicy<T>;
 
     fn create(&self, color: T::Player) -> Self::P;
 }
 /**
  * A dynamic policy builder.
  */
-pub trait DynMultiplayerPolicyBuilder<'a, T: MultiplayerGame>: Display {
+pub trait DynMultiplayerPolicyBuilder<'a, T: Game>: Display {
     fn create(&self, color: T::Player) -> Box<dyn MultiplayerPolicy<T> + 'a>;
 }
 
 impl<'a, G, PB> DynMultiplayerPolicyBuilder<'a, G> for PB
 where
-    G: MultiplayerGame,
+    G: Game,
     PB: MultiplayerPolicyBuilder<G>,
     PB::P: 'a,
 {
@@ -58,14 +45,16 @@ where
 }
 
 /* SINGLEPLAYER POLICY TRAITS */
-
-pub trait SingleplayerPolicyBuilder<T: SingleplayerGame> {
+/* TODO: rename as PlannedPolicy
+*/
+pub trait SingleplayerPolicyBuilder<T: Game> {
     type P: SingleplayerPolicy<T>;
 
     fn create(&self) -> Self::P;
 }
 
-pub trait SingleplayerPolicy<T: SingleplayerGame> {
+
+pub trait SingleplayerPolicy<T: Game> {
     fn solve(&mut self, board: &T) -> Vec<T::Move>;
 }
 
@@ -73,7 +62,7 @@ pub trait SingleplayerPolicy<T: SingleplayerGame> {
 
 use super::game::NoFeatures;
 
-pub fn get_multi<'a, G: MultiplayerGame + Clone + 'a>(name: &str) -> Box<dyn DynMultiplayerPolicyBuilder<'a, G> + Sync + 'a> {
+pub fn get_multi<'a, G: mcts::MCTSGame + 'a>(name: &str) -> Box<dyn DynMultiplayerPolicyBuilder<'a, G> + Sync + 'a> {
     match name {
         "rand" => Box::new(flat::Random::default()),
         "flat" => Box::new(flat::FlatMonteCarlo::default()),

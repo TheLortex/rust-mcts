@@ -1,5 +1,5 @@
 use crate::game;
-use crate::game::{WithHistory, Feature};
+use crate::game::{meta::with_history::WithHistory, Feature};
 
 use typenum::Unsigned;
 use nix::unistd::mkfifo;

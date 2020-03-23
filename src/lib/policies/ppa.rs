@@ -1,4 +1,4 @@
-use crate::game::{MultiplayerGame, MoveCode};
+use crate::game::{Game, MoveCode};
 use crate::policies::{MultiplayerPolicy, MultiplayerPolicyBuilder};
 use crate::policies::mcts::uct::{UCTMoveInfo, UCTNodeInfo};
 use crate::settings;
@@ -8,17 +8,18 @@ use std::f32;
 use std::iter::*;
 use std::collections::HashMap;
 use std::marker::PhantomData;
+use std::hash::Hash;
 
-pub struct PPAPolicy<G: MultiplayerGame, M: MoveCode<G>> {
+pub struct PPAPolicy<G: Game, M: MoveCode<G>> {
     color: G::Player,
     s: PPA<G,M>,
-    tree: HashMap<usize, UCTNodeInfo<G>>,
+    tree: HashMap<G, UCTNodeInfo<G>>,
     playout_policy: HashMap<usize, f32>,
 
     _m: PhantomData<M>,
 }
 
-impl<G: MultiplayerGame + Clone, M: MoveCode<G>> PPAPolicy<G, M> {
+impl<G: Game + Clone + Eq + Hash, M: MoveCode<G>> PPAPolicy<G, M> {
     pub fn next_move(self: &mut PPAPolicy<G, M>, board: &G) -> G::Move {
         let moves = board.possible_moves().collect::<Vec<G::Move>>();
 
@@ -47,10 +48,9 @@ impl<G: MultiplayerGame + Clone, M: MoveCode<G>> PPAPolicy<G, M> {
         let z = board.has_won(self.color);
         self.update(&history_uct, z);
         self.adapt(root_board, &history_uct, &history_playout, z);
-        
     }
 
-    fn adapt(self: &mut PPAPolicy<G,M>, board: &G, history_uct: &[(usize, G::Move)], history_playout: &[G::Move], has_won: bool) {
+    fn adapt(self: &mut PPAPolicy<G,M>, board: &G, history_uct: &[(G, G::Move)], history_playout: &[G::Move], has_won: bool) {
         let mut board = board.clone();
         for (_, action) in history_uct {
             if (board.turn() == self.color) ^ (!has_won) {
@@ -85,7 +85,7 @@ impl<G: MultiplayerGame + Clone, M: MoveCode<G>> PPAPolicy<G, M> {
 
     fn update(
         self: &mut PPAPolicy<G, M>,
-        history: &[(usize, G::Move)],
+        history: &[(G, G::Move)],
         has_won: bool,
     ) {
         let z = if has_won { 1. } else { 0. };
@@ -98,12 +98,11 @@ impl<G: MultiplayerGame + Clone, M: MoveCode<G>> PPAPolicy<G, M> {
         }
     }
 
-    fn sim_tree(self: &mut PPAPolicy<G, M>, b: &mut G) -> Vec<(usize, G::Move)> {
-        let mut history: Vec<(usize, G::Move)> = Vec::new();
+    fn sim_tree(self: &mut PPAPolicy<G, M>, b: &mut G) -> Vec<(G, G::Move)> {
+        let mut history: Vec<(G, G::Move)> = Vec::new();
 
         while !b.is_finished() {
-            let s_t = b.hash();
-            match self.tree.get(&s_t) {
+            match self.tree.get(&b) {
                 None => {
                     //history.push((s_t, None));
                     self.new_node(&b);
@@ -111,7 +110,7 @@ impl<G: MultiplayerGame + Clone, M: MoveCode<G>> PPAPolicy<G, M> {
                 }
                 Some(_node) => {
                     if let Some(a) = self.select_move(&b) {
-                        history.push((s_t, a));
+                        history.push((b.clone(), a));
                         b.play(&a)
                     } else { // surely there was an available move
                         panic!("? {} {:?}", b.possible_moves().collect::<Vec<G::Move>>().len(), b);
@@ -126,7 +125,7 @@ impl<G: MultiplayerGame + Clone, M: MoveCode<G>> PPAPolicy<G, M> {
 
     fn select_move(self: &PPAPolicy<G, M>, board: &G) -> Option<G::Move> {
         let moves = board.possible_moves();
-        let node_info = self.tree.get(&board.hash()).unwrap();
+        let node_info = self.tree.get(&board).unwrap();
 
         let N = node_info.count;
         if board.turn() == self.color {
@@ -174,17 +173,19 @@ impl<G: MultiplayerGame + Clone, M: MoveCode<G>> PPAPolicy<G, M> {
         );
 
         self.tree
-            .insert(board.hash(), UCTNodeInfo { count: 0., moves });
+            .insert(board.clone(), UCTNodeInfo { count: 0., moves });
     }
 }
 
-impl<G: MultiplayerGame + Clone, M: MoveCode<G>> MultiplayerPolicy<G> for PPAPolicy<G, M> {
+use async_trait::async_trait;
+
+impl<G: Game + Clone + Eq + Hash, M: MoveCode<G> + Send + Sync> MultiplayerPolicy<G> for PPAPolicy<G, M> {
     fn play(self: &mut PPAPolicy<G, M>, board: &G) -> G::Move {
         for _ in 0..self.s.N_PLAYOUTS {
             self.simulate(board)
         }
 
-        let info: &UCTNodeInfo<G> = self.tree.get(&board.hash()).unwrap();
+        let info: &UCTNodeInfo<G> = self.tree.get(&board).unwrap();
 
         let mut best_move = None;
         let mut max_visited = 0.;
@@ -202,7 +203,7 @@ impl<G: MultiplayerGame + Clone, M: MoveCode<G>> MultiplayerPolicy<G> for PPAPol
 
 // POLICY BUILDER
 
-pub struct PPA<G: MultiplayerGame, M:MoveCode<G>> {
+pub struct PPA<G: Game, M:MoveCode<G>> {
     UCT_WEIGHT: f32,
     N_PLAYOUTS: usize,
     alpha: f32,
@@ -210,15 +211,15 @@ pub struct PPA<G: MultiplayerGame, M:MoveCode<G>> {
     _g: PhantomData<fn() -> G>
 }
 
-impl<G: MultiplayerGame, M: MoveCode<G>> Copy for PPA<G, M> {}
+impl<G: Game, M: MoveCode<G>> Copy for PPA<G, M> {}
 
-impl<G: MultiplayerGame, M: MoveCode<G>> Clone for PPA<G, M> {
+impl<G: Game, M: MoveCode<G>> Clone for PPA<G, M> {
     fn clone(&self) -> Self {
         *self
     }
 }
 
-impl<G: MultiplayerGame, M: MoveCode<G>> Default for PPA<G,M> {
+impl<G: Game, M: MoveCode<G>> Default for PPA<G,M> {
     fn default() -> PPA<G,M> {
         PPA::<G,M> {
             alpha: 0.1,
@@ -231,7 +232,7 @@ impl<G: MultiplayerGame, M: MoveCode<G>> Default for PPA<G,M> {
 }
 
 use std::fmt;
-impl<G: MultiplayerGame, M: MoveCode<G>> fmt::Display for PPA<G,M> {
+impl<G: Game, M: MoveCode<G>> fmt::Display for PPA<G,M> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         writeln!(f, "PPA")?;
         writeln!(f, "|| ALPHA: {}", self.alpha)?;
@@ -240,7 +241,7 @@ impl<G: MultiplayerGame, M: MoveCode<G>> fmt::Display for PPA<G,M> {
     }
 } 
 
-impl<G: MultiplayerGame + Clone, M: MoveCode<G>> MultiplayerPolicyBuilder<G> for PPA<G,M> {
+impl<G: Game + Clone + Eq + Hash, M: MoveCode<G> + Send + Sync> MultiplayerPolicyBuilder<G> for PPA<G,M> {
     type P = PPAPolicy<G, M>;
 
     fn create(&self, color: G::Player) -> PPAPolicy<G, M> {

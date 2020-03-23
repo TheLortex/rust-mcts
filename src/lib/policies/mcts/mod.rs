@@ -1,8 +1,9 @@
-use crate::game::MultiplayerGame;
-use crate::policies::{MultiplayerPolicy, AsyncMultiplayerPolicy};
+use crate::game::Game;
+use crate::policies::MultiplayerPolicy;
 
 use std::collections::HashMap;
 use std::iter::*;
+use std::hash::Hash;
 use std::marker::PhantomData;
 use async_trait::async_trait;
 
@@ -10,13 +11,15 @@ pub mod uct;
 pub mod rave;
 pub mod puct;
 
+pub trait MCTSGame = Game + Clone + Hash + Eq;
 /* ABSTRACT MCTS */
-pub trait BaseMCTSPolicy<G: MultiplayerGame + Clone> {
+
+pub trait BaseMCTSPolicy<G: MCTSGame> {
     type NodeInfo;
     type PlayoutInfo;
 
-    fn tree(&self) -> &HashMap<usize, Self::NodeInfo>;
-    fn tree_mut(&mut self) -> &mut HashMap<usize, Self::NodeInfo>;
+    fn tree(&self) -> &HashMap<G, Self::NodeInfo>;
+    fn tree_mut(&mut self) -> &mut HashMap<G, Self::NodeInfo>;
 
     fn select_move(&self, board: &G, exploration: bool) -> G::Move;
 
@@ -24,8 +27,7 @@ pub trait BaseMCTSPolicy<G: MultiplayerGame + Clone> {
         let mut history: Vec<(G, G::Move)> = Vec::new();
 
         while !board.is_finished() {
-            let s_t = board.hash();
-            match self.tree().get(&s_t) {
+            match self.tree().get(&board) {
                 None => {
                     /* we're at a leaf node. */
                     return history;
@@ -45,108 +47,58 @@ pub trait BaseMCTSPolicy<G: MultiplayerGame + Clone> {
 
     fn expand(&mut self, board: &G) {
         let new_node = self.default_node(board);
-        self.tree_mut().insert(board.hash(), new_node);
+        self.tree_mut().insert(board.clone(), new_node);
     }
 
     fn backpropagate(&mut self, history: Vec<(G, G::Move)>, playout: Self::PlayoutInfo);
 
 }
 
-/**
- *  SYNCHRONOUS MCTS
- */
 
-pub trait MCTSPolicy<G: MultiplayerGame + Clone>: BaseMCTSPolicy<G> {
+pub trait MCTSPolicy<G>: BaseMCTSPolicy<G>
+where
+    G: MCTSGame,
+    G::Move: Send
+{
     fn simulate(&self, board: &G) -> Self::PlayoutInfo;
-
+    
     fn tree_search(&mut self, board: &G) {
         let mut b_scratch = board.clone();
         let selection_history = self.select(&mut b_scratch);
-
         self.expand(&b_scratch);
         let playout = self.simulate(&b_scratch);
         self.backpropagate(selection_history, playout);
     }
 }
 
-pub struct WithMCTSPolicy<G: MultiplayerGame + Clone, M: MCTSPolicy<G>> {
-    pub inner: M, 
-    N_PLAYOUTS: usize, 
-    _g: std::marker::PhantomData<G>
-}
-
-impl<G: MultiplayerGame + Clone, M: MCTSPolicy<G>> WithMCTSPolicy<G, M> {
-    pub fn new(p: M, N_PLAYOUTS: usize) -> Self {
-        WithMCTSPolicy {
-            inner: p, 
-            N_PLAYOUTS, 
-            _g: PhantomData
-        }
-    }
-}
-
-impl<G: MultiplayerGame + Clone, M: MCTSPolicy<G>> MultiplayerPolicy<G> for WithMCTSPolicy<G, M> {
-    fn play(&mut self, board: &G) -> G::Move {
-        self.inner.tree_mut().clear();
-        
-        for _ in 0..self.N_PLAYOUTS {
-            self.inner.tree_search(board)
-        }
-
-        self.inner.select_move(board, false)
-    }
-}
-
-/**
- * ASYNCHRONOUS VERSION:
- */
-#[async_trait]
-pub trait AsyncMCTSPolicy<G>: BaseMCTSPolicy<G> + Sync
-where
-    G: MultiplayerGame + Send + Sync + Clone,
-    G::Move: Send
-{
-    async fn simulate(&self, board: &G) -> Self::PlayoutInfo;
-    
-    async fn tree_search(&mut self, board: &G) {
-        let mut b_scratch = board.clone();
-        let selection_history = self.select(&mut b_scratch);
-        self.expand(&b_scratch);
-        let playout = self.simulate(&b_scratch).await;
-        self.backpropagate(selection_history, playout);
-    }
-}
-
-pub struct WithAsyncMCTSPolicy<G, M>
+pub struct WithMCTSPolicy<G, M>
 {
     pub inner: M, 
     N_PLAYOUTS: usize,
     _g: std::marker::PhantomData<G>,
 }
 
-impl<G, M> WithAsyncMCTSPolicy<G, M>
+impl<G, M> WithMCTSPolicy<G, M>
 where
-    G: MultiplayerGame + Send + Sync + Clone,
-    M: AsyncMCTSPolicy<G> + Send,
-    G::Move: Send
+    G: MCTSGame + Clone,
+    M: MCTSPolicy<G>,
 {
     pub fn new(p: M, N_PLAYOUTS: usize) -> Self {
-        WithAsyncMCTSPolicy {inner: p, N_PLAYOUTS, _g: PhantomData}
+        WithMCTSPolicy {inner: p, N_PLAYOUTS, _g: PhantomData}
     }
 }
 
-#[async_trait]
-impl<G, M> AsyncMultiplayerPolicy<G> for WithAsyncMCTSPolicy<G, M>
+
+impl<G, M> MultiplayerPolicy<G> for WithMCTSPolicy<G, M>
 where
-    G: MultiplayerGame + Send + Sync + Clone,
-    M: AsyncMCTSPolicy<G> + Send,
-    G::Move: Send
+    G: MCTSGame,
+    M: MCTSPolicy<G>,
 {
-    async fn play(&mut self, board: &G) -> G::Move {
+    fn play(&mut self, board: &G) -> G::Move {
         self.inner.tree_mut().clear();
 
         for _ in 0..self.N_PLAYOUTS {
-            self.inner.tree_search(board).await
+            self.inner.tree_search(board)
         }
 
         self.inner.select_move(board, false)

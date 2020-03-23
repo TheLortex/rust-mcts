@@ -1,4 +1,4 @@
-use crate::game::{BaseGame, Feature, InteractiveGame, MultiplayerGame, MultiplayerGameBuilder};
+use crate::game::{Base, Feature, InteractiveGame, Playable, Game, GameBuilder};
 use crate::settings::BREAKTHROUGH_K as K;
 
 use ansi_term::Colour::Fixed;
@@ -172,6 +172,12 @@ pub struct Breakthrough {
     turn: Color,
 }
 
+impl Hash for Breakthrough {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.transposition.hash(state)
+    }
+}
+
 impl fmt::Debug for Breakthrough {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let style = Style::new().on(Fixed(0));
@@ -216,7 +222,7 @@ impl fmt::Debug for Breakthrough {
 #[derive(Default, Copy, Clone)]
 pub struct BreakthroughBuilder {}
 
-impl MultiplayerGameBuilder<Breakthrough> for BreakthroughBuilder {
+impl GameBuilder<Breakthrough> for BreakthroughBuilder {
     fn create(&self, turn: Color) -> Breakthrough {
         let mut rng = rand::thread_rng();
 
@@ -300,7 +306,7 @@ impl Breakthrough {
     }
 }
 
-impl MultiplayerGame for Breakthrough {
+impl Game for Breakthrough {
     type Player = Color;
     fn players() -> Vec<Color> {
         vec![Color::Black, Color::White]
@@ -316,9 +322,51 @@ impl MultiplayerGame for Breakthrough {
 
 type PossibleMovesIterator<'a> = impl Iterator<Item=Move> + 'a;
 
-impl BaseGame for Breakthrough {
+impl Base for Breakthrough {
     type Move = Move;
     type MoveIterator<'a> = PossibleMovesIterator<'a>;
+/*
+    fn hash(&self) -> usize {
+        (self.hash << 1) + (self.turn as usize)
+    }
+*/
+    fn possible_moves<'a>(&'a self) -> Self::MoveIterator<'a> {
+        let target: &'a ArrayVec<_> = if self.turn == Color::Black {
+            &self.positions_black
+        } else {
+            &self.positions_white
+        }; 
+
+        let color = self.turn;
+        let content = self.content;
+
+        target
+            .iter()
+            .flat_map(move|(x, y)| {
+                [
+                    MoveDirection::Front,
+                    MoveDirection::FrontLeft,
+                    MoveDirection::FrontRight,
+                ]
+                .iter()
+                .map(move |direction| Move {
+                    color,
+                    x: *x,
+                    y: *y,
+                    direction: *direction,
+                })
+                .filter(move |action| action.is_valid(&content).is_some())
+            })
+    }
+
+    fn is_finished(&self) -> bool {
+        self.winner().is_some()
+    }
+}
+
+use async_trait::async_trait;
+
+impl Playable for Breakthrough {
 
     fn play(&mut self, m: &Move) {
         if m.color != self.turn() {
@@ -354,43 +402,6 @@ impl BaseGame for Breakthrough {
                 self.turn = self.turn.adv();
             }
         }
-    }
-
-    fn hash(&self) -> usize {
-        (self.hash << 1) + (self.turn as usize)
-    }
-
-    fn possible_moves<'a>(&'a self) -> Self::MoveIterator<'a> {
-        let target: &'a ArrayVec<_> = if self.turn == Color::Black {
-            &self.positions_black
-        } else {
-            &self.positions_white
-        }; 
-
-        let color = self.turn;
-        let content = self.content;
-
-        target
-            .iter()
-            .flat_map(move|(x, y)| {
-                [
-                    MoveDirection::Front,
-                    MoveDirection::FrontLeft,
-                    MoveDirection::FrontRight,
-                ]
-                .iter()
-                .map(move |direction| Move {
-                    color,
-                    x: *x,
-                    y: *y,
-                    direction: *direction,
-                })
-                .filter(move |action| action.is_valid(&content).is_some())
-            })
-    }
-
-    fn is_finished(&self) -> bool {
-        self.winner().is_some()
     }
 }
 

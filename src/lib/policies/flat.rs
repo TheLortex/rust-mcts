@@ -1,25 +1,28 @@
-use crate::game::{Playout, MultiplayerGame, SingleplayerGame};
+use crate::game::{Playout, Game, Singleplayer};
 use crate::policies::{MultiplayerPolicy, MultiplayerPolicyBuilder, SingleplayerPolicy, SingleplayerPolicyBuilder};
 use crate::settings;
 
 use rand::seq::SliceRandom;
 use std::collections::HashMap;
+use async_trait::async_trait;
 
 /* RANDOM POLICY */
 
 pub struct RandomPolicy {}
 
-impl<G: MultiplayerGame> MultiplayerPolicy<G> for RandomPolicy {
+
+impl<G: Game> MultiplayerPolicy<G> for RandomPolicy {
     fn play(self: &mut RandomPolicy, board: &G) -> G::Move {
         let moves = board.possible_moves().collect::<Vec<G::Move>>();
         moves.choose(&mut rand::thread_rng()).copied().unwrap()
     }
 }
 
-impl<G: SingleplayerGame + Clone> SingleplayerPolicy<G> for RandomPolicy {
+
+impl<G: Game + Clone> SingleplayerPolicy<G> for RandomPolicy {
     fn solve(self: &mut RandomPolicy, board: &G) -> Vec<G::Move> {
         let b = board.clone();
-        let (_, h) = b.playout_board_history();
+        let (_, h) = b.playout_history();
         h.iter().map(|(_,b)| *b).collect()
     }
 }
@@ -34,7 +37,7 @@ impl fmt::Display for Random {
     }
 } 
 
-impl<G: MultiplayerGame> MultiplayerPolicyBuilder<G> for Random {
+impl<G: Game> MultiplayerPolicyBuilder<G> for Random {
     type P = RandomPolicy;
 
     fn create(&self, _: G::Player) -> Self::P {
@@ -42,7 +45,7 @@ impl<G: MultiplayerGame> MultiplayerPolicyBuilder<G> for Random {
     }
 }
 
-impl<G: SingleplayerGame + Clone> SingleplayerPolicyBuilder<G> for Random {
+impl<G: Game + Clone> SingleplayerPolicyBuilder<G> for Random {
     type P = RandomPolicy;
 
     fn create(&self) -> Self::P {
@@ -52,12 +55,13 @@ impl<G: SingleplayerGame + Clone> SingleplayerPolicyBuilder<G> for Random {
 
 /* FLAT MONTE CARLO POLICY */
 
-pub struct FlatMonteCarloPolicy<G: MultiplayerGame> {
+pub struct FlatMonteCarloPolicy<G: Game> {
     color: G::Player,
     N_PLAYOUTS: usize,
 }
 
-impl<G: MultiplayerGame + Clone> MultiplayerPolicy<G> for FlatMonteCarloPolicy<G> {
+
+impl<G: Game + Clone> MultiplayerPolicy<G> for FlatMonteCarloPolicy<G> {
     fn play(self: &mut FlatMonteCarloPolicy<G>, board: &G) -> G::Move {
         let moves = board.possible_moves();
         let moves_vec = moves.collect::<Vec<G::Move>>();
@@ -105,7 +109,7 @@ impl fmt::Display for FlatMonteCarlo {
     }
 } 
 
-impl<G: MultiplayerGame + Clone> MultiplayerPolicyBuilder<G> for FlatMonteCarlo {
+impl<G: Game + Clone> MultiplayerPolicyBuilder<G> for FlatMonteCarlo {
     type P = FlatMonteCarloPolicy<G>;
 
     fn create(&self, color: G::Player) -> Self::P {
@@ -114,21 +118,22 @@ impl<G: MultiplayerGame + Clone> MultiplayerPolicyBuilder<G> for FlatMonteCarlo 
 }
 
 /* Flat UCB */
-pub struct FlatUCBMonteCarloPolicy<G: MultiplayerGame> {
+pub struct FlatUCBMonteCarloPolicy<G: Game> {
     color: G::Player,
     N_PLAYOUTS: usize,
     UCB_WEIGHT: f32,
 }
 
-impl<G: MultiplayerGame + Clone> MultiplayerPolicy<G> for FlatUCBMonteCarloPolicy<G> {
+
+impl<G: Game + Clone> MultiplayerPolicy<G> for FlatUCBMonteCarloPolicy<G> {
     fn play(self: &mut FlatUCBMonteCarloPolicy<G>, board: &G) -> G::Move {
         let moves = board.possible_moves();
         let moves_vec = moves.collect::<Vec<G::Move>>();
         let n_moves = moves_vec.len();
 
-        let mut move_success = HashMap::new();
-        let mut move_count = HashMap::new();
-        let mut move_board = HashMap::new();
+        let mut move_success: HashMap<&G::Move, i32> = HashMap::new();
+        let mut move_count: HashMap<&G::Move, i32> = HashMap::new();
+        let mut move_board: HashMap<&G::Move, G> = HashMap::new();
 
         for m in moves_vec.iter() {
             let mut b_after_move = board.clone();
@@ -202,7 +207,7 @@ impl fmt::Display for FlatUCBMonteCarlo {
     }
 } 
 
-impl<G: MultiplayerGame + Clone> MultiplayerPolicyBuilder<G> for FlatUCBMonteCarlo {
+impl<G: Game + Clone> MultiplayerPolicyBuilder<G> for FlatUCBMonteCarlo {
     type P = FlatUCBMonteCarloPolicy<G>;
 
     fn create(&self, color: G::Player) -> Self::P {

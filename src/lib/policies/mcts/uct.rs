@@ -1,4 +1,4 @@
-use crate::game::{Playout, MultiplayerGame};
+use crate::game::{Playout, Game};
 use crate::policies::{
     mcts::{BaseMCTSPolicy, MCTSPolicy, WithMCTSPolicy},
     MultiplayerPolicyBuilder,
@@ -20,32 +20,36 @@ pub struct UCTMoveInfo {
 }
 
 #[derive(Debug)]
-pub struct UCTNodeInfo<G: MultiplayerGame> {
+pub struct UCTNodeInfo<G: Game> {
     pub count: f32,
     pub moves: HashMap<G::Move, UCTMoveInfo>,
 }
 
-pub struct UCTPolicy_<G: MultiplayerGame> {
+pub struct UCTPolicy_<G: Game> {
     color: G::Player,
-    tree: HashMap<usize, UCTNodeInfo<G>>,
+    tree: HashMap<G, UCTNodeInfo<G>>,
     UCT_WEIGHT: f32,
 }
 
-impl<G: MultiplayerGame + Clone> BaseMCTSPolicy<G> for UCTPolicy_<G> {
+impl<G> BaseMCTSPolicy<G> for UCTPolicy_<G>
+where
+    G::Move: Send,
+    G: super::MCTSGame
+{
     type NodeInfo = UCTNodeInfo<G>;
     type PlayoutInfo = bool;
 
-    fn tree(&self) -> &HashMap<usize, Self::NodeInfo> {
+    fn tree(&self) -> &HashMap<G, Self::NodeInfo> {
         &self.tree
     }
 
-    fn tree_mut(&mut self) -> &mut HashMap<usize, Self::NodeInfo> {
+    fn tree_mut(&mut self) -> &mut HashMap<G, Self::NodeInfo> {
         &mut self.tree
     }
 
     fn select_move(&self, board: &G, exploration: bool) -> G::Move {
         let moves = board.possible_moves();
-        let node_info = self.tree.get(&board.hash()).unwrap();
+        let node_info = self.tree.get(&board).unwrap();
         let N = node_info.count;
 
         // select between optimism and pessimism in the confidence bound.
@@ -83,7 +87,7 @@ impl<G: MultiplayerGame + Clone> BaseMCTSPolicy<G> for UCTPolicy_<G> {
     fn backpropagate(&mut self, history: Vec<(G, G::Move)>, playout: Self::PlayoutInfo) {
         let z = if playout { 1. } else { 0. };
         for (state, action) in history.iter() {
-            let mut node = self.tree.get_mut(&state.hash()).unwrap();
+            let mut node = self.tree.get_mut(&state).unwrap();
             node.count += 1.;
 
             let mut v = node.moves.get_mut(action).unwrap();
@@ -92,9 +96,15 @@ impl<G: MultiplayerGame + Clone> BaseMCTSPolicy<G> for UCTPolicy_<G> {
         }
     }
 }
+use async_trait::async_trait;
 
-impl<G: MultiplayerGame + Clone> MCTSPolicy<G> for UCTPolicy_<G> {
-    fn simulate(&self, board: &G) -> Self::PlayoutInfo {
+
+impl<G> MCTSPolicy<G> for UCTPolicy_<G>
+where
+    G::Move: Send,
+    G: super::MCTSGame
+{
+    fn simulate(&self, board: &G) -> <Self as BaseMCTSPolicy<G>>::PlayoutInfo {
         board.playout_board().has_won(self.color)
     }
 }
@@ -123,7 +133,12 @@ impl fmt::Display for UCT {
     }
 }
 
-impl<G: MultiplayerGame + Clone> MultiplayerPolicyBuilder<G> for UCT {
+impl<G> MultiplayerPolicyBuilder<G> for UCT
+where
+    G::Move: Send,
+    G::Player: Send,
+    G: super::MCTSGame,     
+{
     type P = UCTPolicy<G>;
 
     fn create(&self, color: G::Player) -> Self::P {

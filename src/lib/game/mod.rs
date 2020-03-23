@@ -5,23 +5,26 @@ use std::convert::TryFrom;
 use std::fmt::Debug;
 use std::hash::{Hash, Hasher};
 
-pub mod breakthrough;
-pub mod hashcode_20;
-pub mod misere_breakthrough;
-pub mod weak_schur;
+use async_trait::async_trait;
 
-pub trait MoveTrait = PartialEq + Eq + Copy + Clone + Hash + Debug;
+pub mod breakthrough;
+/*pub mod hashcode_20;
+pub mod misere_breakthrough;
+pub mod weak_schur;*/
+pub mod meta;
+
+pub trait MoveTrait = PartialEq + Eq + Copy + Clone + Hash + Debug + Send + Sync;
 
 /**
  * Common interface for single and multiplayer games
  */
-pub trait BaseGame: Sized + Debug {
+pub trait Base: Sized + Debug + Send + Sync {
     /**
      * The type for a Move.
      */
     type Move: MoveTrait;
 
-    type MoveIterator<'a>: Iterator<Item=Self::Move>;
+    type MoveIterator<'a>: Iterator<Item=Self::Move> + Send;
     /**
      * Given the game state and turn, list possible actions.
      */
@@ -32,70 +35,53 @@ pub trait BaseGame: Sized + Debug {
     fn is_finished(&self) -> bool {
         self.possible_moves().next().is_none()
     }
+}
+
+
+pub trait Playable: Base {
     /**
      * Mutates game state playing the given action.
      */
     fn play(&mut self, action: &Self::Move);
-    /**
-     * Pseudo-unique value representing the game state.
-     */
-    fn hash(&self) -> usize;
 
     /**
      * Plays a random move or does nothing if there's no move to play.
      */
-    fn random_move(&mut self) -> (usize, Option<Self::Move>) {
+    fn random_move(&mut self) -> Option<Self::Move> {
         let actions = self.possible_moves();
         let chosen_action = actions.collect::<Vec<Self::Move>>().choose(&mut rand::thread_rng()).copied();
-
-        let gh = self.hash();
 
         match chosen_action {
             None => (),
             Some(action) => self.play(&action),
         };
-        (gh, chosen_action)
+        chosen_action
     }
-
 }
 
-pub trait Playout: BaseGame + Clone {
-    fn playout_full_history(&self) -> (Self, Vec<(Self, Self::Move)>) {
+
+pub trait Playout: Playable + Clone {
+    fn playout_history(&self) -> (Self, Vec<(Self, Self::Move)>) {
         let mut s = self.clone();
         let mut hist = Vec::new();
 
         while { !s.is_finished() } {
             let s_cloned = s.clone();
-            let (_, m) = s.random_move();
+            let m = s.random_move();
             hist.push((s_cloned, m.unwrap()));
         }
         (s, hist)
     }
 
-    fn playout_board_history(&self) -> (Self, Vec<(usize, Self::Move)>) {
-        let mut s = self.clone();
-        let mut hist = Vec::new();
-
-        while { !s.is_finished() } {
-            let (h, m) = s.random_move();
-            hist.push((h, m.unwrap()));
-        }
-        (s, hist)
-    }
-
     fn playout_board(&self) -> Self {
-        let (s, _) = self.playout_board_history();
+        let (s, _) = self.playout_history();
         s
     }
 }
-impl<G: BaseGame + Clone> Playout for G {}
+impl<G: Base + Playable + Clone> Playout for G {}
 
-pub trait MultiplayerGameBuilder<G: MultiplayerGame> {
-    fn create(&self, starting: G::Player) -> G;
-}
-
-pub trait MultiplayerGame: BaseGame {
-    type Player: PartialEq + Eq + Copy + Clone + Debug;
+pub trait Game: Playable {
+    type Player: PartialEq + Eq + Copy + Clone + Debug + Sync + Send;
 
     fn players() -> Vec<Self::Player>;
     fn turn(&self) -> Self::Player;
@@ -103,17 +89,56 @@ pub trait MultiplayerGame: BaseGame {
     fn has_won(&self, player: Self::Player) -> bool;
 }
 
-pub trait SingleplayerGameBuilder<G: SingleplayerGame> {
-    fn create(&self) -> G;
+pub trait SingleWinner: Game {
+    fn winner(&self) -> Option<Self::Player>;
 }
 
-pub trait SingleplayerGame: BaseGame {
+pub trait Reward: Game {
+    fn reward(&self, player: Self::Player) -> f32;
+}
+
+pub trait Singleplayer: Playable {
     fn score(&self) -> f32;
+}
+
+impl<G: Singleplayer> Game for G {
+    type Player = ();
+
+    fn players() -> Vec<Self::Player> {
+        vec![()]
+    }
+
+    fn turn(&self) -> Self::Player {
+        ()
+    }
+
+    fn has_won(&self, _player: Self::Player) -> bool {
+        self.is_finished()
+    }
+}
+
+impl<G: Singleplayer> Reward for G {
+    fn reward(&self, _player: Self::Player) -> f32 {
+        self.score()
+    }
+}
+
+pub trait GameBuilder<G: Game> {
+    fn create(&self, starting: G::Player) -> G;
+}
+
+pub trait SingleplayerGameBuilder<G: Singleplayer> {
+    fn create(&self) -> G;
+}
+impl<G: Singleplayer, GB: SingleplayerGameBuilder<G>> GameBuilder<G> for GB {
+    fn create(&self, starting: <G as Game>::Player) -> G {
+        self.create()
+    }
 }
 
 use std::collections::HashMap;
 /* FeatureGame */
-pub trait Feature: MultiplayerGame {
+pub trait Feature: Game {
     type StateDim: Dimension;
     type ActionDim: Dimension;
 
@@ -127,12 +152,12 @@ pub trait Feature: MultiplayerGame {
 }
 
 /* TODO: MoveCode */
-pub trait MoveCode<G: BaseGame> {
+pub trait MoveCode<G: Base> {
     fn code(game: &G, action: &G::Move) -> usize;
 }
 
 pub struct NoFeatures {}
-impl<T: BaseGame> MoveCode<T> for NoFeatures {
+impl<T: Base> MoveCode<T> for NoFeatures {
     fn code(_: &T, action: &T::Move) -> usize {
         let mut s = DefaultHasher::new();
         action.hash(&mut s);
@@ -142,18 +167,18 @@ impl<T: BaseGame> MoveCode<T> for NoFeatures {
 
 /* GAME WITH AN UI */
 pub trait InteractiveGame: cursive::view::View {
-    type G: MultiplayerGame;
+    type G: Game;
 
-    fn new(turn: <Self::G as MultiplayerGame>::Player) -> Self;
+    fn new(turn: <Self::G as Game>::Player) -> Self;
 
     fn get_mut(&mut self) -> &mut Self::G;
     fn get(&self) -> &Self::G;
-    fn choose_move(&mut self, cb: Box<dyn FnOnce(<Self::G as BaseGame>::Move, &mut Self)>);
+    fn choose_move(&mut self, cb: Box<dyn FnOnce(<Self::G as Base>::Move, &mut Self)>);
 }
 
 use crate::policies::MultiplayerPolicy;
 
-pub fn simulate<'a, 'b, G: MultiplayerGame + Clone>(
+pub fn simulate<'a, 'b, G: Game + Clone>(
     mut p1: Box<dyn MultiplayerPolicy<G> + 'a>,
     mut p2: Box<dyn MultiplayerPolicy<G> + 'b>,
     game: &G,
@@ -173,140 +198,4 @@ pub fn simulate<'a, 'b, G: MultiplayerGame + Clone>(
         !game_has_ended
     } {}
     history
-}
-
-use std::marker::PhantomData;
-use std::sync::Arc;
-
-pub struct WithHistory<G: BaseGame, H> {
-    prec: Option<Arc<Self>>,
-    pub state: G, // TODO: create accessor
-    _h: PhantomData<fn() -> H>,
-}
-
-use std::fmt;
-impl<G: BaseGame, H> Debug for WithHistory<G, H> {
-    fn fmt(&self, fmt: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(fmt, "{:?}", self.state)
-    }
-}
-
-impl<G: BaseGame + Clone, H> Clone for WithHistory<G, H> {
-    fn clone(&self) -> Self {
-        WithHistory {
-            prec: self.prec.clone(),
-            state: self.state.clone(),
-            _h: PhantomData,
-        }
-    }
-}
-
-impl<G: BaseGame + Clone, H> BaseGame for WithHistory<G, H> {
-    type Move = G::Move;
-    type MoveIterator<'a> = G::MoveIterator<'a>;
-
-    fn possible_moves<'a>(&'a self) -> Self::MoveIterator<'a> {
-        self.state.possible_moves()
-    }
-
-    fn play(&mut self, action: &Self::Move) {
-        let prec = self.prec.take();
-        let new_node = WithHistory {
-            prec,
-            state: self.state.clone(),
-            _h: PhantomData,
-        };
-        self.prec = Some(Arc::new(new_node));
-        self.state.play(action)
-    }
-
-    fn hash(&self) -> usize {
-        self.state.hash()
-    }
-}
-
-impl<G: MultiplayerGame + Clone, H> MultiplayerGame for WithHistory<G, H> {
-    type Player = G::Player;
-
-    fn players() -> Vec<Self::Player> {
-        G::players()
-    }
-
-    fn turn(&self) -> Self::Player {
-        self.state.turn()
-    }
-
-    fn has_won(&self, player: Self::Player) -> bool {
-        self.state.has_won(player)
-    }
-}
-
-impl<G: SingleplayerGame + Clone, H> SingleplayerGame for WithHistory<G, H> {
-    fn score(&self) -> f32 {
-        self.state.score()
-    }
-}
-
-#[derive(Copy,Clone)]
-pub struct WithHistoryGB<'a, GB, H> (&'a GB, PhantomData<H>);
-
-impl<'a, GB, H> WithHistoryGB<'a, GB, H> {
-    pub fn new(gb: &'a GB) -> Self {
-        Self(gb, PhantomData)
-    }
-}
-
-impl<'a, G: MultiplayerGame + Clone, GB: MultiplayerGameBuilder<G>,H> MultiplayerGameBuilder<WithHistory<G,H>> for WithHistoryGB<'a, GB,H> {
-    fn create(&self, starting: G::Player) -> WithHistory<G,H> {
-        WithHistory {
-            prec: None,
-            state: self.0.create(starting),
-            _h: PhantomData
-        }
-    }
-}
-
-use typenum::Unsigned;
-
-impl<G: Feature + Clone, H: Unsigned> Feature for WithHistory<G, H> {
-    // one dimension larger to store history
-    type StateDim = <G::StateDim as Dimension>::Larger;
-    type ActionDim = G::ActionDim;
-
-    fn state_dimension() -> Self::StateDim {
-        let game_state_dimension = G::state_dimension();
-        let mut new_dim = game_state_dimension.insert_axis(Axis(0));
-        new_dim[0] = H::to_usize();
-        new_dim
-    }
-
-    fn state_to_feature(&self, pov: Self::Player) -> Array<f32, Self::StateDim> {
-        let mut states_ref = vec![];
-        (0..H::to_usize()).fold(self, |current, _| {
-            states_ref.push(&current.state);
-            let res: &Self = current.prec.as_ref().map(|b| b.as_ref()).unwrap_or(current);
-            res
-        });
-        let features_array: Vec<ndarray::Array<f32, Self::StateDim>> = states_ref
-            .iter()
-            .rev()
-            .map(|g| {
-                g.state_to_feature(pov).insert_axis(Axis(0))
-            })
-            .collect();
-        let features_array_view: Vec<ndarray::ArrayView<f32, Self::StateDim>> = features_array.iter().map(|x| x.view()).collect();
-        ndarray::stack(Axis(0), &features_array_view).expect("All features should have the same shape.")
-    }
-
-    fn action_dimension() -> Self::ActionDim {
-        G::action_dimension()
-    }
-
-    fn moves_to_feature(moves: &HashMap<Self::Move, f32>) -> Array<f32, Self::ActionDim> {
-        G::moves_to_feature(moves)
-    }
-
-    fn feature_to_moves(&self, features: &Array<f32, Self::ActionDim>) -> HashMap<Self::Move, f32> {
-        self.state.feature_to_moves(features)
-    }
 }

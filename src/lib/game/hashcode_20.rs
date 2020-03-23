@@ -1,4 +1,4 @@
-use crate::game::{SingleplayerGame, BaseGame, SingleplayerGameBuilder};
+use crate::game::{Singleplayer, Base, SingleplayerGameBuilder};
 
 use std::collections::hash_map::DefaultHasher;
 use std::collections::{BTreeSet, BTreeMap};
@@ -144,7 +144,7 @@ impl SingleplayerGameBuilder<Hashcode20> for Hashcode20Settings {
     }
 }
 
-impl SingleplayerGame for Hashcode20 {
+impl Singleplayer for Hashcode20 {
     fn score(&self) -> f32 {
         let score: usize = self.scanned_books.iter().map(|book| self.rules.books[*book]).sum();
         score as f32
@@ -153,7 +153,7 @@ impl SingleplayerGame for Hashcode20 {
 
 type PossibleMovesIterator<'a> = impl Iterator<Item=Move> + 'a;
 
-impl BaseGame for Hashcode20 {
+impl Base for Hashcode20 {
     type Move = Move;
     type MoveIterator<'a> = PossibleMovesIterator<'a>;
 

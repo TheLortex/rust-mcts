@@ -3,12 +3,12 @@ pub const DEFAULT_N_PLAYOUTS: usize = 100;
 pub const DEFAULT_N_HISTORY_PUCT: usize = 2;
 
 // Breakthrough
-pub const BREAKTHROUGH_K: usize = 10;
+pub const BREAKTHROUGH_K: usize = 5;
 
 // Batched GPU evaluator.
 pub const GPU_BATCH_SIZE: usize   = 64;
-pub const GPU_N_EVALUATORS: usize = 7;
-pub const GPU_N_GENERATORS: usize = 3 * GPU_BATCH_SIZE / 2;
+pub const GPU_N_EVALUATORS: usize = 4;
+pub const GPU_N_GENERATORS: usize = 64;
 
 /*
 pub const GPU_BATCH_SIZE: usize   = 1;

@@ -10,10 +10,13 @@ use std::sync::Arc;
 use tensorflow::{Graph, Session, SessionOptions};
 use zerol::game;
 use zerol::game::breakthrough::*;
-use zerol::game::{MultiplayerGameBuilder, WithHistory, WithHistoryGB};
+use zerol::game::meta::with_history::*;
 use zerol::misc::game_evaluator;
-use zerol::policies::{get_multi, mcts::puct::*, DynMultiplayerPolicyBuilder};
+use zerol::policies::{get_multi, mcts::puct::*, DynMultiplayerPolicyBuilder, MultiplayerPolicy};
 use zerol::settings;
+
+use tokio;
+use tokio::prelude::*;
 
 use typenum::U2;
 
@@ -24,8 +27,8 @@ pub fn monte_carlo_match<
     'c,
     'b,
     'd,
-    G: game::MultiplayerGame + Clone,
-    GB: game::MultiplayerGameBuilder<G> + Sync,
+    G: game::Game + Clone,
+    GB: game::GameBuilder<G> + Sync,
 >(
     n: usize,
     pb1: Box<dyn DynMultiplayerPolicyBuilder<'a, G> + Sync + 'c>,
@@ -122,8 +125,8 @@ fn main() {
         s: PUCTSettings::default(),
         N_PLAYOUTS: settings::DEFAULT_N_PLAYOUTS,
         evaluate: |pov, board: &WithHistory<Breakthrough, U2>| {
-        //evaluate: |pov, board: &Breakthrough| {
-                game_evaluator(&session, &graph, pov, board)
+            //evaluate: |pov, board: &Breakthrough| {
+            game_evaluator(&session, &graph, pov, board)
         },
     };
     let p1 = if let Some(val) = args.value_of("against") {
@@ -136,7 +139,7 @@ fn main() {
     let p2 = get_multi(config);
 
     let gb = WithHistoryGB::<_, U2>::new(&BreakthroughBuilder {});
-//    let gb = BreakthroughBuilder {};
+    //    let gb = BreakthroughBuilder {};
 
     let silent = args.is_present("only-result");
 

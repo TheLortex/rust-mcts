@@ -8,7 +8,7 @@ use std::cell::RefCell;
 
 
 use zerol::game::breakthrough::*;
-use zerol::game::{MoveTrait, InteractiveGame, BaseGame, NoFeatures, Feature, MultiplayerGame};
+use zerol::game::{MoveTrait, InteractiveGame, Playable, Base, NoFeatures, Feature, Game};
 use zerol::policies::{
     ppa::*, mcts::puct::{PUCT, PUCTSettings, PUCTNodeInfo, PUCTMoveInfo}, MultiplayerPolicy, MultiplayerPolicyBuilder,
 };
@@ -36,7 +36,7 @@ type IG = ui::IBreakthrough;
 #[derive(Debug, Clone)]
 struct TreeEntry {
     name: String,
-    state: usize,
+    state: G,
     probability: f32,
     value: f32,
     N_visits: f32
@@ -49,14 +49,16 @@ impl fmt::Display for TreeEntry {
 }
 
 
-fn expand_tree(tree: &HashMap<usize, PUCTNodeInfo<G>>, treeview: &mut TreeView<TreeEntry>, parent_row: usize, node: &TreeEntry) {
-    if let Some(node) = tree.get(&node.state) {
+fn expand_tree(tree: &HashMap<G, PUCTNodeInfo<G>>, treeview: &mut TreeView<TreeEntry>, parent_row: usize, tree_node: &TreeEntry) {
+    if let Some(node) = tree.get(&tree_node.state) {
         let mut moves: Vec<(&Move, &PUCTMoveInfo)> = node.moves.iter().collect();
         moves.sort_by_key(|(a,_)| (a.x, a.y));
         for (action, move_info) in moves {
+            let mut game_state = tree_node.state.clone();
+            game_state.play(action);
             let item = TreeEntry {
                 name: action.name(),
-                state: move_info.target,
+                state: game_state,
                 probability: move_info.pi,
                 value: move_info.Q,
                 N_visits: move_info.N_a,
@@ -74,14 +76,14 @@ struct GameDuelUI {}
 
 impl GameDuelUI {
     fn render<P2,F>(
-        start: <G as MultiplayerGame>::Player,
+        start: <G as Game>::Player,
         pb1: PUCT<G,F>,
         pb2: P2,
     ) -> impl cursive::view::View 
 where
     P2: MultiplayerPolicyBuilder<G>,
     P2::P: 'static,
-    F: Fn(<G as MultiplayerGame>::Player, &G) -> (Array<f32, <G as Feature>::ActionDim>, f32) + Clone + 'static
+    F: Fn(<G as Game>::Player, &G) -> (Array<f32, <G as Feature>::ActionDim>, f32) + Clone + 'static
 {
         
         let p1 = RefCell::new(pb1.create(G::players()[0]));
@@ -103,7 +105,7 @@ where
                 if !state.get().is_finished() {
                     let mut p1 = p1.borrow_mut();
                     let mut p2 = p2.borrow_mut();
-                    let p1_to_play = state.get().turn() == <G as MultiplayerGame>::players()[0];
+                    let p1_to_play = state.get().turn() == <G as Game>::players()[0];
 
                     let action = if p1_to_play {
                         let action = p1.play(&state.get());
@@ -115,10 +117,10 @@ where
                         treeview.clear();
                         treeview.insert_container_item(TreeEntry {
                             name: "root".to_string(),
-                            state: state.get().hash(),
+                            state: state.get().clone(),
                             probability: 1.,
                             value: 1.,
-                            N_visits: tree.get(&state.get().hash()).unwrap().count
+                            N_visits: tree.get(&state.get()).unwrap().count
                         }, Placement::After, 0);
                         /* UPDATE STATE*/
                         action

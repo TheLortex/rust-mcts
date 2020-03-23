@@ -13,8 +13,8 @@ from threading import Thread, RLock
 import os
 import subprocess
 
-physical_devices = tf.config.list_physical_devices('GPU') 
-tf.config.experimental.set_memory_growth(physical_devices[0], True) 
+physical_devices = tf.config.list_physical_devices('GPU')
+tf.config.experimental.set_memory_growth(physical_devices[0], True)
 
 ## GAME SETTINGS, make sure this is coherent with the generator and evaluator
 game = "breakthrough"
@@ -48,7 +48,7 @@ def build_network():
 REPLAY_BUFFER_SIZE        = 100000 # SAVE THE LAST 100k STATES
 EPOCH_SIZE                = REPLAY_BUFFER_SIZE
 BATCH_SIZE                = 1024
-N_EPOCH                   = 10000
+N_EPOCH                   = 50000
 
 SAVE_REPLAY_BUFFER_FREQ   = 2000            # backup replay buffer every _ moves
 CHECKPOINT_FREQ           = 5*EPOCH_SIZE   # save model

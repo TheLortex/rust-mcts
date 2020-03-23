@@ -9,18 +9,18 @@ use std::sync::Arc;
 use std::sync::Mutex;
 use std::sync::RwLock;
 use std::{thread, time};
+use std::sync::mpsc;
 use tensorflow;
 use tensorflow::{Graph, Session, SessionOptions};
-use tokio;
+
 
 const MODEL_PATH: &str = "models/breakthrough";
 
 use zerol::game::{
     breakthrough::{Breakthrough, BreakthroughBuilder},
-    MultiplayerGame,
-    WithHistoryGB,
-    WithHistory,
+    Game,
 };
+use zerol::game::meta::with_history::*;
 use zerol::policies::mcts::puct::PUCTSettings;
 use zerol::settings;
 use zerol::r#async::GameHistoryChannel;
@@ -28,16 +28,10 @@ use zerol::r#async::GameHistoryChannel;
 use typenum::U2;
 
 fn main() {
-    let mut threaded_rt = tokio::runtime::Builder::new()
-        .threaded_scheduler()
-        .core_threads(8)
-        .build()
-        .unwrap();
-
-    threaded_rt.block_on(run())
+    run()
 }
 
-async fn run() {
+fn run() {
     /* check that model exists. */
     if !Path::new(MODEL_PATH).exists() {
         println!("Couldn't find model at {}", MODEL_PATH);
@@ -95,19 +89,19 @@ async fn run() {
         .watch(MODEL_PATH, RecursiveMode::NonRecursive)
         .unwrap();
 
-    let (tx_games, mut rx_games) = tokio::sync::mpsc::channel::<GameHistoryChannel<WithHistory<Breakthrough,U2>>>(1024);
+    let (tx_games, rx_games) = mpsc::sync_channel::<GameHistoryChannel<WithHistory<Breakthrough,U2>>>(1024);
 
     let game_builder = WithHistoryGB::<_, U2>::new(&BreakthroughBuilder {});
 
-    let game_gen = tokio::spawn(zerol::r#async::game_generator(
+    let game_gen = thread::spawn(move || zerol::r#async::game_generator(
         PUCTSettings::default(),
         game_builder,
         graph_and_session,
         tx_games,
     ));
 
-    let game_writer = tokio::spawn(async move {
-        while let Some((winner, history)) = rx_games.recv().await {
+    let game_writer = thread::spawn(move || {
+        while let Some((winner, history)) = rx_games.recv().ok() {
             while is_writing.load(Ordering::Relaxed) {
                 thread::sleep(time::Duration::from_millis(1));
             }
@@ -122,6 +116,6 @@ async fn run() {
         }
     });
 
-    game_gen.await.unwrap();
-    game_writer.await.unwrap();
+    game_gen.join().unwrap();
+    game_writer.join().unwrap();
 }

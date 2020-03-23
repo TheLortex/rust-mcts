@@ -1,4 +1,4 @@
-use crate::game::{BaseGame,MultiplayerGame,MultiplayerGameBuilder};
+use crate::game::{Base,Game,GameBuilder};
 use crate::game::breakthrough::{Breakthrough, BreakthroughBuilder, Color, Move};
 
 use std::fmt;
@@ -14,7 +14,7 @@ impl fmt::Debug for MisereBreakthrough {
     }
 }
 
-impl MultiplayerGameBuilder<MisereBreakthrough> for BreakthroughBuilder {
+impl GameBuilder<MisereBreakthrough> for BreakthroughBuilder {
     fn create(&self, turn: Color) -> MisereBreakthrough {
         MisereBreakthrough {
             game: self.create(turn)
@@ -22,9 +22,9 @@ impl MultiplayerGameBuilder<MisereBreakthrough> for BreakthroughBuilder {
     }
 }
 
-impl BaseGame for MisereBreakthrough {
+impl Base for MisereBreakthrough {
     type Move = Move;
-    type MoveIterator<'a> = <Breakthrough as BaseGame>::MoveIterator<'a>;
+    type MoveIterator<'a> = <Breakthrough as Base>::MoveIterator<'a>;
 
     fn play(&mut self, m: &Move) {
         self.game.play(m)
@@ -40,7 +40,7 @@ impl BaseGame for MisereBreakthrough {
 
 }
 
-impl MultiplayerGame for MisereBreakthrough {
+impl Game for MisereBreakthrough {
     type Player = Color;
 
     fn players() -> Vec<Color> {

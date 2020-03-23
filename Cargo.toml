@@ -12,6 +12,9 @@ name = "zerol"
 path = "src/lib/lib.rs"
 
 [dependencies]
+threadpool = "1.7.1"
+gstuff = "0.6.2"
+futures = "0.3.4"
 cursive_tree_view = "0.6"
 flexi_logger = "0.14.3"
 log = "0.4"
@@ -34,6 +37,8 @@ crossbeam-channel = "0.4.0"
 notify = "5.0.0-pre.2"
 ndarray = "0.13.0"
 float-ord = "0.2.0"
+typenum = "1.11.2"
+arrayvec = "0.5.1"
 
 # for gym
 #cpython = "0.4.1"
@@ -59,3 +64,5 @@ features = ["tensorflow_gpu"]
 
 #[replace]
 #'tensorflow:0.14.0' = { path = '/home/lucas/git/tensorflow-rust' }
+[replace]
+'ndarray:0.13.0' = { path = '/home/lucas/git/ndarray'}

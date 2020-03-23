@@ -1,8 +1,8 @@
 use crate::game;
 use crate::policies::mcts::{
-    AsyncMCTSPolicy, BaseMCTSPolicy, MCTSPolicy, WithAsyncMCTSPolicy, WithMCTSPolicy,
+    MCTSPolicy, BaseMCTSPolicy, WithMCTSPolicy,
 };
-use crate::policies::{AsyncMultiplayerPolicyBuilder, MultiplayerPolicyBuilder};
+use crate::policies::{MultiplayerPolicyBuilder};
 
 use async_trait::async_trait;
 use float_ord::FloatOrd;
@@ -20,7 +20,6 @@ pub struct PUCTMoveInfo {
     pub Q: f32,
     pub N_a: f32,
     pub pi: f32,
-    pub target: usize,
 }
 
 #[derive(Debug,Clone)]
@@ -37,36 +36,6 @@ pub trait Evaluator<G: game::Feature>:
 }
 impl<G: game::Feature, F: Fn(G::Player, &G) -> (Array<f32, G::ActionDim>, f32)> Evaluator<G>
     for F
-{
-}
-/**
- * The game state evaluator (async edition)
- */
-pub trait FutureOutput<G>: Future<Output = (Array<f32, G::ActionDim>, f32)>
-where
-    G: game::Feature,
-{
-}
-
-impl<G, O> FutureOutput<G> for O
-where
-    G: game::Feature,
-    O: Future<Output = (Array<f32, G::ActionDim>, f32)>,
-{
-}
-
-pub trait AsyncEvaluator<G, O>: Fn(G::Player, &G) -> O
-where
-    G: game::Feature,
-    O: FutureOutput<G>,
-{
-}
-
-impl<'a, G, O, F> AsyncEvaluator<G, O> for F
-where
-    G: game::Feature,
-    O: FutureOutput<G>,
-    F: Fn(G::Player, &G) -> O,
 {
 }
 /**
@@ -97,28 +66,28 @@ impl Default for PUCTSettings {
 pub struct BasePUCTPolicy_<G: game::Feature> {
     pub color: G::Player,
     pub s: PUCTSettings,
-    pub tree: HashMap<usize, PUCTNodeInfo<G>>,
+    pub tree: HashMap<G, PUCTNodeInfo<G>>,
 }
 
 impl<G> BaseMCTSPolicy<G> for BasePUCTPolicy_<G>
 where
-    G: game::Feature + Clone,
+    G: game::Feature + super::MCTSGame,
 {
     type NodeInfo = PUCTNodeInfo<G>;
     type PlayoutInfo = (Option<HashMap<G::Move, f32>>, f32, G);
     //                 (policy, value, leaf_state).
 
-    fn tree(&self) -> &HashMap<usize, Self::NodeInfo> {
+    fn tree(&self) -> &HashMap<G, Self::NodeInfo> {
         &self.tree
     }
 
-    fn tree_mut(&mut self) -> &mut HashMap<usize, Self::NodeInfo> {
+    fn tree_mut(&mut self) -> &mut HashMap<G, Self::NodeInfo> {
         &mut self.tree
     }
 
     fn select_move(&self, board: &G, exploration: bool) -> G::Move {
         let moves = board.possible_moves();
-        let node_info = self.tree.get(&board.hash()).unwrap();
+        let node_info = self.tree.get(&board).unwrap();
         let N = node_info.count;
 
         if exploration {
@@ -149,7 +118,6 @@ where
                     Q: 0.5,
                     N_a: 0.,
                     pi: 1.,
-                    target: b_scratch.hash()
                 },
             )
         }));
@@ -179,7 +147,7 @@ where
                 .map(|m| policy.get(&m).unwrap())
                 .sum();
             let z = if z == 0. { 1. } else { z };
-            for (m, info) in self.tree.get_mut(&board.hash()).unwrap().moves.iter_mut() {
+            for (m, info) in self.tree.get_mut(&board).unwrap().moves.iter_mut() {
                 info.pi = policy.get(&m).unwrap() / z;
             }
         };
@@ -197,7 +165,7 @@ where
             };
 
 
-            let mut node = self.tree.get_mut(&state.hash()).unwrap();
+            let mut node = self.tree.get_mut(&state).unwrap();
             node.count += 1.;
             let mut v = node.moves.get_mut(action).unwrap();
             (*v).N_a += 1.;
@@ -206,9 +174,8 @@ where
     }
 }
 /**
- * sync PUCT
+ * PUCT
  */
-
 pub struct PUCTPolicy_<G, F>
 where
     G: game::Feature,
@@ -220,17 +187,17 @@ where
 
 impl<G, F> BaseMCTSPolicy<G> for PUCTPolicy_<G, F>
 where
-    G: game::Feature + Clone,
+    G: game::Feature + super::MCTSGame,
     F: Evaluator<G>,
 {
     type NodeInfo = <BasePUCTPolicy_<G> as BaseMCTSPolicy<G>>::NodeInfo;
     type PlayoutInfo = <BasePUCTPolicy_<G> as BaseMCTSPolicy<G>>::PlayoutInfo;
 
-    fn tree(&self) -> &HashMap<usize, Self::NodeInfo> {
+    fn tree(&self) -> &HashMap<G, Self::NodeInfo> {
         self.b.tree()
     }
 
-    fn tree_mut(&mut self) -> &mut HashMap<usize, Self::NodeInfo> {
+    fn tree_mut(&mut self) -> &mut HashMap<G, Self::NodeInfo> {
         self.b.tree_mut()
     }
 
@@ -246,81 +213,17 @@ where
         self.b.backpropagate(history, pi)
     }
 }
+
 
 impl<G, F> MCTSPolicy<G> for PUCTPolicy_<G, F>
 where
-    G: game::Feature + Clone,
+    G: game::Feature + super::MCTSGame,
     F: Evaluator<G>,
 {
-    fn simulate(&self, board: &G) -> Self::PlayoutInfo {
-        if !board.is_finished() {
-            // NN predicts a good policy for current player 
-            //  + expectation of winning from this state.
-            let (policy, value) = (self.evaluate)(board.turn(), &board);
-            let policy = board.feature_to_moves(&policy);
-            (Some(policy), value, board.clone())
-        } else {
-            (None, 0., board.clone())
-        }
-    }
-}
-/**
- * async PUCT
- */
-pub struct BatchedPUCTPolicy_<G, O, F>
-where
-    G: game::Feature,
-    O: FutureOutput<G>,
-    F: AsyncEvaluator<G, O>,
-{
-    pub b: BasePUCTPolicy_<G>,
-    pub evaluate: F,
-    pub _o: PhantomData<O>,
-}
-
-impl<G, O, F> BaseMCTSPolicy<G> for BatchedPUCTPolicy_<G, O, F>
-where
-    G: game::Feature + Clone,
-    O: FutureOutput<G>,
-    F: AsyncEvaluator<G, O>,
-{
-    type NodeInfo = <BasePUCTPolicy_<G> as BaseMCTSPolicy<G>>::NodeInfo;
-    type PlayoutInfo = <BasePUCTPolicy_<G> as BaseMCTSPolicy<G>>::PlayoutInfo;
-
-    fn tree(&self) -> &HashMap<usize, Self::NodeInfo> {
-        self.b.tree()
-    }
-
-    fn tree_mut(&mut self) -> &mut HashMap<usize, Self::NodeInfo> {
-        self.b.tree_mut()
-    }
-
-    fn select_move(&self, board: &G, expl: bool) -> G::Move {
-        self.b.select_move(board, expl)
-    }
-
-    fn default_node(&self, board: &G) -> Self::NodeInfo {
-        self.b.default_node(board)
-    }
-
-    fn backpropagate(&mut self, history: Vec<(G, G::Move)>, pi: Self::PlayoutInfo) {
-        self.b.backpropagate(history, pi)
-    }
-}
-
-#[async_trait]
-impl<G, O, F> AsyncMCTSPolicy<G> for BatchedPUCTPolicy_<G, O, F>
-where
-    G: game::Feature + Send + Sync + Clone,
-    O: FutureOutput<G> + Sync + Send,
-    F: AsyncEvaluator<G, O> + Send + Sync,
-    G::Move: Send + Sync,
-    G::Player: Send + Sync,
-{
-    async fn simulate(&self, board: &G) -> <Self as BaseMCTSPolicy<G>>::PlayoutInfo {
+    fn simulate(&self, board: &G) -> <Self as BaseMCTSPolicy<G>>::PlayoutInfo {
         if !board.is_finished() {
             // NN predicts a good policy for current player + expectation of winning from this state.
-            let (policy, value) = (self.evaluate)(board.turn(), board).await;
+            let (policy, value) = (self.evaluate)(board.turn(), board);
             let policy = board.feature_to_moves(&policy);
             (Some(policy), value, board.clone())
         } else {
@@ -329,43 +232,39 @@ where
     }
 }
 
+use std::fmt;
+
 /**
- *  POLICY BUILDERS - SYNC
+ *  POLICY BUILDERS - ASYNC
  */
 pub type PUCTPolicy<G, F> = WithMCTSPolicy<G, PUCTPolicy_<G, F>>;
 
-#[derive(Copy, Clone)]
 pub struct PUCT<G, F>
 where
     G: game::Feature,
-    F: Fn(G::Player, &G) -> (Array<f32, G::ActionDim>, f32),
+    F: (Fn(G::Player, &G) -> (Array<f32, G::ActionDim>, f32)),
 {
     pub s: PUCTSettings,
     pub N_PLAYOUTS: usize,
     pub evaluate: F,
     pub _g: PhantomData<fn() -> G>,
 }
-/*
-impl<G: game::Feature, F: Evaluator<G>> Copy for PUCT<'_, G, F> {}
 
-impl<G: game::Feature, F: Evaluator<G>> Clone for PUCT<'_, G, F> {
-    fn clone(&self) -> Self {
-        *self
-    }
-}
-*/
-use std::fmt;
-impl<G: game::Feature, F: Evaluator<G>> fmt::Display for PUCT<G, F> {
+impl<G, F> fmt::Display for PUCT<G, F>
+where
+    G: game::Feature,
+    F: (Fn(G::Player, &G) -> (Array<f32, G::ActionDim>, f32)),
+{
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        writeln!(f, "SYNC PUCT")?;
+        writeln!(f, "BATCHED PUCT")?;
         writeln!(f, "||{:?}", self.s)
     }
 }
 
 impl<G, F> MultiplayerPolicyBuilder<G> for PUCT<G, F>
 where
-    G: game::Feature + Clone,
-    F: Evaluator<G>,
+    G: game::Feature + super::MCTSGame,
+    F: (Fn(G::Player, &G) -> (Array<f32, G::ActionDim>, f32)),
     F: Clone
 {
     type P = PUCTPolicy<G, F>;
@@ -379,62 +278,6 @@ where
                     tree: HashMap::new(),
                 },
                 evaluate: self.evaluate.clone(),
-            },
-            self.N_PLAYOUTS,
-        )
-    }
-}
-
-/**
- *  POLICY BUILDERS - ASYNC
- */
-pub type BatchedPUCTPolicy<G, O, F> = WithAsyncMCTSPolicy<G, BatchedPUCTPolicy_<G, O, F>>;
-
-pub struct BatchedPUCT<G, O, F>
-where
-    G: game::Feature,
-    O: FutureOutput<G>,
-    F: (Fn(G::Player, &G) -> O),
-{
-    pub s: PUCTSettings,
-    pub N_PLAYOUTS: usize,
-    pub evaluate: F,
-    pub _g: PhantomData<fn() -> G>,
-}
-
-impl<G, O, F> fmt::Display for BatchedPUCT<G, O, F>
-where
-    G: game::Feature,
-    O: FutureOutput<G>,
-    F: (Fn(G::Player, &G) -> O),
-{
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        writeln!(f, "BATCHED PUCT")?;
-        writeln!(f, "||{:?}", self.s)
-    }
-}
-
-impl<G, O, F> AsyncMultiplayerPolicyBuilder<G> for BatchedPUCT<G, O, F>
-where
-    G: game::Feature + Send + Sync + Clone,
-    O: FutureOutput<G> + Sync + Send,
-    G::Move: Send + Sync,
-    G::Player: Send + Sync,
-    F: (Fn(G::Player, &G) -> O) + Send + Sync,
-    F: Clone
-{
-    type P = BatchedPUCTPolicy<G, O, F>;
-
-    fn create(&self, color: G::Player) -> BatchedPUCTPolicy<G, O, F> {
-        WithAsyncMCTSPolicy::new(
-            BatchedPUCTPolicy_::<G, O, F> {
-                b: BasePUCTPolicy_::<G> {
-                    color,
-                    s: self.s,
-                    tree: HashMap::new(),
-                },
-                evaluate: self.evaluate.clone(),
-                _o: PhantomData,
             },
             self.N_PLAYOUTS,
         )

@@ -232,7 +232,7 @@ impl InteractiveGame for IBreakthrough {
     type G = Breakthrough;
 
 
-    fn new(turn: <Breakthrough as MultiplayerGame>::Player) -> Self {
+    fn new(turn: <Breakthrough as Game>::Player) -> Self {
         IBreakthrough {
             game: (BreakthroughBuilder {}).create(turn),
             choosing_move: None,
@@ -248,7 +248,7 @@ impl InteractiveGame for IBreakthrough {
         &mut self.game
     }
 
-    fn choose_move(&mut self, cb: Box<dyn FnOnce(<Self::G as BaseGame>::Move, &mut Self)>) {
+    fn choose_move(&mut self, cb: Box<dyn FnOnce(<Self::G as Base>::Move, &mut Self)>) {
         let first_move = self.game.possible_moves().next().expect("Not possible moves ?");
         self.choosing_move = Some(PendingMove::SelectingPosition(first_move.x, first_move.y));
         self.choosing_move_cb = Some(cb)

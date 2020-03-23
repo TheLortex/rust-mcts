@@ -1,4 +1,4 @@
-use crate::game::{SingleplayerGame,SingleplayerGameBuilder,BaseGame};
+use crate::game::{Singleplayer,SingleplayerGameBuilder,Base};
 
 use std::fmt;
 use std::hash::*;
@@ -77,7 +77,7 @@ impl SingleplayerGameBuilder<WeakSchurNumber> for WeakSchurNumberBuilder {
     }
 }
 
-impl SingleplayerGame for WeakSchurNumber {
+impl Singleplayer for WeakSchurNumber {
     fn score(&self) -> f32 {
         self.partitions
             .iter()
@@ -85,13 +85,12 @@ impl SingleplayerGame for WeakSchurNumber {
             .max()
             .unwrap() as f32
     }
-
 }
 
 
 type PossibleMovesIterator<'a> = impl Iterator<Item=usize> + 'a;
 
-impl BaseGame for WeakSchurNumber {
+impl Base for WeakSchurNumber {
     type Move = usize;
     type MoveIterator<'a> = PossibleMovesIterator<'a>;
 
