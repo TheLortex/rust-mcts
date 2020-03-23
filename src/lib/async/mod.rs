@@ -123,6 +123,8 @@ fn game_generator_task<G, GB>(
     }
 }
 
+use std::time::{Instant, Duration};
+
 fn game_evaluator_task<G: Feature>(
     g_and_s: Arc<RwLock<(Graph, Session)>>,
     receiver: mpsc::Receiver<EvaluatorChannel>,
@@ -137,24 +139,38 @@ fn game_evaluator_task<G: Feature>(
     let mut tx_buf = vec![];
     let mut idx = 0;
 
-    while let Some((input, tx)) = receiver.recv().ok() {
-        input_tensor[idx * feature_size..(idx + 1) * feature_size].clone_from_slice(&input);
-        tx_buf.push(tx);
-        idx += 1;
+    let mut last_time = Instant::now();
+    let timeout =  Duration::from_nanos(1_000_000_000/10_000); //10kHz: Should be the number of CPU-GPU roundtrip/sec.
 
-        if idx == settings::GPU_BATCH_SIZE {
-            //bar.inc(BATCH_SIZE as u64);
-            idx = 0;
+    loop {
+        let recv_result = receiver.recv_deadline(last_time + timeout);
+
+        let send_batch = match recv_result {
+            Ok((input, tx)) => {
+                input_tensor[idx * feature_size..(idx + 1) * feature_size].clone_from_slice(&input);
+                tx_buf.push(tx);
+                idx += 1;
+                idx == settings::GPU_BATCH_SIZE
+            },
+            Err(mpsc::RecvTimeoutError::Timeout) => true,
+            x => panic!(x)
+        };
+
+
+        if send_batch {
             let (policies, values) = {
                 let (ref graph, ref session) = *g_and_s.read().unwrap();
                 tensorflow_call(&session, &graph, &input_tensor)
             };
-            for i in (0..settings::GPU_BATCH_SIZE).rev() {
+
+            for i in (0..idx).rev() {
                 let policy = Tensor::from(&policies[i * policy_size..(i + 1) * policy_size]);
                 let value = Tensor::from(values[i]);
                 tx_buf.pop().unwrap().send((policy, value));
             }
+            idx = 0;
             tx_buf.clear();
+            last_time = Instant::now();
         }
     }
 }

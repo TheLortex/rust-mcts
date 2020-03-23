@@ -7,8 +7,8 @@ pub const BREAKTHROUGH_K: usize = 5;
 
 // Batched GPU evaluator.
 pub const GPU_BATCH_SIZE: usize   = 64;
-pub const GPU_N_EVALUATORS: usize = 4;
-pub const GPU_N_GENERATORS: usize = 64;
+pub const GPU_N_EVALUATORS: usize = 2;
+pub const GPU_N_GENERATORS: usize = 8;
 
 /*
 pub const GPU_BATCH_SIZE: usize   = 1;
