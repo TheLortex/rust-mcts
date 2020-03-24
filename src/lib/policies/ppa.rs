@@ -1,6 +1,5 @@
 use crate::game::{Game, MoveCode};
 use crate::policies::{MultiplayerPolicy, MultiplayerPolicyBuilder};
-use crate::policies::mcts::uct::{UCTMoveInfo, UCTNodeInfo};
 use crate::settings;
 
 use rand::seq::SliceRandom;
@@ -10,10 +9,23 @@ use std::collections::HashMap;
 use std::marker::PhantomData;
 use std::hash::Hash;
 
+#[derive(Debug)]
+pub struct PPAMoveInfo {
+    pub Q: f32,
+    pub N_a: f32,
+}
+
+#[derive(Debug)]
+pub struct PPANodeInfo<G: Game> {
+    pub count: f32,
+    pub moves: HashMap<G::Move, PPAMoveInfo>,
+}
+
+
 pub struct PPAPolicy<G: Game, M: MoveCode<G>> {
     color: G::Player,
     s: PPA<G,M>,
-    tree: HashMap<G, UCTNodeInfo<G>>,
+    tree: HashMap<G, PPANodeInfo<G>>,
     playout_policy: HashMap<usize, f32>,
 
     _m: PhantomData<M>,
@@ -21,7 +33,7 @@ pub struct PPAPolicy<G: Game, M: MoveCode<G>> {
 
 impl<G: Game + Clone + Eq + Hash, M: MoveCode<G>> PPAPolicy<G, M> {
     pub fn next_move(self: &mut PPAPolicy<G, M>, board: &G) -> G::Move {
-        let moves = board.possible_moves().collect::<Vec<G::Move>>();
+        let moves = board.possible_moves();
 
         let chosen_move = moves
             .choose_weighted(&mut rand::thread_rng(), |item| {
@@ -72,7 +84,7 @@ impl<G: Game + Clone + Eq + Hash, M: MoveCode<G>> PPAPolicy<G, M> {
         *node += self.s.alpha;
 
         let z: f32 = board
-            .possible_moves()
+            .possible_moves().iter()
             .map(|m| self.playout_policy.get(&M::code(board, &m)).unwrap_or(&0.).exp())
             .sum();
                 
@@ -113,7 +125,7 @@ impl<G: Game + Clone + Eq + Hash, M: MoveCode<G>> PPAPolicy<G, M> {
                         history.push((b.clone(), a));
                         b.play(&a)
                     } else { // surely there was an available move
-                        panic!("? {} {:?}", b.possible_moves().count(), b);
+                        panic!("? {} {:?}", b.possible_moves().len(), b);
                         //history.push((s_t, None));
                         //return history;
                     }
@@ -167,12 +179,12 @@ impl<G: Game + Clone + Eq + Hash, M: MoveCode<G>> PPAPolicy<G, M> {
     pub fn new_node(self: &mut PPAPolicy<G, M>, board: &G) {
         let moves = HashMap::from_iter(
             board
-                .possible_moves()
-                .map(|m| (m, UCTMoveInfo { Q: 0., N_a: 0. })),
+                .possible_moves().iter()
+                .map(|m| (*m, PPAMoveInfo { Q: 0., N_a: 0. })),
         );
 
         self.tree
-            .insert(board.clone(), UCTNodeInfo { count: 0., moves });
+            .insert(board.clone(), PPANodeInfo { count: 0., moves });
     }
 }
 
@@ -184,12 +196,12 @@ impl<G: Game + Clone + Eq + Hash, M: MoveCode<G> + Send + Sync> MultiplayerPolic
             self.simulate(board)
         }
 
-        let info: &UCTNodeInfo<G> = self.tree.get(&board).unwrap();
+        let info: &PPANodeInfo<G> = self.tree.get(&board).unwrap();
 
         let mut best_move = None;
         let mut max_visited = 0.;
         for m in board.possible_moves() {
-            let x: &UCTMoveInfo = info.moves.get(&m).unwrap();
+            let x: &PPAMoveInfo = info.moves.get(&m).unwrap();
             if x.N_a >= max_visited {
                 max_visited = x.N_a;
                 best_move = Some(m);

@@ -20,9 +20,9 @@ impl IBreakthrough {
                 PendingMove::SelectingPosition(x, y) => {
                     let x = *x;
                     let y = *y;
-                    let new_m = self
-                        .game
-                        .possible_moves()
+                    let possible_moves = self.game.possible_moves();
+                    let new_m = possible_moves
+                        .iter()
                         .filter(|m| {
                             (dx != 0 && (m.x as isize - x as isize) * dx > 0)
                                 || (dy != 0 && (m.y as isize - y as isize) * dy > 0)
@@ -89,8 +89,11 @@ impl cursive::view::View for IBreakthrough {
         );
         // print letters
         for x in 0..K {
-            printer.print((2+3*x, 0), &(('a' as usize +x) as u8 as char).to_string());
-            printer.print((0, 2+2*x), &format!("{}", 1+x));
+            printer.print(
+                (2 + 3 * x, 0),
+                &(('a' as usize + x) as u8 as char).to_string(),
+            );
+            printer.print((0, 2 + 2 * x), &format!("{}", 1 + x));
         }
         printer.print((1, 1), &format!("╔{}══╗", "══╤".repeat(K - 1)));
         for y in 0..K {
@@ -202,9 +205,10 @@ impl cursive::view::View for IBreakthrough {
                         }
                         PendingMove::SelectingPosition(x, y) => {
                             self.choosing_move = Some(PendingMove::SelectingMove(
-                                self
+                                *self
                                     .game
                                     .possible_moves()
+                                    .iter()
                                     .find(|m| m.x == x && m.y == y)
                                     .unwrap(),
                             ));
@@ -227,10 +231,8 @@ impl cursive::view::View for IBreakthrough {
     }
 }
 
-
 impl InteractiveGame for IBreakthrough {
     type G = Breakthrough;
-
 
     fn new(turn: <Breakthrough as Game>::Player) -> Self {
         IBreakthrough {
@@ -249,7 +251,8 @@ impl InteractiveGame for IBreakthrough {
     }
 
     fn choose_move(&mut self, cb: Box<dyn FnOnce(<Self::G as Base>::Move, &mut Self)>) {
-        let first_move = self.game.possible_moves().next().expect("Not possible moves ?");
+        let possible_moves = self.game.possible_moves();
+        let first_move = possible_moves.first().expect("Not possible moves ?");
         self.choosing_move = Some(PendingMove::SelectingPosition(first_move.x, first_move.y));
         self.choosing_move_cb = Some(cb)
     }

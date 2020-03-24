@@ -62,14 +62,17 @@ pub trait SingleplayerPolicy<T: Game> {
 
 use super::game::NoFeatures;
 
-pub fn get_multi<'a, G: mcts::MCTSGame + 'a>(name: &str) -> Box<dyn DynMultiplayerPolicyBuilder<'a, G> + Sync + 'a> {
+pub fn get_multi<'a, G: mcts::MCTSGame + 'a>(name: &str) -> Box<dyn DynMultiplayerPolicyBuilder<'a, G> + Sync + 'a> 
+where
+    G::Move: Send
+{
     match name {
         "rand" => Box::new(flat::Random::default()),
         "flat" => Box::new(flat::FlatMonteCarlo::default()),
         "flat_ucb" => Box::new(flat::FlatUCBMonteCarlo::default()),
         "uct" => Box::new(mcts::uct::UCT::default()),
         "rave" => Box::new(mcts::rave::RAVE::default()),
-        "ppa" => Box::new(ppa::PPA::<_, NoFeatures>::default()),
+       /* "ppa" => Box::new(ppa::PPA::<_, NoFeatures>::default()),*/
         "nmcs" => Box::new(nmcs::MultiNMCS::default()),
         _ => panic!("Policy '{}' not found.", name)
     }

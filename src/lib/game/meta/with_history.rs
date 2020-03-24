@@ -27,10 +27,8 @@ impl<G: Base + Clone, H> Clone for WithHistory<G, H> {
 
 impl<G: Base + Clone, H> Base for WithHistory<G, H> {
     type Move = G::Move;
-    type MoveIterator<'a> = G::MoveIterator<'a>;
 
-    #[allow(clippy::needless_lifetimes)]
-    fn possible_moves<'a>(&'a self) -> Self::MoveIterator<'a> {
+    fn possible_moves(&self) -> Vec<Self::Move> {
         self.state.possible_moves()
     }
 }
@@ -119,8 +117,8 @@ impl<G: Feature + Clone, H: Unsigned> Feature for WithHistory<G, H> {
     type StateDim = <G::StateDim as Dimension>::Larger;
     type ActionDim = G::ActionDim;
 
-    fn state_dimension() -> Self::StateDim {
-        let game_state_dimension = G::state_dimension();
+    fn state_dimension(&self) -> Self::StateDim {
+        let game_state_dimension = G::state_dimension(&self.state);
         let mut new_dim = game_state_dimension.insert_axis(Axis(0));
         new_dim[0] = H::to_usize();
         new_dim

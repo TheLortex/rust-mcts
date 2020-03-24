@@ -10,8 +10,9 @@ use std::cell::RefCell;
 use zerol::game::breakthrough::*;
 use zerol::game::{MoveTrait, InteractiveGame, Playable, Base, NoFeatures, Feature, Game};
 use zerol::policies::{
-    ppa::*, mcts::puct::{PUCT, PUCTSettings, PUCTNodeInfo, PUCTMoveInfo}, MultiplayerPolicy, MultiplayerPolicyBuilder,
+    ppa::*, mcts::puct::{PUCT, PUCTSettings, PUCTPolicy_, Evaluator, PUCTMoveInfo}, MultiplayerPolicy, MultiplayerPolicyBuilder,
 };
+use zerol::policies::mcts::{MCTSTree, MCTSNode};
 use ndarray::Array;
 
 use std::marker::PhantomData;
@@ -33,41 +34,62 @@ const MODEL_PATH: &str = "models/breakthrough";// todo: put in settings;
 type G = Breakthrough;
 type IG = ui::IBreakthrough;
 
-#[derive(Debug, Clone)]
-struct TreeEntry {
+
+#[derive(Clone)]
+struct TreeEntry<F>
+where
+    F: Evaluator<G>
+{
     name: String,
-    state: G,
+    state: MCTSTree<G, PUCTPolicy_<G,F>>,
     probability: f32,
     value: f32,
     N_visits: f32
 }
 
-impl fmt::Display for TreeEntry {
+impl<F> fmt::Display for TreeEntry<F>
+where
+    F: Evaluator<G>
+{
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "{} - {:^2.2} - {:^2.2} - {:^4}", self.name, self.probability, self.value, self.N_visits)
     }
 }
 
+impl<F> fmt::Debug for TreeEntry<F>
+where
+    F: Evaluator<G>
+{
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{} - {:^2.2} - {:^2.2} - {:^4}", self.name, self.probability, self.value, self.N_visits)
+    }
+}
 
-fn expand_tree(tree: &HashMap<G, PUCTNodeInfo<G>>, treeview: &mut TreeView<TreeEntry>, parent_row: usize, tree_node: &TreeEntry) {
-    if let Some(node) = tree.get(&tree_node.state) {
-        let mut moves: Vec<(&Move, &PUCTMoveInfo)> = node.moves.iter().collect();
-        moves.sort_by_key(|(a,_)| (a.x, a.y));
-        for (action, move_info) in moves {
-            let mut game_state = tree_node.state.clone();
-            game_state.play(action);
-            let item = TreeEntry {
-                name: action.name(),
-                state: game_state,
-                probability: move_info.pi,
-                value: move_info.Q,
-                N_visits: move_info.N_a,
-            };
-            if move_info.N_a == 0. {
-                treeview.insert_item(item, Placement::LastChild, parent_row);
-            } else {
-                treeview.insert_container_item(item, Placement::LastChild, parent_row);
-            }
+fn expand_tree<F>(treeview: &mut TreeView<TreeEntry<F>>, parent_row: usize) 
+where
+    F: Evaluator<G> + Clone
+{
+    let content: TreeEntry<F> = treeview.borrow_item(parent_row).unwrap().clone();
+
+    let tree_node = &content.state;
+    let mut moves: Vec<&Move> = tree_node.moves.iter().map(|(a,_)| a).collect();
+    moves.sort_by_key(|a| (a.x, a.y));
+    for action in moves {
+        let move_info = tree_node.info.moves.get(action).unwrap();
+        let state = tree_node.moves.get(action).unwrap().as_ref().clone();
+
+        let item = TreeEntry {
+            name: action.name(),
+            state,
+            probability: move_info.pi,
+            value: move_info.Q,
+            N_visits: move_info.N_a,
+        };
+
+        if move_info.N_a == 0. {
+            treeview.insert_item(item, Placement::LastChild, parent_row);
+        } else {
+            treeview.insert_container_item(item, Placement::LastChild, parent_row);
         }
     }
 }
@@ -91,13 +113,9 @@ where
 
         let state = IG::new(start);
 
-
-        let tree = Rc::new(RefCell::new(HashMap::new()));
-
         let left = LinearLayout::vertical()
             .child(ResizedView::new(SizeConstraint::AtMost(100), SizeConstraint::Free, FlexiLoggerView::scrollable()));
 
-        let tree_1 = tree.clone();
         let middle = LinearLayout::vertical()
             .child(NamedView::new("game", state))
             .child(Button::new_raw("Next", move |s| {
@@ -110,17 +128,17 @@ where
                     let action = if p1_to_play {
                         let action = p1.play(&state.get());
                         /* UPDATE TREE VIEW*/
-                        let mut tree = tree_1.borrow_mut();
-                        *tree = p1.inner.b.tree.clone();
+                        let root_node = p1.root.take().unwrap();
+                        let count = root_node.info.node.count;
 
-                        let treeview: &mut TreeView<TreeEntry> = &mut s.find_name("tree").unwrap();
+                        let treeview: &mut TreeView<TreeEntry<F>> = &mut s.find_name("tree").unwrap();
                         treeview.clear();
                         treeview.insert_container_item(TreeEntry {
                             name: "root".to_string(),
-                            state: state.get().clone(),
+                            state: root_node,
                             probability: 1.,
                             value: 1.,
-                            N_visits: tree.get(&state.get()).unwrap().count
+                            N_visits: count
                         }, Placement::After, 0);
                         /* UPDATE STATE*/
                         action
@@ -138,17 +156,13 @@ where
                 }
             }));
 
-        let mut treeview = TreeView::<TreeEntry>::new();
+        let mut treeview = TreeView::<TreeEntry<F>>::new();
 
         treeview.set_on_collapse(move |siv: &mut Cursive, row, is_collapsed, children| {
-            if !is_collapsed && children == 0 {
-                let tree_3 = tree.clone();
-                
-                siv.call_on_name("tree", move |treeview: &mut TreeView<TreeEntry>| {
-                    let content: TreeEntry = {
-                        treeview.borrow_item(row).unwrap().clone()
-                    };
-                    expand_tree(&tree_3.borrow(), treeview, row, &content);
+            if !is_collapsed && children == 0 {                
+                siv.call_on_name("tree", move |treeview: &mut TreeView<TreeEntry<F>>| {
+                    
+                    expand_tree(treeview, row);
                 });
             }
         });

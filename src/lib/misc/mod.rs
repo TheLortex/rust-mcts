@@ -35,7 +35,7 @@ pub fn game_evaluator<G: game::Feature>(
     pov: G::Player,
     board: &G,
 ) -> (Array<f32, G::ActionDim>, f32) {
-    let input_dimensions = G::state_dimension();
+    let input_dimensions = board.state_dimension();
 
     let board_tensor = Tensor::new(
         &input_dimensions

@@ -1,6 +1,6 @@
-use crate::game::{Playout, Game};
+use crate::game::{Game, Playout};
 use crate::policies::{
-    mcts::{BaseMCTSPolicy, MCTSPolicy, WithMCTSPolicy},
+    mcts::{BaseMCTSPolicy, MCTSNode, WithMCTSPolicy},
     MultiplayerPolicyBuilder,
 };
 use crate::settings;
@@ -13,96 +13,83 @@ use std::iter::*;
 
 /* UCT */
 
-#[derive(Debug)]
+#[derive(Debug,Clone,Copy)]
 pub struct UCTMoveInfo {
     pub Q: f32,
     pub N_a: f32,
 }
 
-#[derive(Debug)]
-pub struct UCTNodeInfo<G: Game> {
+#[derive(Debug,Clone,Copy)]
+pub struct UCTNodeInfo {
     pub count: f32,
-    pub moves: HashMap<G::Move, UCTMoveInfo>,
 }
 
 pub struct UCTPolicy_<G: Game> {
     color: G::Player,
-    tree: HashMap<G, UCTNodeInfo<G>>,
     UCT_WEIGHT: f32,
 }
 
 impl<G> BaseMCTSPolicy<G> for UCTPolicy_<G>
 where
     G::Move: Send,
-    G: super::MCTSGame
+    G: super::MCTSGame,
 {
-    type NodeInfo = UCTNodeInfo<G>;
+    type NodeInfo = UCTNodeInfo;
+    type MoveInfo = UCTMoveInfo;
     type PlayoutInfo = bool;
 
-    fn tree(&self) -> &HashMap<G, Self::NodeInfo> {
-        &self.tree
-    }
-
-    fn tree_mut(&mut self) -> &mut HashMap<G, Self::NodeInfo> {
-        &mut self.tree
-    }
-
-    fn select_move(&self, board: &G, exploration: bool) -> G::Move {
-        let moves = board.possible_moves();
-        let node_info = self.tree.get(&board).unwrap();
-        let N = node_info.count;
-
-        // select between optimism and pessimism in the confidence bound.
+    fn get_value(
+        &self,
+        board: &G,
+        action: &G::Move,
+        node_info: &Self::NodeInfo,
+        move_info: &Self::MoveInfo,
+        exploration: bool,
+    ) -> f32 {
         let move_cb_multiplier = if board.turn() == self.color { 1. } else { -1. };
 
-        let moves_scores = moves.map(|action| {
-            let v = node_info.moves.get(&action).unwrap();
-            let cb = self.UCT_WEIGHT * (N.ln() / (v.N_a + 1.)).sqrt();
-            let value = if exploration {
-                v.Q + move_cb_multiplier * cb
-            } else {
-                v.N_a
-            };
-            (value, action)
-        });
-
-        if board.turn() == self.color {
-            moves_scores.max_by_key(|x| FloatOrd(x.0)).unwrap().1
+        let N = node_info.count;
+        let cb = self.UCT_WEIGHT * (N.ln() / (move_info.N_a + 1.)).sqrt();
+        let value = if exploration {
+            move_info.Q + move_cb_multiplier * cb
         } else {
-            moves_scores.min_by_key(|x| FloatOrd(x.0)).unwrap().1
-        }
+            move_info.N_a
+        };
+
+        move_cb_multiplier * value
     }
 
     fn default_node(&self, board: &G) -> Self::NodeInfo {
-        let moves = HashMap::from_iter(
-            board
-                .possible_moves()
-                .map(|m| (m, UCTMoveInfo { Q: 0., N_a: 0. })),
-        );
-
-        UCTNodeInfo { count: 0., moves }
+        UCTNodeInfo { count: 0. }
     }
 
-    fn backpropagate(&mut self, history: Vec<(G, G::Move)>, playout: Self::PlayoutInfo) {
-        let z = if playout { 1. } else { 0. };
-        for (state, action) in history.iter() {
-            let mut node = self.tree.get_mut(&state).unwrap();
-            node.count += 1.;
-
-            let mut v = node.moves.get_mut(action).unwrap();
-            (*v).N_a += 1.;
-            (*v).Q += (z - (*v).Q) / (*v).N_a;
-        }
+    fn default_move(&self, board: &G, action: &G::Move) -> Self::MoveInfo {
+        UCTMoveInfo { Q: 0., N_a: 0. }
     }
-}
 
+    fn backpropagate(
+        &self,
+        _index: usize,
+        info: &mut MCTSNode<G, Self>,
+        action: &G::Move,
+        history: &[G::Move],
+        playout: &Self::PlayoutInfo,
+    ) {
+        let z = if *playout { 1. } else { 0. };
+        info.node.count += 1.;
+        let move_info = info.moves.get_mut(action).unwrap();
+        move_info.N_a += 1.;
+        move_info.Q += (z - move_info.Q) / move_info.N_a;
+    }
 
+    fn backpropagate_new_node(
+        &self,
+        node: &mut MCTSNode<G, Self>,
+        history: &[G::Move],
+        playout: &Self::PlayoutInfo,
+    ) {
+    }
 
-impl<G> MCTSPolicy<G> for UCTPolicy_<G>
-where
-    G::Move: Send,
-    G: super::MCTSGame
-{
     fn simulate(&self, board: &G) -> <Self as BaseMCTSPolicy<G>>::PlayoutInfo {
         board.playout_board().has_won(self.color)
     }
@@ -136,7 +123,7 @@ impl<G> MultiplayerPolicyBuilder<G> for UCT
 where
     G::Move: Send,
     G::Player: Send,
-    G: super::MCTSGame,     
+    G: super::MCTSGame,
 {
     type P = UCTPolicy<G>;
 
@@ -144,10 +131,10 @@ where
         WithMCTSPolicy::new(
             UCTPolicy_ {
                 color,
-                tree: HashMap::new(),
                 UCT_WEIGHT: self.UCT_WEIGHT,
             },
             self.N_PLAYOUTS,
         )
     }
 }
+

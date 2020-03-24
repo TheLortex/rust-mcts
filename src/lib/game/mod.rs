@@ -13,28 +13,25 @@ pub mod misere_breakthrough;
 pub mod weak_schur;*/
 pub mod meta;
 
-pub trait MoveTrait = PartialEq + Eq + Copy + Clone + Hash + Debug + Send + Sync;
+pub trait MoveTrait = PartialEq + Eq + Copy + Clone + Hash + Debug;
 
 /**
  * Common interface for single and multiplayer games
  */
-pub trait Base: Sized + Debug + Send + Sync {
+pub trait Base: Sized + Debug {
     /**
      * The type for a Move.
      */
     type Move: MoveTrait;
-
-    type MoveIterator<'a>: Iterator<Item=Self::Move> + Send;
     /**
      * Given the game state and turn, list possible actions.
      */
-    #[allow(clippy::needless_lifetimes)]
-    fn possible_moves<'a>(&'a self) -> Self::MoveIterator<'a>;
+    fn possible_moves(&self) -> Vec<Self::Move>;
     /**
      * Returns if the game has ended or not.
      */
     fn is_finished(&self) -> bool {
-        self.possible_moves().next().is_none()
+        self.possible_moves().is_empty()
     }
 }
 
@@ -50,7 +47,7 @@ pub trait Playable: Base {
      */
     fn random_move(&mut self) -> Option<Self::Move> {
         let actions = self.possible_moves();
-        let chosen_action = actions.collect::<Vec<Self::Move>>().choose(&mut rand::thread_rng()).copied();
+        let chosen_action = actions.choose(&mut rand::thread_rng()).copied();
 
         match chosen_action {
             None => (),
@@ -141,7 +138,7 @@ pub trait Feature: Game {
     type StateDim: Dimension;
     type ActionDim: Dimension;
 
-    fn state_dimension() -> Self::StateDim;
+    fn state_dimension(&self) -> Self::StateDim;
     fn action_dimension() -> Self::ActionDim;
 
     fn state_to_feature(&self, pov: Self::Player) -> Array<f32, Self::StateDim>;
@@ -176,12 +173,14 @@ pub trait InteractiveGame: cursive::view::View {
 }
 
 use crate::policies::MultiplayerPolicy;
+use std::fmt;
 
 pub fn simulate<'a, 'b, G: Game + Clone>(
     mut p1: Box<dyn MultiplayerPolicy<G> + 'a>,
     mut p2: Box<dyn MultiplayerPolicy<G> + 'b>,
     game: &G,
-) -> Vec<G> {
+) -> Vec<G> 
+{
     let mut history = vec![game.clone()];
 
     while {
@@ -192,6 +191,7 @@ pub fn simulate<'a, 'b, G: Game + Clone>(
             p2.play(&board)
         };
         board.play(&action);
+        //println!("{:?} => {:?}", action, board);
         let game_has_ended = board.is_finished();
         history.push(board);
         !game_has_ended

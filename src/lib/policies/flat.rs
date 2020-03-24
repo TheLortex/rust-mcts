@@ -13,7 +13,7 @@ pub struct RandomPolicy {}
 
 impl<G: Game> MultiplayerPolicy<G> for RandomPolicy {
     fn play(self: &mut RandomPolicy, board: &G) -> G::Move {
-        let moves = board.possible_moves().collect::<Vec<G::Move>>();
+        let moves = board.possible_moves();
         moves.choose(&mut rand::thread_rng()).copied().unwrap()
     }
 }
@@ -64,14 +64,13 @@ pub struct FlatMonteCarloPolicy<G: Game> {
 impl<G: Game + Clone> MultiplayerPolicy<G> for FlatMonteCarloPolicy<G> {
     fn play(self: &mut FlatMonteCarloPolicy<G>, board: &G) -> G::Move {
         let moves = board.possible_moves();
-        let moves_vec = moves.collect::<Vec<G::Move>>();
 
-        let n_playouts_per_move = self.N_PLAYOUTS / moves_vec.len();
+        let n_playouts_per_move = self.N_PLAYOUTS / moves.len();
 
         let mut best_move = None;
         let mut best_score = 0;
 
-        for m in moves_vec.into_iter() {
+        for m in moves.into_iter() {
             let mut b_after_move = board.clone();
             b_after_move.play(&m);
             let mut success = 0;
@@ -128,14 +127,13 @@ pub struct FlatUCBMonteCarloPolicy<G: Game> {
 impl<G: Game + Clone> MultiplayerPolicy<G> for FlatUCBMonteCarloPolicy<G> {
     fn play(self: &mut FlatUCBMonteCarloPolicy<G>, board: &G) -> G::Move {
         let moves = board.possible_moves();
-        let moves_vec = moves.collect::<Vec<G::Move>>();
-        let n_moves = moves_vec.len();
+        let n_moves = moves.len();
 
         let mut move_success: HashMap<&G::Move, i32> = HashMap::new();
         let mut move_count: HashMap<&G::Move, i32> = HashMap::new();
         let mut move_board: HashMap<&G::Move, G> = HashMap::new();
 
-        for m in moves_vec.iter() {
+        for m in moves.iter() {
             let mut b_after_move = board.clone();
             b_after_move.play(&m);
             if b_after_move.playout_board().has_won(self.color) {
@@ -152,7 +150,7 @@ impl<G: Game + Clone> MultiplayerPolicy<G> for FlatUCBMonteCarloPolicy<G> {
             let mut max_ucb = 0f32;
             let mut max_move = None;
 
-            for m in moves_vec.iter() {
+            for m in moves.iter() {
                 let count = *move_count.get(&m).unwrap() as f32;
                 let succ = *move_success.get(&m).unwrap() as f32;
                 let mean = succ / count;
@@ -175,7 +173,7 @@ impl<G: Game + Clone> MultiplayerPolicy<G> for FlatUCBMonteCarloPolicy<G> {
         let mut max_count = 0;
         let mut max_move = None;
 
-        for m in moves_vec.iter() {
+        for m in moves.iter() {
             let count = *move_count.get(&m).unwrap();
 
             if count >= max_count {

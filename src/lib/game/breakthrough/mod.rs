@@ -66,7 +66,7 @@ impl fmt::Debug for Cell {
 
         match self {
             Cell::Empty => write!(f, "{}", style.paint("  ")),
-            Cell::C(c) => write!(f, "{:?}", c),
+            Cell::C(c) => write!(f, "{}", c),
         }
     }
 }
@@ -90,7 +90,7 @@ impl MoveDirection {
     }
 }
 
-#[derive(Hash, Eq, PartialEq, Copy, Clone, Debug)]
+#[derive(Hash, Eq, PartialEq, Copy, Clone)]
 pub struct Move {
     pub color: Color,
     pub x: usize,
@@ -99,6 +99,12 @@ pub struct Move {
 }
 
 impl fmt::Display for Move {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.name())
+    }
+}
+
+impl fmt::Debug for Move {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}", self.name())
     }
@@ -325,18 +331,12 @@ impl Game for Breakthrough {
     }
 }
 
-type PossibleMovesIterator<'a> = impl Iterator<Item = Move> + 'a;
 
 impl Base for Breakthrough {
     type Move = Move;
-    type MoveIterator<'a> = PossibleMovesIterator<'a>;
-    /*
-        fn hash(&self) -> usize {
-            (self.hash << 1) + (self.turn as usize)
-        }
-    */
-    fn possible_moves<'a>(&'a self) -> Self::MoveIterator<'a> {
-        let target: &'a ArrayVec<_> = if self.turn == Color::Black {
+    
+    fn possible_moves(&self) -> Vec<Self::Move> {
+        let target: &ArrayVec<_> = if self.turn == Color::Black {
             &self.positions_black
         } else {
             &self.positions_white
@@ -345,21 +345,26 @@ impl Base for Breakthrough {
         let color = self.turn;
         let content = self.content;
 
-        target.iter().flat_map(move |(x, y)| {
-            [
-                MoveDirection::Front,
-                MoveDirection::FrontLeft,
-                MoveDirection::FrontRight,
-            ]
-            .iter()
-            .map(move |direction| Move {
-                color,
-                x: *x,
-                y: *y,
-                direction: *direction,
+        if self.is_finished() {
+            vec![]
+        } else {
+            target.iter().flat_map(move |(x, y)| {
+                [
+                    MoveDirection::Front,
+                    MoveDirection::FrontLeft,
+                    MoveDirection::FrontRight,
+                ]
+                .iter()
+                .map(move |direction| Move {
+                    color,
+                    x: *x,
+                    y: *y,
+                    direction: *direction,
+                })
+                .filter(move |action| action.is_valid(&content).is_some())
             })
-            .filter(move |action| action.is_valid(&content).is_some())
-        })
+            .collect()
+        }
     }
 
     fn is_finished(&self) -> bool {
@@ -370,7 +375,7 @@ impl Base for Breakthrough {
 impl Playable for Breakthrough {
     fn play(&mut self, m: &Move) {
         if m.color != self.turn() {
-            panic!("Wait. Not your turn.");
+            panic!("Wait. Not your turn. {:?}\n => {:?}", self, m);
         }
         match m.is_valid(&self.content) {
             None => panic!("Wait. This is illegal. "),
@@ -419,7 +424,7 @@ impl Feature for Breakthrough {
     type StateDim = ndarray::Ix3;
     type ActionDim = ndarray::Ix3;
 
-    fn state_dimension() -> Self::StateDim {
+    fn state_dimension(&self) -> Self::StateDim {
         ndarray::Dim([K, K, 3])
     }
 
@@ -428,7 +433,7 @@ impl Feature for Breakthrough {
     }
 
     fn state_to_feature(&self, pov: Self::Player) -> Array<f32, Self::StateDim> {
-        let mut features = ndarray::Array::zeros(Self::state_dimension());
+        let mut features = ndarray::Array::zeros(self.state_dimension());
 
         for ((x, y, z), row) in features.indexed_iter_mut() {
             if (z == 0 && self.content[x][y] == Cell::C(pov))
@@ -460,11 +465,13 @@ impl Feature for Breakthrough {
     fn feature_to_moves(&self, features: &Array<f32, Self::ActionDim>) -> HashMap<Self::Move, f32> {
         let z: f32 = self
             .possible_moves()
+            .iter()
             .map(|m| features[[m.x, m.y, m.direction as usize]])
             .sum();
         HashMap::from_iter(
             self.possible_moves()
-                .map(|m| (m, features[[m.x, m.y, m.direction as usize]] / z)),
+                .iter()
+                .map(|m| (*m, features[[m.x, m.y, m.direction as usize]] / z)),
         )
     }
 }

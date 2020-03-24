@@ -36,7 +36,7 @@ fn breakthrough_evaluator_batch<G>(
 where
     G: game::Feature,
 {
-    let input_dimensions = G::state_dimension();
+    let input_dimensions = board.state_dimension();
     let board_tensor = Tensor::new(
         &input_dimensions
             .as_array_view()
@@ -98,12 +98,13 @@ fn game_generator_task<G, GB>(
             };
             let action = policy.play(&state);
 
-            let game_node = policy.inner.b.tree.get(&state).unwrap();
+            let game_node = policy.root.as_ref().unwrap();
             let monte_carlo_distribution: HashMap<G::Move, f32> = HashMap::from_iter(
                 game_node
+                    .info
                     .moves
                     .iter()
-                    .map(|(k, v)| (*k, v.N_a / game_node.count)),
+                    .map(|(k, v)| (*k, v.N_a / game_node.info.node.count)),
             );
             history.push((state.clone(), monte_carlo_distribution));
 
@@ -126,13 +127,13 @@ fn game_generator_task<G, GB>(
 use std::time::{Instant, Duration};
 
 fn game_evaluator_task<G: Feature>(
+    feature_size: usize,
     g_and_s: Arc<RwLock<(Graph, Session)>>,
     receiver: mpsc::Receiver<EvaluatorChannel>,
     _bar: Arc<Box<ProgressBar>>,
 ) {
     println!("Starting game evaluator..");
 
-    let feature_size: usize = G::state_dimension().size();
     let policy_size: usize = G::action_dimension().size();
     let mut input_tensor: Tensor<f32> =
         Tensor::new(&[settings::GPU_BATCH_SIZE as u64, feature_size as u64]);
@@ -211,6 +212,9 @@ pub fn game_generator<G, GB>(
 
     //let gb_box = Arc::new(Box::new(game_builder));
 
+    let state: G = game_builder.create(G::players()[0]);
+    let feature_size = state.state_dimension().size();
+
     for _ in 0..settings::GPU_N_EVALUATORS {
         let (tx, rx) = mpsc::sync_channel::<EvaluatorChannel>(2 * settings::GPU_BATCH_SIZE);
         for _ in 0..settings::GPU_N_GENERATORS {
@@ -226,8 +230,8 @@ pub fn game_generator<G, GB>(
         drop(tx);
         let czop2 = bar_box2.clone();
         let g_and_s = graph_and_session.clone();
-        join_handles_ev.push(thread::spawn(||
-            game_evaluator_task::<G>(g_and_s, rx, czop2)
+        join_handles_ev.push(thread::spawn(move ||
+            game_evaluator_task::<G>(feature_size, g_and_s, rx, czop2)
         ));
     }
 

@@ -1,7 +1,7 @@
 #![allow(non_snake_case)]
 
 use atomic_counter::{AtomicCounter, RelaxedCounter};
-use clap::{App, Arg};
+use clap::{App, Arg, value_t_or_exit};
 use indicatif::{ProgressBar, ProgressStyle};
 use rand::seq::SliceRandom;
 use rayon::prelude::*;
@@ -108,6 +108,11 @@ fn main() {
                 .takes_value(true)
                 .possible_values(&["rand", "flat", "flat_ucb", "uct", "rave", "ppa", "nmcs"]),
         )
+        .arg(
+            Arg::with_name("n")
+                .short("n")
+                .takes_value(true)
+        )
         .arg(Arg::with_name("only-result").long("only-result"))
         .get_matches();
 
@@ -145,5 +150,7 @@ fn main() {
         println!("Player 2: {}", p2);
     }
 
-    println!("{}", monte_carlo_match::<_, _>(1, p1, p2, &gb, silent));
+    let n_games = value_t_or_exit!(args.value_of("n"), usize);
+
+    println!("{}", monte_carlo_match::<_, _>(n_games, p1, p2, &gb, silent));
 }
