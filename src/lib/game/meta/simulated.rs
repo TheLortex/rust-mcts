@@ -1,9 +1,6 @@
 use crate::game::*;
 
-use std::marker::PhantomData;
 use ndarray::{Array, Dimension};
-
-use std::iter::FromIterator;
 
 pub struct NetworkOutput<H: Dimension> {
     pub reward: f32,
@@ -11,20 +8,20 @@ pub struct NetworkOutput<H: Dimension> {
 }
 
 
-pub trait StateEvaluator<G,H>: Fn(Array<f32, G::StateDim>) -> NetworkOutput<H>
+pub trait RepresentationEvaluator<G,H>: Fn(Array<f32, G::StateDim>) -> Array<f32, H>
 where 
     G: Feature,
     H: Dimension,
 {}
 
-impl<G,H,I> StateEvaluator<G,H> for I
+impl<G,H,I> RepresentationEvaluator<G,H> for I
 where 
     G: Feature,
     H: Dimension,
-    I: Fn(Array<f32, G::StateDim>) -> NetworkOutput<H>
+    I: Fn(Array<f32, G::StateDim>) -> Array<f32, H>
 {}
 
-pub trait DynamicsEvaluator<G,H>: Clone + Fn(Array<f32, H>, Array<f32, G::ActionDim>) -> NetworkOutput<H>
+pub trait DynamicsEvaluator<G,H>: Clone + Fn(&Array<f32, H>, &Array<f32, G::ActionDim>) -> NetworkOutput<H>
 where
     G: Feature,
     H: Dimension,
@@ -33,7 +30,7 @@ impl<G,H,I> DynamicsEvaluator<G,H> for I
 where
     G: Feature,
     H: Dimension,
-    I: Clone + Fn(Array<f32, H>, Array<f32, G::ActionDim>) -> NetworkOutput<H>
+    I: Clone + Fn(&Array<f32, H>, &Array<f32, G::ActionDim>) -> NetworkOutput<H>
 {}
 
 pub struct Simulated<G, H, DE>
@@ -42,8 +39,9 @@ where
     H: Dimension,
     DE: DynamicsEvaluator<G, H>
 {
-    _g: PhantomData<G>,
+    turn: G::Player,
     hidden_state: Array<f32, H>,
+    possible_moves: Vec<G::Move>,
     total_reward: f32,
     dynamics_evaluator: DE,
     hidden_dimension: H,
@@ -57,7 +55,8 @@ where
 {
     fn clone(&self) -> Self {
         Self {
-            _g: PhantomData,
+            turn: self.turn,
+            possible_moves: self.possible_moves.clone(),
             hidden_dimension: self.hidden_dimension.clone(),
             hidden_state: self.hidden_state.clone(),
             dynamics_evaluator: self.dynamics_evaluator.clone(),
@@ -72,10 +71,11 @@ where
     H: Dimension,
     DE: DynamicsEvaluator<G, H> 
 {
-    pub fn new(hidden_state: Array<f32, H>, dynamics_evaluator: DE) -> Self {
+    pub fn new(turn: G::Player, hidden_state: Array<f32, H>, initial_possible_moves: Vec<G::Move>, dynamics_evaluator: DE) -> Self {
         let hidden_dimension = hidden_state.raw_dim();
         Simulated {
-            _g: PhantomData,
+            turn,
+            possible_moves: initial_possible_moves,
             hidden_state,
             total_reward: 0.,
             hidden_dimension,
@@ -105,11 +105,10 @@ where
     H: Dimension,
     SD: DynamicsEvaluator<G, H>
 {
-    type Move = usize;
+    type Move = G::Move;
 
-    #[allow(clippy::needless_lifetimes)]
-    fn possible_moves<'a>(&'a self) -> Vec<Self::Move> {
-        (0..G::action_dimension().size()).collect()
+    fn possible_moves(&self) -> Vec<Self::Move> {
+        self.possible_moves.clone()
     }
 }
 
@@ -119,8 +118,20 @@ where
     H: Dimension,
     SD: DynamicsEvaluator<G, H>
 {
-    fn play(&mut self, action: &Self::Move) {
+    fn play(&mut self, action: &Self::Move) -> f32 {
+        let mut move_as_prob: HashMap<Self::Move, f32> = HashMap::new();
+        move_as_prob.insert(*action, 1.);
+        let move_encoded = G::moves_to_feature(&move_as_prob);
+        
+        let network_output = (self.dynamics_evaluator)(&self.hidden_state, &move_encoded);
+        self.hidden_state  = network_output.hidden_state; 
 
+        self.possible_moves = G::all_possible_moves().to_vec();
+
+        // set next player
+        self.turn = G::player_after(self.turn);
+
+        network_output.reward
     }
 }
 
@@ -130,16 +141,18 @@ where
     H: Dimension,
     SD: DynamicsEvaluator<G, H>
 {
-    type Player = ();
+    type Player = G::Player;
 
     fn players() -> Vec<Self::Player> {
-        vec![()]
+        G::players()
     }
 
-    fn turn(&self) -> Self::Player {}
+    fn player_after(player: Self::Player) -> Self::Player {
+        G::player_after(player)
+    }
 
-    fn has_won(&self, _player: Self::Player) -> bool {
-        false
+    fn turn(&self) -> Self::Player {
+        self.turn
     }
 }
 
@@ -165,19 +178,19 @@ where
     }
 
     fn moves_to_feature(moves: &HashMap<Self::Move, f32>) -> Array<f32, Self::ActionDim> {
-        let mut features = ndarray::Array::zeros(Self::action_dimension());
-
-        for (action, proba) in moves.iter() {
-            features.as_slice_mut().unwrap()[*action] = *proba;
-        }
-
-        features
+        G::moves_to_feature(moves)
     }
 
     fn feature_to_moves(&self, features: &Array<f32, Self::ActionDim>) -> HashMap<Self::Move, f32> {
-        HashMap::from_iter(
-            features.iter().enumerate().map(|(i,x)| (i,*x))
-        )
+        G::all_feature_to_moves(features)
+    }
+
+    fn all_possible_moves() -> Vec<Self::Move> {
+        G::all_possible_moves()
+    }
+
+    fn all_feature_to_moves(features: &Array<f32, Self::ActionDim>) -> HashMap<Self::Move, f32> {
+        G::all_feature_to_moves(features)
     }
 }
 

@@ -1,94 +1,94 @@
 use crate::game;
 
-use crate::game::{Base, Feature, Game, GameBuilder};
-use crate::misc::tensorflow_call;
+use crate::game::meta::simulated::Simulated;
+use crate::game::GameBuilder; 
 use crate::policies::{
-    mcts::puct::{PUCT, PUCTSettings},
+    mcts::muz::Muz,
+    mcts::puct::PUCTSettings,
     MultiplayerPolicy, MultiplayerPolicyBuilder,
 };
 use crate::settings;
 
 use indicatif::{ProgressBar, ProgressStyle};
-use ndarray::{Array, ArrayBase, Dimension};
+use ndarray::{Array, Axis, Dimension, Ix1};
 use rand::seq::SliceRandom;
 use std::collections::HashMap;
+use std::hash::Hash;
 use std::iter::FromIterator;
 use std::marker::PhantomData;
-use tensorflow::{Graph, Session, Tensor};
-use std::hash::Hash;
 use std::sync::mpsc;
-use gstuff::oneshot;
+use tensorflow::{Graph, Session};
 
-/* 
+pub mod evaluator;
+use self::evaluator::{
+    DynamicsEvaluatorChannel, PredictionEvaluatorChannel, RepresentationEvaluatorChannel,
+};
+
+/*
  * EvaluatorChannel takes a tensor and a way to send back the inference result.
  */
-type EvaluatorChannel = (Tensor<f32>, oneshot::Sender<(Tensor<f32>, Tensor<f32>)>);
-pub type GameHistoryChannel<G> = (
-    <G as Game>::Player,
-    Vec<(G, HashMap<<G as Base>::Move, f32>)>,
-);
-
-fn breakthrough_evaluator_batch<G>(
-    sender: mpsc::SyncSender<EvaluatorChannel>,
-    pov: G::Player,
-    board: G,
-) -> (Array<f32, G::ActionDim>, f32)
+pub struct GameHistoryEntry<G>
 where
     G: game::Feature,
 {
-    let input_dimensions = board.state_dimension();
-    let board_tensor = Tensor::new(
-        &input_dimensions
-            .as_array_view()
-            .to_slice()
-            .unwrap()
-            .iter()
-            .map(|i| *i as u64)
-            .collect::<Vec<u64>>(),
-    )
-    .with_values(&board.state_to_feature(pov).into_raw_vec())
-    .unwrap();
-
-    let (resp_tx, resp_rx) = oneshot::oneshot();
-
-    sender.send((board_tensor, resp_tx)).ok().unwrap();
-    let (policy_tensor, value_tensor) = resp_rx.recv().unwrap();
-
-    let policy =
-        ArrayBase::from_shape_vec(G::action_dimension(), (&policy_tensor).to_vec()).unwrap();
-    let value = value_tensor[0];
-    (policy, value)
+    pub state: Array<f32, <G::StateDim as Dimension>::Larger>,
+    pub policy: Array<f32, <G::ActionDim as Dimension>::Larger>,
+    pub action: Array<f32, <G::ActionDim as Dimension>::Larger>,
+    pub value: Array<f32, Ix1>,
+    pub reward: Array<f32, Ix1>,
+    pub turn: Vec<f32>,
 }
-
 
 fn game_generator_task<G, GB>(
     puct_settings: PUCTSettings,
     game_builder: GB,
-    sender: mpsc::SyncSender<EvaluatorChannel>,
-    output_chan: mpsc::SyncSender<GameHistoryChannel<G>>,
+    prediction_channel: mpsc::SyncSender<PredictionEvaluatorChannel>,
+    dynamics_channel: mpsc::SyncSender<DynamicsEvaluatorChannel>,
+    representation_channel: mpsc::SyncSender<RepresentationEvaluatorChannel>,
+    output_chan: mpsc::SyncSender<GameHistoryEntry<G>>,
     indicator_bar: Arc<Box<ProgressBar>>,
 ) where
-    G: game::Feature + Send + Sync + Clone + Hash + Eq,
+    G: game::Feature + game::SingleWinner + Send + Sync + 'static,
     G::Move: Send + Sync,
     G::Player: Send + Sync,
     GB: GameBuilder<G>,
 {
-    let puct = PUCT {
-        s: puct_settings,
-        N_PLAYOUTS: settings::DEFAULT_N_PLAYOUTS,
-        evaluate: |pov: G::Player, board: &G| {
-            breakthrough_evaluator_batch(sender.clone(), pov, board.clone())
-        },
+    let hidden_shape = ndarray::Ix3(5, 5, 16); // TODO !!
+
+    let muz = Muz::<G, ndarray::Ix3, _, _, _> {
         _g: PhantomData,
+        _h: PhantomData,
+        N_PLAYOUTS: 100,
+        puct: puct_settings,
+        hidden_evaluate: |pov: G::Player, board: &Simulated<G, ndarray::Ix3, _>| {
+            evaluator::prediction(prediction_channel.clone(), pov, board.clone())
+        },
+        state_evaluate: |board: Array<f32, G::StateDim>| {
+            evaluator::representation(representation_channel.clone(), hidden_shape, board)
+        },
+        dynamics_evaluate: |board, action| {
+            evaluator::dynamics(
+                dynamics_channel.clone(),
+                hidden_shape,
+                board.clone(),
+                action.clone(),
+            )
+        },
     };
 
     loop {
-        let mut p1 = puct.create(G::players()[0]);
-        let mut p2 = puct.create(G::players()[1]);
+        let mut p1 = muz.create(G::players()[0]);
+        let mut p2 = muz.create(G::players()[1]);
 
         let mut state: G =
             game_builder.create(*G::players().choose(&mut rand::thread_rng()).unwrap());
-        let mut history = vec![];
+
+        let mut history_state = vec![];
+        let mut history_policy = vec![];
+        let mut history_value = vec![];
+        let mut history_action = vec![];
+        let mut history_reward = vec![];
+        let mut history_turn = vec![];
 
         while { !state.is_finished() } {
             let policy = if state.turn() == G::players()[0] {
@@ -98,81 +98,64 @@ fn game_generator_task<G, GB>(
             };
             let action = policy.play(&state);
 
-            let game_node = policy.root.as_ref().unwrap();
+            /* Save search statistics */
+            let mcts = policy.mcts.take().unwrap();
+            let game_node = mcts.root.as_ref().unwrap();
+            let visit_count = game_node.borrow().info.node.count;
+
             let monte_carlo_distribution: HashMap<G::Move, f32> = HashMap::from_iter(
                 game_node
+                    .borrow()
                     .info
                     .moves
                     .iter()
-                    .map(|(k, v)| (*k, v.N_a / game_node.info.node.count)),
+                    .map(|(k, v)| (*k, v.N_a / visit_count)),
             );
-            history.push((state.clone(), monte_carlo_distribution));
 
-            state.play(&action);
+            let root_value: f32 = game_node
+                .borrow()
+                .info
+                .moves
+                .iter()
+                .map(|(_, v)| v.reward + (puct_settings.DISCOUNT * v.Q * v.N_a / visit_count))
+                .sum();
+
+            history_turn.push(state.turn().into() as f32);
+            history_state.push(
+                state
+                    .state_to_feature(state.turn())
+                    .insert_axis(Axis(0)),
+            );
+            history_policy.push(
+                G::moves_to_feature(&monte_carlo_distribution)
+                    .insert_axis(Axis(0)),
+            );
+            history_value .push(Array::from_elem(ndarray::Ix1(1), root_value));
+            history_action.push(G::move_to_feature(action).insert_axis(Axis(0)));
+
+            let reward = state.play(&action);
+            history_reward.push(Array::from_elem(ndarray::Ix1(1), reward));
         }
 
-        // warning: this assumes a 2-player game.
-        let winner = if state.has_won(G::players()[0]) {
-            G::players()[0]
-        } else {
-            G::players()[1]
-        };
+        let history_state_view: Vec<_> = history_state.iter().map(|x| x.view()).collect();
+        let history_policy_view: Vec<_> = history_policy.iter().map(|x| x.view()).collect();
+        let history_action_view: Vec<_> = history_action.iter().map(|x| x.view()).collect();
+        let history_value_view: Vec<_> = history_value.iter().map(|x| x.view()).collect();
+        let history_reward_view: Vec<_> = history_reward.iter().map(|x| x.view()).collect();
 
-        output_chan.send((winner, history)).ok().unwrap();
+        output_chan
+            .send(GameHistoryEntry {
+                state: ndarray::stack(Axis(0), &history_state_view).unwrap(),
+                policy: ndarray::stack(Axis(0), &history_policy_view).unwrap(),
+                action: ndarray::stack(Axis(0), &history_action_view).unwrap(),
+                value: ndarray::stack(Axis(0), &history_value_view).unwrap(),
+                reward: ndarray::stack(Axis(0), &history_reward_view).unwrap(),
+                turn: history_turn
+            })
+            .ok()
+            .unwrap();
 
         indicator_bar.inc(1 as u64);
-    }
-}
-
-use std::time::{Instant, Duration};
-
-fn game_evaluator_task<G: Feature>(
-    feature_size: usize,
-    g_and_s: Arc<RwLock<(Graph, Session)>>,
-    receiver: mpsc::Receiver<EvaluatorChannel>,
-    _bar: Arc<Box<ProgressBar>>,
-) {
-    println!("Starting game evaluator..");
-
-    let policy_size: usize = G::action_dimension().size();
-    let mut input_tensor: Tensor<f32> =
-        Tensor::new(&[settings::GPU_BATCH_SIZE as u64, feature_size as u64]);
-    let mut tx_buf = vec![];
-    let mut idx = 0;
-
-    let mut last_time = Instant::now();
-    let timeout =  Duration::from_nanos(1_000_000_000/10_000); //10kHz: Should be the number of CPU-GPU roundtrip/sec.
-
-    loop {
-        let recv_result = receiver.recv_deadline(last_time + timeout);
-
-        let send_batch = match recv_result {
-            Ok((input, tx)) => {
-                input_tensor[idx * feature_size..(idx + 1) * feature_size].clone_from_slice(&input);
-                tx_buf.push(tx);
-                idx += 1;
-                idx == settings::GPU_BATCH_SIZE
-            },
-            Err(mpsc::RecvTimeoutError::Timeout) => true,
-            x => panic!(x)
-        };
-
-
-        if send_batch {
-            let (policies, values) = {
-                let (ref graph, ref session) = *g_and_s.read().unwrap();
-                tensorflow_call(&session, &graph, &input_tensor)
-            };
-
-            for i in (0..idx).rev() {
-                let policy = Tensor::from(&policies[i * policy_size..(i + 1) * policy_size]);
-                let value = Tensor::from(values[i]);
-                tx_buf.pop().unwrap().send((policy, value));
-            }
-            idx = 0;
-            tx_buf.clear();
-            last_time = Instant::now();
-        }
     }
 }
 
@@ -183,10 +166,12 @@ use std::thread;
 pub fn game_generator<G, GB>(
     puct_settings: PUCTSettings,
     game_builder: GB,
-    graph_and_session: Arc<RwLock<(Graph, Session)>>,
-    output_chan: mpsc::SyncSender<GameHistoryChannel<G>>,
+    prediction_tensorflow: Arc<RwLock<(Graph, Session)>>,
+    dynamics_tensorflow: Arc<RwLock<(Graph, Session)>>,
+    representation_tensorflow: Arc<RwLock<(Graph, Session)>>,
+    output_chan: mpsc::SyncSender<GameHistoryEntry<G>>,
 ) where
-    G: game::Feature + Send + Sync + Clone + Hash + Eq + 'static,
+    G: game::Feature + game::SingleWinner + Send + Sync + Clone + Hash + Eq + 'static,
     G::Move: Send + Sync,
     G::Player: Send + Sync,
     GB: GameBuilder<G> + Copy + Sync + Send + 'static,
@@ -199,40 +184,56 @@ pub fn game_generator<G, GB>(
     indicator_bar.enable_steady_tick(200);
     let bar_box = Arc::new(Box::new(indicator_bar));
 
-    let bar2 = ProgressBar::new_spinner();
-    bar2.set_style(
-        ProgressStyle::default_spinner()
-            .template("[{spinner}] {wide_bar} {pos} moves generated ({elapsed_precise})"),
-    );
-    //bar2.enable_steady_tick(200);
-    let bar_box2 = Arc::new(Box::new(bar2));
-
     let mut join_handles = vec![];
     let mut join_handles_ev = vec![];
 
     //let gb_box = Arc::new(Box::new(game_builder));
 
     let state: G = game_builder.create(G::players()[0]);
-    let feature_size = state.state_dimension().size();
+
+    let board_size  = state.state_dimension().size();
+    let action_size = G::action_dimension().size();
+    let repr_size   = 5*5*16;// TODO 
+
+    log::debug!("Representation: {}", repr_size);
+    log::debug!("Action: {}", action_size);
+    log::debug!("Board: {}", board_size);
+
 
     for _ in 0..settings::GPU_N_EVALUATORS {
-        let (tx, rx) = mpsc::sync_channel::<EvaluatorChannel>(2 * settings::GPU_BATCH_SIZE);
+        
+        let (pred_tx, pred_rx) = mpsc::sync_channel::<PredictionEvaluatorChannel>(2 * settings::GPU_BATCH_SIZE);
+        let (dyn_tx, dyn_rx) = mpsc::sync_channel::<DynamicsEvaluatorChannel>(2 * settings::GPU_BATCH_SIZE);
+        let (repr_tx, repr_rx) = mpsc::sync_channel::<RepresentationEvaluatorChannel>(2 * settings::GPU_BATCH_SIZE);
+
         for _ in 0..settings::GPU_N_GENERATORS {
-            let cmd_tx = tx.clone();
+            let pred_tx = pred_tx.clone();
+            let dyn_tx = dyn_tx.clone();
+            let repr_tx = repr_tx.clone();
             let output_tx = output_chan.clone();
             let czop = bar_box.clone();
 
-            
-            join_handles.push(thread::spawn(move ||
-                game_generator_task(puct_settings, game_builder, cmd_tx, output_tx, czop)
-            ));
+            join_handles.push(thread::spawn(move || {
+                game_generator_task(puct_settings, game_builder, pred_tx, dyn_tx, repr_tx, output_tx, czop)
+            }));
         }
-        drop(tx);
-        let czop2 = bar_box2.clone();
-        let g_and_s = graph_and_session.clone();
-        join_handles_ev.push(thread::spawn(move ||
-            game_evaluator_task::<G>(feature_size, g_and_s, rx, czop2)
-        ));
+    
+
+        let prediction_tensorflow = prediction_tensorflow.clone();
+        let representation_tensorflow = representation_tensorflow.clone();
+        let dynamics_tensorflow = dynamics_tensorflow.clone();
+
+        join_handles_ev.push(thread::spawn(move || {
+            evaluator::prediction_task(repr_size, action_size, prediction_tensorflow, pred_rx)
+        }));
+
+        join_handles_ev.push(thread::spawn(move || {
+            evaluator::representation_task(board_size, repr_size, representation_tensorflow, repr_rx)
+        }));
+
+        join_handles_ev.push(thread::spawn(move || {
+            evaluator::dynamics_task(repr_size, action_size, dynamics_tensorflow, dyn_rx)
+        }));
     }
 
     for join_handle in join_handles.drain(..) {

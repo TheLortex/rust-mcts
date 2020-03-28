@@ -11,7 +11,7 @@ use tensorflow::{Graph, Session, SessionOptions};
 use zerol::game;
 use zerol::game::breakthrough::*;
 use zerol::game::meta::with_history::*;
-use zerol::misc::game_evaluator;
+use zerol::misc::tf::game_evaluator;
 use zerol::policies::{get_multi, mcts::puct::*, DynMultiplayerPolicyBuilder};
 use zerol::settings;
 
@@ -24,7 +24,7 @@ pub fn monte_carlo_match<
     'c,
     'b,
     'd,
-    G: game::Game + Clone,
+    G: game::Game + game::SingleWinner + Clone,
     GB: game::GameBuilder<G> + Sync,
 >(
     n: usize,
@@ -62,7 +62,7 @@ pub fn monte_carlo_match<
             let result = if game::simulate(p1, p2, &game)
                 .last()
                 .unwrap()
-                .has_won(G::players()[0])
+                .winner() == Some(G::players()[0])
             {
                 c1.inc();
                 1
@@ -124,16 +124,18 @@ fn main() {
 
     let puct = PUCT {
         _g: PhantomData,
-        s: PUCTSettings::default(),
+        config: PUCTSettings::default(),
         N_PLAYOUTS: settings::DEFAULT_N_PLAYOUTS,
         evaluate: |pov, board: &WithHistory<Breakthrough, U2>| {
             //evaluate: |pov, board: &Breakthrough| {
             game_evaluator(&session, &graph, pov, board)
         },
     };
+    
     let p1 = if let Some(val) = args.value_of("against") {
         get_multi(val)
     } else {
+        
         Box::new(puct)
     };
     /* Build contender. */

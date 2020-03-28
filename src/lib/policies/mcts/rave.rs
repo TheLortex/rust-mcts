@@ -1,15 +1,15 @@
-use crate::game::{Game, Playout};
+use crate::game::{Game, Playout, SingleWinner};
 use crate::policies::{
-    mcts::{BaseMCTSPolicy, MCTSNode, WithMCTSPolicy},
+    mcts::{BaseMCTSPolicy, MCTSTree, WithMCTSPolicy},
     MultiplayerPolicyBuilder,
 };
 use crate::settings;
 
-use float_ord::FloatOrd;
-use std::collections::HashMap;
 use std::f32;
 use std::fmt;
 use std::iter::*;
+use std::rc::Rc;
+use std::cell::RefCell;
 
 /* RAVE */
 
@@ -31,7 +31,7 @@ pub struct RAVEPolicy_<G: Game> {
     UCT_WEIGHT: f32,
 }
 
-impl<G: super::MCTSGame> BaseMCTSPolicy<G> for RAVEPolicy_<G> {
+impl<G: super::MCTSGame + SingleWinner> BaseMCTSPolicy<G> for RAVEPolicy_<G> {
     type NodeInfo = RAVENodeInfo;
     type MoveInfo = RAVEMoveInfo;
     type PlayoutInfo = (bool, Vec<G::Move>); // (has_won, history_default)
@@ -39,22 +39,22 @@ impl<G: super::MCTSGame> BaseMCTSPolicy<G> for RAVEPolicy_<G> {
     fn get_value(
         &self,
         board: &G,
-        action: &G::Move,
+        _action: &G::Move,
         node_info: &Self::NodeInfo,
         move_info: &Self::MoveInfo,
-        exploration: bool,
+        _exploration: bool,
     ) -> f32 {
         let optimistic = board.turn() == self.color;
-        let value = self.eval(node_info, move_info, optimistic);
+        let value = self.eval(*node_info, move_info, optimistic);
         let multiplier = if board.turn() == self.color { 1. } else { -1. };
         multiplier * value
     }
 
-    fn default_node(&self, board: &G) -> Self::NodeInfo {
+    fn default_node(&self, _board: &G) -> Self::NodeInfo {
         RAVENodeInfo { count: 0. }
     }
 
-    fn default_move(&self, board: &G, action: &G::Move) -> Self::MoveInfo {
+    fn default_move(&self, _board: &G, _action: &G::Move) -> Self::MoveInfo {
         RAVEMoveInfo {
             wins: 0.,
             wins_AMAF: 0.,
@@ -63,14 +63,47 @@ impl<G: super::MCTSGame> BaseMCTSPolicy<G> for RAVEPolicy_<G> {
         }
     }
 
-    fn backpropagate_new_node(
-        &self,
-        node: &mut MCTSNode<G, Self>,
-        history: &[G::Move],
-        playout: &Self::PlayoutInfo,
-    ) {
-    }
+    fn backpropagate(&mut self, leaf: Rc<RefCell<MCTSTree<G, Self>>>, history: &[G::Move], (has_won, history_default): Self::PlayoutInfo) {
+        let z = if has_won { 1. } else { 0. };
 
+        let mut index = history.len();
+        let whole_history = [history, &history_default].concat();
+
+        let mut current_node = leaf;
+        while current_node.borrow().parent.is_some() {
+            // extract child
+            let (tree_pointer, action) = current_node
+                .borrow()
+                .parent
+                .as_ref()
+                .map(|(t, a)| (t.upgrade().unwrap(), *a))
+                .unwrap();
+
+            current_node = tree_pointer;
+
+            /* Store standard statistics */
+            let mut node = current_node.borrow_mut();
+            node.info.node.count += 1.;
+
+            let move_info = node.info.moves.get_mut(&action).unwrap();
+            move_info.count += 1.;
+            move_info.wins  += (z - move_info.wins) / move_info.count;
+
+            // RAVE is weaker than UCT: TODO investigate
+            /* Store AMAF statistics */
+            index -= 1;
+            for u in (index + 2..whole_history.len()).step_by(2) {
+                let action_u = whole_history[u];
+                if (index..u).step_by(2).all(|i| action_u != whole_history[i]) {
+                    if let Some(mut v_amaf) = node.info.moves.get_mut(&action_u) {
+                        (*v_amaf).count_AMAF += 1.;
+                        (*v_amaf).wins_AMAF += (z - (*v_amaf).wins_AMAF) / (*v_amaf).count_AMAF;
+                    }
+                }
+            }
+        }
+    }
+/*
     fn backpropagate(
         &self,
         index: usize,
@@ -98,12 +131,12 @@ impl<G: super::MCTSGame> BaseMCTSPolicy<G> for RAVEPolicy_<G> {
                 }
             }
         }
-    }
+    }*/
 
     fn simulate(&self, board: &G) -> <Self as BaseMCTSPolicy<G>>::PlayoutInfo {
-        let (s, default) = board.playout_history();
+        let (s, default, _) = board.playout_history(self.color);
         let default: Vec<G::Move> = default.iter().map(|(_,m)| *m).collect();
-        (s.has_won(self.color), default)
+        (s.winner() == Some(self.color), default)
     }
 }
 
@@ -119,7 +152,7 @@ impl<G: super::MCTSGame> RAVEPolicy_<G> {
 
     fn eval(
         self: &RAVEPolicy_<G>,
-        node_info: &RAVENodeInfo,
+        node_info: RAVENodeInfo,
         v: &RAVEMoveInfo,
         optimistic: bool,
     ) -> f32 {
@@ -161,7 +194,7 @@ impl<G> MultiplayerPolicyBuilder<G> for RAVE
 where
     G::Move: Send,
     G::Player: Send,
-    G: super::MCTSGame
+    G: super::MCTSGame + SingleWinner
 {
     type P = RAVEPolicy<G>;
 

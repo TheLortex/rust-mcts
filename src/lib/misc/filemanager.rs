@@ -1,12 +1,12 @@
 use crate::game;
-use crate::game::{meta::with_history::WithHistory, Feature};
+use crate::r#async::GameHistoryEntry;
 
-use typenum::Unsigned;
 use nix::unistd::mkfifo;
 use nix::sys::stat;
 use std::fs::{File, OpenOptions};
 use std::io::Write;
 use std::collections::HashMap;
+
 
 pub struct FileManager {
     f: File,
@@ -27,13 +27,18 @@ impl FileManager {
         FileManager { f }
     }
 
-    pub fn append<G: game::Feature + Clone,N: Unsigned>(&mut self, board: &WithHistory<G,N>, policy: &HashMap<G::Move, f32>, value: f32) {
-        let current_turn = board.state.turn();
-        let vec_board = board.state_to_feature(current_turn).into_raw_vec();
-        let vec_policy = G::moves_to_feature(policy).into_raw_vec();
+    pub fn append<G: game::Feature>(&mut self, game: GameHistoryEntry<G>) {
+        let mut result = HashMap::new();
 
-        let toser = (vec_board, vec_policy, value);
-        let ser = serde_pickle::to_vec(&toser, true).unwrap();
+        result.insert("turn", game.turn);
+        result.insert("state", game.state.into_raw_vec());
+        result.insert("policy", game.policy.into_raw_vec());
+        result.insert("value", game.value.into_raw_vec());
+        result.insert("action", game.action.into_raw_vec());
+        result.insert("reward", game.reward.into_raw_vec());
+        
+
+        let ser = serde_pickle::to_vec(&result, true).unwrap();
         self.f.write_all(&ser.len().to_be_bytes()).expect(":c");
         self.f.write_all(&ser).expect("Could not write file..");
     }

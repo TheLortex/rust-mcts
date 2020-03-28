@@ -7,32 +7,34 @@ use cursive::traits::*;
 use std::cell::RefCell;
 
 
+use zerol::game::meta::with_history::{WithHistory, IWithHistory};
 use zerol::game::breakthrough::*;
-use zerol::game::{MoveTrait, InteractiveGame, Playable, Base, NoFeatures, Feature, Game};
+use zerol::game::{MoveTrait, InteractiveGame, Base, NoFeatures, Feature, Game, SingleWinner};
 use zerol::policies::{
-    ppa::*, mcts::puct::{PUCT, PUCTSettings, PUCTPolicy_, Evaluator, PUCTMoveInfo}, MultiplayerPolicy, MultiplayerPolicyBuilder,
+    ppa::*, mcts::puct::{PUCT, PUCTSettings, PUCTPolicy_, Evaluator}, MultiplayerPolicy, MultiplayerPolicyBuilder,
 };
-use zerol::policies::mcts::{MCTSTree, MCTSNode};
+use zerol::policies::mcts::{MCTSTree};
 use ndarray::Array;
 
 use std::marker::PhantomData;
 use zerol::settings;
-use zerol::misc::game_evaluator;
+use zerol::misc::tf::game_evaluator;
 
 use tensorflow::{Graph, Session, SessionOptions};
 
 use std::rc::Rc;
 use cursive_flexi_logger_view::FlexiLoggerView;
 use flexi_logger::{Logger, LogTarget};
-use std::collections::HashMap;
 use std::fmt;
+
+use typenum::U2;
 
 use cursive_tree_view::{Placement, TreeView};
 
 const MODEL_PATH: &str = "models/breakthrough";// todo: put in settings;
 
-type G = Breakthrough;
-type IG = ui::IBreakthrough;
+type G = WithHistory<Breakthrough, U2>;
+type IG = IWithHistory<ui::IBreakthrough, U2>;
 
 
 #[derive(Clone)]
@@ -41,10 +43,11 @@ where
     F: Evaluator<G>
 {
     name: String,
-    state: MCTSTree<G, PUCTPolicy_<G,F>>,
+    state: Rc<RefCell<MCTSTree<G, PUCTPolicy_<G,F>>>>,
     probability: f32,
     value: f32,
-    N_visits: f32
+    N_visits: f32,
+    reward: f32,
 }
 
 impl<F> fmt::Display for TreeEntry<F>
@@ -52,7 +55,7 @@ where
     F: Evaluator<G>
 {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{} - {:^2.2} - {:^2.2} - {:^4}", self.name, self.probability, self.value, self.N_visits)
+        write!(f, "{} | P{:^2.2} | V{:^2.2} | N{:^4} | R{:^2}", self.name, self.probability, self.value, self.N_visits, self.reward)
     }
 }
 
@@ -61,7 +64,7 @@ where
     F: Evaluator<G>
 {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{} - {:^2.2} - {:^2.2} - {:^4}", self.name, self.probability, self.value, self.N_visits)
+        write!(f, "{} | P:{:^2.2} | V:{:^2.2} | N:{:^4} | R:{:^2}", self.name, self.probability, self.value, self.N_visits, self.reward)
     }
 }
 
@@ -71,12 +74,13 @@ where
 {
     let content: TreeEntry<F> = treeview.borrow_item(parent_row).unwrap().clone();
 
-    let tree_node = &content.state;
+    let tree_node = content.state.borrow();
+
     let mut moves: Vec<&Move> = tree_node.moves.iter().map(|(a,_)| a).collect();
     moves.sort_by_key(|a| (a.x, a.y));
     for action in moves {
         let move_info = tree_node.info.moves.get(action).unwrap();
-        let state = tree_node.moves.get(action).unwrap().as_ref().clone();
+        let state = tree_node.moves.get(action).unwrap().clone();
 
         let item = TreeEntry {
             name: action.name(),
@@ -84,6 +88,7 @@ where
             probability: move_info.pi,
             value: move_info.Q,
             N_visits: move_info.N_a,
+            reward: move_info.reward,
         };
 
         if move_info.N_a == 0. {
@@ -129,13 +134,14 @@ where
                         let action = p1.play(&state.get());
                         /* UPDATE TREE VIEW*/
                         let root_node = p1.root.take().unwrap();
-                        let count = root_node.info.node.count;
+                        let count = root_node.borrow().info.node.count;
 
                         let treeview: &mut TreeView<TreeEntry<F>> = &mut s.find_name("tree").unwrap();
                         treeview.clear();
                         treeview.insert_container_item(TreeEntry {
                             name: "root".to_string(),
                             state: root_node,
+                            reward: 0.,
                             probability: 1.,
                             value: 1.,
                             N_visits: count
@@ -146,7 +152,7 @@ where
                         p2.play(&state.get())
                     };
                     log::info!("{}", action);
-                    state.get_mut().play(&action);
+                    state.play(&action);
                 };
 
                 if state.get().is_finished() {
@@ -185,7 +191,7 @@ where
 
 fn main() {
     let mut siv = Cursive::default();
-
+    siv.set_fps(0);
 
     Logger::with_env_or_str("info")
         .log_target(LogTarget::Writer(
@@ -206,9 +212,9 @@ fn main() {
 
     let puct = PUCT {
         _g: PhantomData,
-        s: PUCTSettings::default(),
+        config: PUCTSettings::default(),
         N_PLAYOUTS: settings::DEFAULT_N_PLAYOUTS,
-        evaluate: move |pov, board: &Breakthrough| {
+        evaluate: move |pov, board: &G| {
             game_evaluator(&session, &graph, pov, board)
         },
     };

@@ -1,14 +1,12 @@
-use crate::game;
-use crate::game::Game;
+use crate::game::{Game, Base};
 use crate::policies::MultiplayerPolicy;
 
-use std::borrow::BorrowMut;
 use std::collections::HashMap;
 use std::fmt::Debug;
-use std::hash::Hash;
 use std::iter::FromIterator;
 use std::marker::PhantomData;
-//pub mod muz;
+
+pub mod muz;
 pub mod puct;
 pub mod rave;
 pub mod uct;
@@ -16,9 +14,21 @@ pub mod uct;
 pub trait MCTSGame = Game + Clone;
 /* ABSTRACT MCTS */
 
+use std::rc::{Rc, Weak};
+use std::cell::RefCell;
+
+
+pub type MCTSNodeParent<G, MCTS> = Option<(Weak<RefCell<MCTSTree<G, MCTS>>>, <G as Base>::Move)>;
+pub type MCTSNodeChild<G, MCTS>  = Rc<RefCell<MCTSTree<G, MCTS>>>;
+
 #[derive(Clone)]
-pub struct MCTSTree<G: MCTSGame, MCTS: BaseMCTSPolicy<G>> {
-    pub moves: HashMap<G::Move, Box<MCTSTree<G, MCTS>>>,
+pub struct MCTSTree<G, MCTS>
+where
+    G: MCTSGame, 
+    MCTS: BaseMCTSPolicy<G> 
+{
+    pub parent: MCTSNodeParent<G, MCTS>,
+    pub moves: HashMap<G::Move, MCTSNodeChild<G, MCTS>>,
     pub info: MCTSNode<G, MCTS>,
 }
 
@@ -35,6 +45,7 @@ where
 #[derive(Clone)]
 pub struct MCTSNode<G: MCTSGame, MCTS: BaseMCTSPolicy<G>> {
     pub state: G,
+    pub reward: f32,
     pub node: MCTS::NodeInfo,
     pub moves: HashMap<G::Move, MCTS::MoveInfo>,
 }
@@ -74,6 +85,7 @@ pub trait BaseMCTSPolicy<G: MCTSGame>: Sized {
      */
     fn default_move(&self, board: &G, action: &G::Move) -> Self::MoveInfo;
 
+    /*
     fn backpropagate_new_node(
         &self,
         node: &mut MCTSNode<G, Self>,
@@ -90,6 +102,13 @@ pub trait BaseMCTSPolicy<G: MCTSGame>: Sized {
         action: &G::Move,
         history: &[G::Move],
         playout: &Self::PlayoutInfo,
+    );*/
+
+    fn backpropagate(
+        &mut self,
+        leaf: Rc<RefCell<MCTSTree<G, Self>>>,
+        history: &[G::Move],
+        playout: Self::PlayoutInfo
     );
 
     fn simulate(&self, board: &G) -> Self::PlayoutInfo;
@@ -100,7 +119,7 @@ use float_ord::FloatOrd;
 pub struct WithMCTSPolicy<G: MCTSGame, MCTS: BaseMCTSPolicy<G>> {
     base_mcts: MCTS,
     N_PLAYOUTS: usize,
-    pub root: Option<MCTSTree<G, MCTS>>,
+    pub root: Option<Rc<RefCell<MCTSTree<G, MCTS>>>>,
     _g: std::marker::PhantomData<G>,
 }
 
@@ -109,8 +128,8 @@ where
     G: MCTSGame + Clone,
     MCTS: BaseMCTSPolicy<G>,
 {
-    fn select_move<'a>(&self, tree_node: &'a MCTSTree<G, MCTS>, exploration: bool) -> &'a G::Move {
-        tree_node
+    fn select_move(&self, tree_node: &MCTSTree<G, MCTS>, exploration: bool) -> G::Move {
+        *tree_node
             .info
             .moves
             .iter()
@@ -131,30 +150,33 @@ where
             .0
     }
 
-    fn select<'a>(
+    fn select(
         &self,
-        root: &'a mut MCTSTree<G, MCTS>,
-    ) -> (Vec<G::Move>, &'a mut MCTSTree<G, MCTS>) {
+        root: MCTSNodeChild<G, MCTS>,
+    ) -> (Vec<G::Move>, MCTSNodeChild<G, MCTS>) {
         let mut history: Vec<G::Move> = Vec::new();
 
         //let mut tree_pos = Some(root);
         let mut last_node = root;
 
         loop {
-            if last_node.info.state.is_finished() {
+            let last_node_clone = last_node.clone();
+            let last_node_ref = last_node_clone.borrow();
+            if last_node_ref.info.state.is_finished() {
                 /* we're at a leaf node. */
                 return (history, last_node);
             } else {
                 /* play next move */
-                let a = *self.select_move(last_node, true);
+                let a = self.select_move(&last_node_ref, true);
                 history.push(a);
-                let node_imm = last_node.moves.get(&a);
+                
+                let node_imm = last_node_ref.moves.get(&a);
                 if let Some(node) = node_imm {
-                    if node.info.state.is_finished() {
+                    if node.borrow().info.state.is_finished() {
                         return (history, last_node);
                     } else {
-                        let node = last_node.moves.get_mut(&a).unwrap();
-                        last_node = node.borrow_mut();
+                        let node = last_node_ref.moves.get(&a).unwrap();
+                        last_node = node.clone();
                     }
                 } else {
                     return (history, last_node);
@@ -163,14 +185,14 @@ where
         }
     }
 
-    fn expand<'a>(
+    fn expand(
         &mut self,
-        tree_node: &'a mut MCTSTree<G, MCTS>,
+        tree_node: MCTSNodeChild<G, MCTS>,
         action: &G::Move,
-    ) -> &'a mut MCTSTree<G, MCTS> {
+    ) -> MCTSNodeChild<G, MCTS> {
 
-        let mut new_state = tree_node.info.state.clone();
-        new_state.play(action);
+        let mut new_state = tree_node.borrow().info.state.clone();
+        let reward = new_state.play(action);
 
 
         let new_node = self.base_mcts.default_node(&new_state);
@@ -181,29 +203,30 @@ where
                 .map(|m| (*m, self.base_mcts.default_move(&new_state, &m))),
         );
 
-        tree_node.moves.insert(
+        tree_node.borrow_mut().moves.insert(
             *action,
-            Box::new(MCTSTree {
+            Rc::new(RefCell::new(MCTSTree {
+                parent: Some((Rc::downgrade(&tree_node), *action)),
                 moves: HashMap::new(),
                 info: MCTSNode {
+                    reward,
                     moves: moves_info,
                     node: new_node,
                     state: new_state,
                 },
-            }),
+            })),
         );
-        tree_node.moves.get_mut(action).unwrap()
+        tree_node.borrow().moves.get(action).unwrap().clone()
     }
 
-    fn tree_search(&mut self, root: &mut MCTSTree<G, MCTS>) {
+    fn tree_search(&mut self, root: MCTSNodeChild<G, MCTS>) {
         let (history, last_node) = self.select(root);
         let created_node = self.expand(last_node, history.last().unwrap());
-        let playout = self.base_mcts.simulate(&created_node.info.state);
+        let playout = self.base_mcts.simulate(&created_node.borrow().info.state);
 
         /* BACKUP */
-        self.base_mcts
-            .backpropagate_new_node(&mut created_node.info, &history, &playout);
-
+        self.base_mcts.backpropagate(created_node, &history, playout);
+        /*
         let mut tree_node = Some(root);
         for (index, action) in history.iter().enumerate() {
             self.base_mcts.backpropagate(
@@ -220,7 +243,7 @@ where
                 .map(|x| x.as_mut())
             });
             tree_node = new_tree_node;
-        }
+        }*/
     }
 
     pub fn new(p: MCTS, N_PLAYOUTS: usize) -> Self {
@@ -239,8 +262,10 @@ where
     MCTS: BaseMCTSPolicy<G>,
 {
     fn play(&mut self, board: &G) -> G::Move {
-        let mut root = MCTSTree {
+        let root = Rc::new(RefCell::new(MCTSTree {
+            parent: None,
             info: MCTSNode {
+                reward: 0.,
                 state: board.clone(),
                 node: self.base_mcts.default_node(board),
                 moves: HashMap::from_iter(
@@ -250,17 +275,17 @@ where
                 ),
             },
             moves: HashMap::new(),
-        };
+        }));
 
         let playout = self.base_mcts.simulate(board);
-        self.base_mcts.backpropagate_new_node(&mut root.info, &[], &playout);
+        self.base_mcts.backpropagate(root.clone(), &[], playout);
 
         for _ in 0..self.N_PLAYOUTS {
             //println!("####> {} | {:?}", i, root);
-            self.tree_search(&mut root)
+            self.tree_search(root.clone())
         }
 
-        let chosen_move = *self.select_move(&root, false);
+        let chosen_move = self.select_move(&root.borrow(), false);
         self.root = Some(root);
 
         chosen_move

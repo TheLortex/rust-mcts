@@ -1,20 +1,22 @@
 use crate::game;
-use crate::policies::mcts::{BaseMCTSPolicy, MCTSNode, WithMCTSPolicy};
+use crate::policies::mcts::{BaseMCTSPolicy, MCTSTree, WithMCTSPolicy};
 use crate::policies::MultiplayerPolicyBuilder;
 
-use float_ord::FloatOrd;
 use ndarray::Array;
 use rand_distr::{Distribution, Gamma};
+use std::cell::RefCell;
 use std::collections::HashMap;
 use std::f32;
 use std::iter::*;
 use std::marker::PhantomData;
+use std::rc::Rc;
 
 #[derive(Debug, Clone, Copy)]
 pub struct PUCTMoveInfo {
     pub Q: f32,
     pub N_a: f32,
     pub pi: f32,
+    pub reward: f32,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -38,6 +40,7 @@ pub struct PUCTSettings {
     pub C_INIT: f32,
     pub ROOT_DIRICHLET_ALPHA: f32,
     pub ROOT_EXPLORATION_FRACTION: f32,
+    pub DISCOUNT: f32,
 }
 
 /**
@@ -50,6 +53,7 @@ impl Default for PUCTSettings {
             C_INIT: 1.25,
             ROOT_DIRICHLET_ALPHA: 0.3,
             ROOT_EXPLORATION_FRACTION: 0.25,
+            DISCOUNT: 0.997,
         }
     }
 }
@@ -60,10 +64,31 @@ where
     F: Evaluator<G>,
 {
     pub color: G::Player,
-    pub s: PUCTSettings,
+    pub config: PUCTSettings,
     pub evaluate: F,
+    min_tree: f32,
+    max_tree: f32,
 }
 
+
+impl<G, F> PUCTPolicy_<G, F>
+where
+    G: game::Feature + super::MCTSGame,
+    F: Evaluator<G>
+{
+    fn normalize(&self, x: f32) -> f32{
+        if self.min_tree < self.max_tree {
+            (x - self.min_tree)/(self.max_tree - self.min_tree)
+        } else {
+            x
+        }
+    }
+}
+
+
+type PUCTPlayoutInfo<G> = (Option<HashMap<<G as game::Base>::Move, f32>>, f32, <G as game::Game>::Player);
+
+#[allow(clippy::float_cmp)]
 impl<G, F> BaseMCTSPolicy<G> for PUCTPolicy_<G, F>
 where
     G: game::Feature + super::MCTSGame,
@@ -71,12 +96,12 @@ where
 {
     type NodeInfo = PUCTNodeInfo;
     type MoveInfo = PUCTMoveInfo;
-    type PlayoutInfo = (Option<HashMap<G::Move, f32>>, f32, G::Player);
+    type PlayoutInfo = PUCTPlayoutInfo<G>;
 
     fn get_value(
         &self,
-        board: &G,
-        action: &G::Move,
+        _board: &G,
+        _action: &G::Move,
         node_info: &Self::NodeInfo,
         move_info: &Self::MoveInfo,
         exploration: bool,
@@ -84,73 +109,128 @@ where
         if exploration {
             let N = node_info.count;
             let v = move_info;
-            let pb_c = ((N + self.s.C_BASE + 1.) / self.s.C_BASE).ln() + self.s.C_INIT;
-            v.Q + pb_c * v.pi * (N.sqrt() / (v.N_a + 1.))
+            let pb_c =
+                ((N + self.config.C_BASE + 1.) / self.config.C_BASE).ln() + self.config.C_INIT;
+            let prior = pb_c * v.pi * (N.sqrt() / (v.N_a + 1.));
+            let value = self.normalize(move_info.reward + self.config.DISCOUNT * move_info.Q);
+            prior + value
         } else {
             move_info.N_a
         }
     }
 
-    fn default_move(&self, board: &G, action: &G::Move) -> Self::MoveInfo {
+    fn default_move(&self, _board: &G, _action: &G::Move) -> Self::MoveInfo {
         PUCTMoveInfo {
-            Q: 0.5,
+            Q: 0.,
             N_a: 0.,
             pi: 1.,
+            reward: 0.,
         }
     }
 
-    fn default_node(&self, board: &G) -> Self::NodeInfo {
+    fn default_node(&self, _board: &G) -> Self::NodeInfo {
         PUCTNodeInfo { count: 0. }
     }
 
-    fn backpropagate_new_node(
-        &self,
-        node: &mut MCTSNode<G, Self>,
-        history: &[G::Move],
-        (policy, value, pov): &Self::PlayoutInfo,
+    fn backpropagate(
+        &mut self,
+        leaf: Rc<RefCell<MCTSTree<G, Self>>>,
+        _history: &[G::Move],
+        (policy, mut value, pov): Self::PlayoutInfo,
     ) {
-        if let Some(mut policy) = policy.clone() {
+        // todo: assert leaf.turn == pov
+        // assert_eq!(leaf.borrow().info.state.turn(), *pov);
+
+        if let Some(mut policy) = policy {
             // save probabilities of newly created node.
-            
-            if history.is_empty() {
-                log::info!("PUCT: adding noise.");
-                // add dirichlet noise on the root node.
-                let frac = self.s.ROOT_EXPLORATION_FRACTION;
-                let gamma = Gamma::new(self.s.ROOT_DIRICHLET_ALPHA, 1.0).unwrap();
+            let mut leaf = leaf.borrow_mut();
+            if leaf.parent.is_none() {
+                // root node: add dirichlet noise.
+                let frac = self.config.ROOT_EXPLORATION_FRACTION;
+                let gamma = Gamma::new(self.config.ROOT_DIRICHLET_ALPHA, 1.0).unwrap();
                 for (_, val) in policy.iter_mut() {
                     let noise = gamma.sample(&mut rand::thread_rng());
                     *val = frac * (*val) + (1. - frac) * noise;
                 }
             }
-            let z: f32 = node.moves.keys().map(|m| policy.get(&m).unwrap()).sum();
+
+            let z: f32 = leaf
+                .info
+                .moves
+                .keys()
+                .map(|m| policy.get(&m).unwrap())
+                .sum();
             let z = if z == 0. { 1. } else { z };
-            for (m, info) in node.moves.iter_mut() {
+            for (m, info) in leaf.info.moves.iter_mut() {
                 info.pi = policy.get(&m).unwrap() / z;
             }
-        };
+        }
+
+        value = -leaf.borrow().info.reward + self.config.DISCOUNT * value;
+
+        let mut tree_position = leaf;
+        while tree_position.borrow().parent.is_some() {
+            // extract child
+            let (tree_pointer, action) = tree_position
+                .borrow()
+                .parent
+                .as_ref()
+                .map(|(t, a)| (t.upgrade().unwrap(), *a))
+                .unwrap();
+
+            tree_position = tree_pointer;
+
+            let mut tree_node = tree_position.borrow_mut();
+            
+            let relative_value = if tree_node.info.state.turn() == pov {
+                value
+            } else {
+                -value
+            };
+
+            tree_node.info.node.count += 1.;
+
+            let node_reward = tree_node.moves.get_mut(&action).unwrap().borrow().info.reward;
+
+            let mut v = tree_node.info.moves.get_mut(&action).unwrap();
+            (*v).N_a += 1.;
+            (*v).Q += (relative_value - (*v).Q) / (*v).N_a;
+            (*v).reward = node_reward;
+
+            if (*v).Q < self.min_tree {
+                self.min_tree = (*v).Q
+            }
+
+            if (*v).Q > self.max_tree {
+                self.max_tree = (*v).Q
+            }
+            
+            value = if tree_node.info.state.turn() == pov { tree_node.info.reward } else { -tree_node.info.reward } + self.config.DISCOUNT * value;
+        }
     }
+    /*
 
-    fn backpropagate(
-        &self,
-        _index: usize,
-        info: &mut MCTSNode<G, Self>,
-        action: &G::Move,
-        history: &[G::Move],
-        (policy, value, pov): &Self::PlayoutInfo,
-    ) {
-        let value = if info.state.turn() == *pov {
-            *value
-        } else {
-            1. - *value
-        };
+        fn backpropagate(
+            &self,
+            _index: usize,
+            info: &mut MCTSNode<G, Self>,
+            action: &G::Move,
+            history: &[G::Move],
+            (policy, value, pov): &Self::PlayoutInfo,
+        ) {
+            let value = if info.state.turn() == *pov {
+                *value
+            } else {
+                1. - *value
+            };
 
-        info.node.count += 1.;
+            info.node.count += 1.;
 
-        let mut v = info.moves.get_mut(action).unwrap();
-        (*v).N_a += 1.;
-        (*v).Q += (value - (*v).Q) / (*v).N_a;
-    }
-
+            let mut v = info.moves.get_mut(action).unwrap();
+            (*v).N_a += 1.;
+            (*v).Q += (value - (*v).Q) / (*v).N_a;
+        }
+    */
     fn simulate(&self, board: &G) -> Self::PlayoutInfo {
         if !board.is_finished() {
             // NN predicts a good policy for current player + expectation of winning from this state.
@@ -175,7 +255,7 @@ where
     G: game::Feature,
     F: (Fn(G::Player, &G) -> (Array<f32, G::ActionDim>, f32)),
 {
-    pub s: PUCTSettings,
+    pub config: PUCTSettings,
     pub N_PLAYOUTS: usize,
     pub evaluate: F,
     pub _g: PhantomData<fn() -> G>,
@@ -188,7 +268,7 @@ where
 {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         writeln!(f, "BATCHED PUCT")?;
-        writeln!(f, "||{:?}", self.s)
+        writeln!(f, "||{:?}", self.config)
     }
 }
 
@@ -196,7 +276,7 @@ impl<G, F> MultiplayerPolicyBuilder<G> for PUCT<G, F>
 where
     G: game::Feature + super::MCTSGame,
     F: (Fn(G::Player, &G) -> (Array<f32, G::ActionDim>, f32)),
-    F: Clone
+    F: Clone,
 {
     type P = PUCTPolicy<G, F>;
 
@@ -204,8 +284,10 @@ where
         WithMCTSPolicy::new(
             PUCTPolicy_::<G, F> {
                 color,
-                s: self.s,
+                config: self.config,
                 evaluate: self.evaluate.clone(),
+                min_tree: f32::MAX,
+                max_tree: -f32::MAX
             },
             self.N_PLAYOUTS,
         )

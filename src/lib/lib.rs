@@ -1,7 +1,6 @@
 #![allow(non_snake_case)]
 #![feature(trait_alias)]
 #![feature(type_alias_impl_trait)]
-#![feature(generic_associated_types)]
 #![feature(deadline_api)]
 
 pub mod game;

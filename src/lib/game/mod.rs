@@ -38,85 +38,75 @@ pub trait Base: Sized + Debug {
 
 pub trait Playable: Base {
     /**
-     * Mutates game state playing the given action.
+     * Mutates game state playing the given action. 
+     * Yields a reward to the player.
      */
-    fn play(&mut self, action: &Self::Move);
+    fn play(&mut self, action: &Self::Move) -> f32;
 
     /**
-     * Plays a random move or does nothing if there's no move to play.
+     * Plays a random move. Yields a reward.
      */
-    fn random_move(&mut self) -> Option<Self::Move> {
+    fn random_move(&mut self) -> (Self::Move, f32) {
         let actions = self.possible_moves();
-        let chosen_action = actions.choose(&mut rand::thread_rng()).copied();
-
-        match chosen_action {
-            None => (),
-            Some(action) => self.play(&action),
-        };
-        chosen_action
+        let chosen_action = actions.choose(&mut rand::thread_rng()).unwrap();
+        let reward = self.play(chosen_action);
+        (*chosen_action, reward)
     }
 }
 
 
-pub trait Playout: Playable + Clone {
-    fn playout_history(&self) -> (Self, Vec<(Self, Self::Move)>) {
+pub trait Playout: Game + Clone {
+    fn playout_history(&self, pov: Self::Player) -> (Self, Vec<(Self, Self::Move)>, f32) {
         let mut s = self.clone();
         let mut hist = Vec::new();
 
+        let mut total_reward = 0.;
+
         while { !s.is_finished() } {
             let s_cloned = s.clone();
-            let m = s.random_move();
-            hist.push((s_cloned, m.unwrap()));
+            let player = s.turn();
+            let (m,r) = s.random_move();
+            if player == pov {
+                total_reward += r;
+            }
+
+            hist.push((s_cloned, m));
         }
-        (s, hist)
+        (s, hist, total_reward)
     }
 
-    fn playout_board(&self) -> Self {
-        let (s, _) = self.playout_history();
-        s
+    fn playout_board(&self, pov: Self::Player) -> (Self, f32) {
+        let (s, _, total_reward) = self.playout_history(pov);
+        (s, total_reward)
     }
 }
-impl<G: Base + Playable + Clone> Playout for G {}
+impl<G: Game + Clone> Playout for G {}
 
 pub trait Game: Playable {
-    type Player: PartialEq + Eq + Copy + Clone + Debug + Sync + Send;
+    type Player: PartialEq + Eq + Copy + Clone + Debug + Sync + Send + Into<u8>;
 
+
+    fn player_after(player: Self::Player) -> Self::Player;
     fn players() -> Vec<Self::Player>;
     fn turn(&self) -> Self::Player;
-
-    fn has_won(&self, player: Self::Player) -> bool;
 }
 
 pub trait SingleWinner: Game {
     fn winner(&self) -> Option<Self::Player>;
 }
 
-pub trait Reward: Game {
-    fn reward(&self, player: Self::Player) -> f32;
-}
-
-pub trait Singleplayer: Playable {
-    fn score(&self) -> f32;
-}
+pub trait Singleplayer: Playable {}
 
 impl<G: Singleplayer> Game for G {
-    type Player = ();
+    type Player = u8;
 
     fn players() -> Vec<Self::Player> {
-        vec![()]
+        vec![0]
     }
 
-    fn turn(&self) -> Self::Player {}
+    fn player_after(_player: Self::Player) -> Self::Player {0}
 
-    fn has_won(&self, _player: Self::Player) -> bool {
-        self.is_finished()
-    }
-}
-
-impl<G: Singleplayer> Reward for G {
-    fn reward(&self, _player: Self::Player) -> f32 {
-        self.score()
-    }
+    fn turn(&self) -> Self::Player {0}
 }
 
 pub trait GameBuilder<G: Game> {
@@ -144,7 +134,16 @@ pub trait Feature: Game {
     fn state_to_feature(&self, pov: Self::Player) -> Array<f32, Self::StateDim>;
     fn moves_to_feature(moves: &HashMap<Self::Move, f32>) -> Array<f32, Self::ActionDim>;
 
+    fn move_to_feature(action: Self::Move) -> Array<f32, Self::ActionDim> {
+        let mut hash = HashMap::new();
+        hash.insert(action, 1.);
+        Self::moves_to_feature(&hash)
+    }
+
     fn feature_to_moves(&self, features: &Array<f32, Self::ActionDim>) -> HashMap<Self::Move, f32>;
+
+    fn all_possible_moves() -> Vec<Self::Move>;
+    fn all_feature_to_moves(features: &Array<f32, Self::ActionDim>) -> HashMap<Self::Move, f32>;
 }
 
 /* TODO: MoveCode */
@@ -167,13 +166,12 @@ pub trait InteractiveGame: cursive::view::View {
 
     fn new(turn: <Self::G as Game>::Player) -> Self;
 
-    fn get_mut(&mut self) -> &mut Self::G;
+    fn play(&mut self, action: &<Self::G as Base>::Move);
     fn get(&self) -> &Self::G;
-    fn choose_move(&mut self, cb: Box<dyn FnOnce(<Self::G as Base>::Move, &mut Self)>);
+   //TODO fn choose_move(&mut self, cb: Box<dyn FnOnce(<Self::G as Base>::Move, &mut Self)>);
 }
 
 use crate::policies::MultiplayerPolicy;
-use std::fmt;
 
 pub fn simulate<'a, 'b, G: Game + Clone>(
     mut p1: Box<dyn MultiplayerPolicy<G> + 'a>,

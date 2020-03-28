@@ -1,4 +1,4 @@
-use crate::game::{Game, MoveCode};
+use crate::game::{Game, MoveCode, SingleWinner};
 use crate::policies::{MultiplayerPolicy, MultiplayerPolicyBuilder};
 use crate::settings;
 
@@ -31,7 +31,7 @@ pub struct PPAPolicy<G: Game, M: MoveCode<G>> {
     _m: PhantomData<M>,
 }
 
-impl<G: Game + Clone + Eq + Hash, M: MoveCode<G>> PPAPolicy<G, M> {
+impl<G: Game + SingleWinner + Clone + Eq + Hash, M: MoveCode<G>> PPAPolicy<G, M> {
     pub fn next_move(self: &mut PPAPolicy<G, M>, board: &G) -> G::Move {
         let moves = board.possible_moves();
 
@@ -50,14 +50,15 @@ impl<G: Game + Clone + Eq + Hash, M: MoveCode<G>> PPAPolicy<G, M> {
 
         let mut history_playout = vec![];
 
+
         while {!board.is_finished()} {
             let chosen_move = self.next_move(&board);
-
             board.play(&chosen_move);
             history_playout.push(chosen_move);
         }
         
-        let z = board.has_won(self.color);
+        let z = board.winner() == Some(self.color);
+
         self.update(&history_uct, z);
         self.adapt(root_board, &history_uct, &history_playout, z);
     }
@@ -190,7 +191,7 @@ impl<G: Game + Clone + Eq + Hash, M: MoveCode<G>> PPAPolicy<G, M> {
 
 
 
-impl<G: Game + Clone + Eq + Hash, M: MoveCode<G> + Send + Sync> MultiplayerPolicy<G> for PPAPolicy<G, M> {
+impl<G: Game + SingleWinner + Clone + Eq + Hash, M: MoveCode<G> + Send + Sync> MultiplayerPolicy<G> for PPAPolicy<G, M> {
     fn play(self: &mut PPAPolicy<G, M>, board: &G) -> G::Move {
         for _ in 0..self.s.N_PLAYOUTS {
             self.simulate(board)
@@ -252,7 +253,7 @@ impl<G: Game, M: MoveCode<G>> fmt::Display for PPA<G,M> {
     }
 } 
 
-impl<G: Game + Clone + Eq + Hash, M: MoveCode<G> + Send + Sync> MultiplayerPolicyBuilder<G> for PPA<G,M> {
+impl<G: Game + SingleWinner + Clone + Eq + Hash, M: MoveCode<G> + Send + Sync> MultiplayerPolicyBuilder<G> for PPA<G,M> {
     type P = PPAPolicy<G, M>;
 
     fn create(&self, color: G::Player) -> PPAPolicy<G, M> {

@@ -14,15 +14,14 @@ use std::sync::mpsc;
 use tensorflow::{Graph, Session, SessionOptions};
 
 
-const MODEL_PATH: &str = "models/breakthrough";
+const MODEL_PATH: &str = "models/breakthrough/";
 
 use zerol::game::{
     breakthrough::{Breakthrough, BreakthroughBuilder},
-    Game,
 };
 use zerol::game::meta::with_history::*;
 use zerol::policies::mcts::puct::PUCTSettings;
-use zerol::r#async::GameHistoryChannel;
+use zerol::r#async::GameHistoryEntry;
 
 use typenum::U2;
 
@@ -30,12 +29,8 @@ fn main() {
     run()
 }
 
-fn run() {
-    /* check that model exists. */
-    if !Path::new(MODEL_PATH).exists() {
-        println!("Couldn't find model at {}", MODEL_PATH);
-        return;
-    };
+fn tf_load_model(path: &str) -> (Graph, Session) {
+
     let mut graph = Graph::new();
     let mut options = SessionOptions::new();
     /* To get configuration, use python:
@@ -45,11 +40,25 @@ fn run() {
      */
     let configuration_buf = [50, 2, 32, 1];
     options.set_config(&configuration_buf).unwrap();
-    let session = Session::from_saved_model(&options, &["serve"], &mut graph, MODEL_PATH).unwrap();
+    let session = Session::from_saved_model(&options, &["serve"], &mut graph, path).unwrap();
+    (graph, session)
+}
+
+fn run() {
+    flexi_logger::Logger::with_env().start().unwrap();
+    log::info!("Zerol generate: starting!");
+
+    /* check that model exists. */
+    if !Path::new(MODEL_PATH).exists() {
+        println!("Couldn't find model at {}", MODEL_PATH);
+        return;
+    };
+    
+    let prediction_tensorflow       = Arc::new(RwLock::new(tf_load_model(&format!("{}{}", MODEL_PATH, "pv"))));
+    let dynamics_tensorflow         = Arc::new(RwLock::new(tf_load_model(&format!("{}{}", MODEL_PATH, "dyn"))));
+    let representation_tensorflow   = Arc::new(RwLock::new(tf_load_model(&format!("{}{}", MODEL_PATH, "state"))));
 
     let is_writing = Arc::new(AtomicBool::new(false));
-    let graph_and_session = Arc::new(RwLock::new((graph, session)));
-    let g_and_s = graph_and_session.clone();
     let i_w = is_writing.clone();
 
     //graph.operation_iter().map(|o| println!("{:?}", o.name().unwrap())).collect::<()>();
@@ -60,25 +69,29 @@ fn run() {
     /*
      * Watches for change in the model, and reload when needed.
      */
+    let prediction_tf_for_update = prediction_tensorflow.clone();
+    let dynamics_tf_for_update = dynamics_tensorflow.clone();
+    let representation_tf_for_update = representation_tensorflow.clone();
+
     let mut watcher: RecommendedWatcher = Watcher::new_immediate(move |x: Result<Event, _>| {
         if let Ok(x) = x {
             if x.kind == EventKind::Access(AccessKind::Close(AccessMode::Write)) {
                 println!("Updating model..\n");
                 i_w.store(true, Ordering::Relaxed);
-                let mut locked_mutex = g_and_s.write().unwrap();
+                let mut prediction_tensorflow = prediction_tf_for_update.write().unwrap();
+                let mut dynamics_tensorflow = dynamics_tf_for_update.write().unwrap();
+                let mut representation_tensorflow = representation_tf_for_update.write().unwrap();
                 i_w.store(false, Ordering::Relaxed);
-                let (ref _graph, ref mut session_m) = *locked_mutex;
-                session_m.close().expect("Unable to close the session.");
+                let (ref _graph, ref mut session_m) = *prediction_tensorflow;
+                session_m.close().expect("Unable to close the prediction session.");
+                let (ref _graph, ref mut session_m) = *dynamics_tensorflow;
+                session_m.close().expect("Unable to close the dynamics session.");
+                let (ref _graph, ref mut session_m) = *representation_tensorflow;
+                session_m.close().expect("Unable to close the representation session.");
 
-                let mut graph = Graph::new();
-                let mut options = SessionOptions::new();
-                options.set_config(&configuration_buf).unwrap();
-
-                let session =
-                    Session::from_saved_model(&options, &["serve"], &mut graph, MODEL_PATH)
-                        .unwrap();
-
-                *locked_mutex = (graph, session);
+                *prediction_tensorflow = tf_load_model(&format!("{}{}", MODEL_PATH, "pv"));
+                *dynamics_tensorflow = tf_load_model(&format!("{}{}", MODEL_PATH, "dyn"));
+                *representation_tensorflow = tf_load_model(&format!("{}{}", MODEL_PATH, "state"));
                 println!("Sucessfully updated model.");
             }
         }
@@ -88,30 +101,28 @@ fn run() {
         .watch(MODEL_PATH, RecursiveMode::NonRecursive)
         .unwrap();
 
-    let (tx_games, rx_games) = mpsc::sync_channel::<GameHistoryChannel<WithHistory<Breakthrough,U2>>>(1024);
+    let (tx_games, rx_games) = mpsc::sync_channel::<GameHistoryEntry<WithHistory<Breakthrough,U2>>>(1024);
 
     let game_builder = WithHistoryGB::<_, U2>::new(&BreakthroughBuilder {});
 
     let game_gen = thread::spawn(move || zerol::r#async::game_generator(
         PUCTSettings::default(),
         game_builder,
-        graph_and_session,
+        prediction_tensorflow,
+        dynamics_tensorflow,
+        representation_tensorflow,
         tx_games,
     ));
 
     let game_writer = thread::spawn(move || {
-        while let Some((winner, history)) = rx_games.recv().ok() {
+        let fm_mtx = fm_mtx.clone();
+        while let Some(game) = rx_games.recv().ok() {
             while is_writing.load(Ordering::Relaxed) {
                 thread::sleep(time::Duration::from_millis(1));
             }
 
-            let fm_mtx = fm_mtx.clone();
             let mut fm = fm_mtx.lock().unwrap();
-            
-            for (board, policy) in history.iter() {
-                let value = if board.turn() == winner { 1.0 } else { 0.0 };
-                fm.append(&board, policy, value);
-            }
+            fm.append(game);
         }
     });
 

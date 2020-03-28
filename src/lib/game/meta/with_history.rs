@@ -37,7 +37,7 @@ impl<G: Base + Clone, H> Base for WithHistory<G, H> {
 
 
 impl<G: Playable + Clone, H> Playable for WithHistory<G, H> {
-    fn play(&mut self, action: &<Self as Base>::Move) {
+    fn play(&mut self, action: &<Self as Base>::Move) -> f32 {
         let prec = self.prec.take();
         let new_node = WithHistory {
             prec,
@@ -56,18 +56,12 @@ impl<G: Game + Clone, H> Game for WithHistory<G, H> {
         G::players()
     }
 
+    fn player_after(player: Self::Player) -> Self::Player {
+        G::player_after(player)
+    }
+
     fn turn(&self) -> Self::Player {
         self.state.turn()
-    }
-
-    fn has_won(&self, player: Self::Player) -> bool {
-        self.state.has_won(player)
-    }
-}
-
-impl<G: Reward + Clone, H> Reward for WithHistory<G, H> {
-    fn reward(&self, pov: G::Player) -> f32 {
-        self.state.reward(pov)
     }
 }
 
@@ -89,8 +83,83 @@ impl<G: Base + Hash, H_> Hash for WithHistory<G, H_> {
         self.state.hash(state)
     }
 }
+/* GUI */
+
+pub struct IWithHistory<IG: InteractiveGame, H> {
+    ig: IG, 
+    state: WithHistory<IG::G, H>,
+}
+
+use cursive::direction::Direction;
+use cursive::event::{Event, EventResult};
+use cursive::Printer;
+use cursive::Vec2;
 
 
+impl<IG: InteractiveGame + cursive::view::View, H: 'static> cursive::view::View for IWithHistory<IG,H> 
+where
+    IG::G: Clone
+{
+    fn draw(&self, printer: &Printer<'_, '_>) {
+        self.ig.draw(printer)
+    }
+
+    fn take_focus(&mut self, _source: Direction) -> bool {
+        true
+    }
+
+    fn on_event(&mut self, evt: Event) -> EventResult {
+        self.ig.on_event(evt)
+    }
+
+    fn required_size(&mut self, constraint: Vec2) -> Vec2 {
+        self.ig.required_size(constraint)
+    }
+}
+
+impl<IG: InteractiveGame, H: 'static> InteractiveGame for IWithHistory<IG,H>
+where 
+    IG::G: Game + Clone
+{
+    type G = WithHistory<IG::G, H>;
+
+    fn new(turn: <Self::G as Game>::Player) -> Self {
+        let ig = IG::new(turn);
+        let state = WithHistory {
+            prec: None,
+            state: ig.get().clone(),
+            _h: PhantomData
+        };
+        Self {
+            ig,
+            state,
+        }
+    }
+
+    fn get(&self) -> &Self::G {
+        &self.state
+    }
+
+    fn play(&mut self, action: &<Self::G as Base>::Move) {
+        self.ig.play(action);
+        
+        let prec = self.state.prec.take();
+        let new_node = WithHistory {
+            prec,
+            state: self.state.state.clone(),
+            _h: PhantomData,
+        };
+        self.state.prec = Some(Arc::new(new_node));
+        self.state.state = self.ig.get().clone();
+    }
+/*
+    fn choose_move<'a>(&'a mut self, cb: Box<dyn 'a + FnOnce(<Self::G as Base>::Move, &mut Self)>) {
+        self.ig.choose_move(Box::new(move |action, ig| cb(action, &mut self)))
+    }*/
+}
+
+
+/* GAME BUILDER */
 #[derive(Copy,Clone)]
 pub struct WithHistoryGB<'a, GB, H> (&'a GB, PhantomData<H>);
 
@@ -152,5 +221,13 @@ impl<G: Feature + Clone, H: Unsigned> Feature for WithHistory<G, H> {
 
     fn feature_to_moves(&self, features: &Array<f32, Self::ActionDim>) -> HashMap<Self::Move, f32> {
         self.state.feature_to_moves(features)
+    }
+
+    fn all_feature_to_moves(features: &Array<f32, Self::ActionDim>) -> HashMap<Self::Move, f32> {
+        G::all_feature_to_moves(features)
+    }
+
+    fn all_possible_moves() -> Vec<Self::Move> {
+        G::all_possible_moves()
     }
 }
