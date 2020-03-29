@@ -58,7 +58,7 @@ fn game_generator_task<G, GB>(
     let muz = Muz::<G, ndarray::Ix3, _, _, _> {
         _g: PhantomData,
         _h: PhantomData,
-        N_PLAYOUTS: 100,
+        N_PLAYOUTS: 150,
         puct: puct_settings,
         hidden_evaluate: |pov: G::Player, board: &Simulated<G, ndarray::Ix3, _>| {
             evaluator::prediction(prediction_channel.clone(), pov, board.clone())

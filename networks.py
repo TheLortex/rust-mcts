@@ -67,16 +67,22 @@ def dynamics_network():
     x            = layers.Conv2D(128, (3, 3), padding='same', activation='relu', kernel_regularizer=l2(WEIGHT_DECAY), bias_regularizer=l2(WEIGHT_DECAY))(x)
 
     next_board    = layers.Conv2D(HIDDEN_PLANES, (3, 3), padding='same', activation='relu', kernel_regularizer=l2(WEIGHT_DECAY), bias_regularizer=l2(WEIGHT_DECAY))(x)
-    max_state    = layers.Reshape((1,1,-1))(K.max(layers.Reshape((BT_K*BT_K, -1))(next_board), axis=1, keepdims=True))
-    min_state    = layers.Reshape((1,1,-1))(K.min(layers.Reshape((BT_K*BT_K, -1))(next_board), axis=1, keepdims=True))
-    next_board   = (next_board - min_state)/(max_state - min_state) # renormalize
+    max_state    = layers.Reshape((1,1,-1))(layers.Lambda(lambda x: K.max(x, axis=1, keepdims=True))(layers.Reshape((BT_K*BT_K, -1))(next_board)))
+    min_state    = layers.Reshape((1,1,-1))(layers.Lambda(lambda x: K.min(x, axis=1, keepdims=True))(layers.Reshape((BT_K*BT_K, -1))(next_board)))
+    scale_state  = layers.Lambda(lambda x: K.switch(K.not_equal(x[0], x[1]), x[0] - x[1], K.ones_like(x[0])))([max_state, min_state])
+    next_board   = layers.Lambda(lambda x: (x[0] - x[1])/x[2])([next_board, min_state, scale_state]) # renormalize
 
     reward = layers.Flatten()(x)
-    reward = layers.Dense((2*SUPPORT_SIZE+1), activation='sigmoid', name='reward', kernel_regularizer=l2(WEIGHT_DECAY), bias_regularizer=l2(WEIGHT_DECAY))(reward)
+    reward = layers.Dense((SUPPORT_SHAPE), activation='sigmoid', name='reward', kernel_regularizer=l2(WEIGHT_DECAY), bias_regularizer=l2(WEIGHT_DECAY))(reward)
 
     return keras.Model(inputs={"board": input_board, "action": input_action}, outputs={"next_board": next_board, "reward": reward})
 
-    
+@tf.custom_gradient
+def scale_grad_layer(x):
+    def grad(dy):
+        return dy / 2.0
+    return tf.identity(x), grad
+
 
 def unroll_networks(state_network, policy_value_network, dynamics_network):
 
@@ -92,13 +98,18 @@ def unroll_networks(state_network, policy_value_network, dynamics_network):
         res = policy_value_network(hidden_state)
         policy, value         = res['policy'], res['value']
         res = dynamics_network({'board': hidden_state, 'action': actions[:,i]})
-        hidden_state, reward  =  res['next_board'], res['reward']
+        hidden_state, reward  =  scale_grad_layer(res['next_board']), res['reward']
 
-        policies.append(policy)
-        values.append(value)
-        rewards.append(reward)
+        policies.append(layers.Reshape((1,)+ACTION_SHAPE, name="policy" if N_UNROLL_STEPS == 1 else "p_"+str(i))(policy))
+        values.append(layers.Reshape((1,SUPPORT_SHAPE), name="value" if N_UNROLL_STEPS == 1 else "v_"+str(i))(value))
+        rewards.append(layers.Reshape((1, SUPPORT_SHAPE), name="reward" if N_UNROLL_STEPS == 1 else "r_"+str(i))(reward))
     
-    policy = layers.Concatenate(axis=0, name="policy")(policies)
-    value  = layers.Concatenate(axis=0, name="value")(values)
-    reward = layers.Concatenate(axis=0, name="reward")(rewards)
+    if N_UNROLL_STEPS > 1:
+        policy = layers.Concatenate(axis=1, name="policy")(policies)
+        value  = layers.Concatenate(axis=1, name="value")(values)
+        reward = layers.Concatenate(axis=1, name="reward")(rewards)
+    else:
+        policy = policies[0]
+        value = values[0]
+        reward = rewards[0]
     return keras.Model(inputs={"board": input_state, "actions": actions}, outputs={"policy": policy, "value": value, "reward": reward})

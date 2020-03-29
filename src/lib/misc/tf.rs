@@ -73,8 +73,8 @@ pub fn call_dynamics(
     args.add_feed(&board_op, 0, board);
     args.add_feed(&action_op, 0, action);
 
-    let reward_req = args.request_fetch(&output_op, 0);
-    let next_board_req = args.request_fetch(&output_op, 1);
+    let reward_req = args.request_fetch(&output_op, 1);
+    let next_board_req = args.request_fetch(&output_op, 0);
     session.run(&mut args).unwrap();
 
     let reward_tensor: Tensor<f32> = args.fetch(reward_req).unwrap();

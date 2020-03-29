@@ -131,7 +131,10 @@ pub fn prediction_task(
     let mut idx = 0;
 
     let mut last_time = Instant::now();
-    let timeout =  Duration::from_nanos(1_000_000_000/10_000); //10kHz: Should be the number of CPU-GPU roundtrip/sec.
+    let timeout =  Duration::from_nanos(1_000_000_000/10_000); //1kHz: Should be the number of CPU-GPU roundtrip/sec.
+
+    let mut last_warning = Instant::now();
+    let last_warning_duration = Duration::from_secs(10);
 
     loop {
         let recv_result = receiver.recv_deadline(last_time + timeout);
@@ -149,6 +152,13 @@ pub fn prediction_task(
 
 
         if send_batch {
+            /*if idx < settings::GPU_BATCH_SIZE/2 && (Instant::now() - last_warning) > last_warning_duration {
+                last_warning = Instant::now();
+                log::warn!("Prediction: GPU underused.");
+                log::warn!("Reduce batch size or increase workers. ({}%)", 100*idx/settings::GPU_BATCH_SIZE);
+                log::warn!("");
+            }*/
+
             let (policies, values) = {
                 let (ref graph, ref session) = *g_and_s.read().unwrap();
                 tf::call_prediction(&session, &graph, &repr_tensor)
@@ -186,7 +196,10 @@ pub fn dynamics_task(
     let mut idx = 0;
 
     let mut last_time = Instant::now();
-    let timeout =  Duration::from_nanos(1_000_000_000/10_000); //10kHz: Should be the number of CPU-GPU roundtrip/sec.
+    let timeout =  Duration::from_nanos(1_000_000_000/10_000); //1kHz: Should be the number of CPU-GPU roundtrip/sec.
+
+    let mut last_warning = Instant::now();
+    let last_warning_duration = Duration::from_secs(10);
 
     loop {
         let recv_result = receiver.recv_deadline(last_time + timeout);
@@ -205,6 +218,13 @@ pub fn dynamics_task(
 
 
         if send_batch {
+            /*if idx < settings::GPU_BATCH_SIZE/2 && (Instant::now() - last_warning) > last_warning_duration {
+                last_warning = Instant::now();
+                log::warn!("Prediction: GPU underused.");
+                log::warn!("Reduce batch size or increase workers. ({}%)", 100*idx/settings::GPU_BATCH_SIZE);
+                log::warn!("");
+            }*/
+
             let (rewards, next_reprs) = {
                 let (ref graph, ref session) = *g_and_s.read().unwrap();
                 tf::call_dynamics(&session, &graph, &repr_tensor, &action_tensor)
@@ -240,6 +260,9 @@ pub fn representation_task(
     let mut last_time = Instant::now();
     let timeout =  Duration::from_nanos(1_000_000_000/10_000); //10kHz: Should be the number of CPU-GPU roundtrip/sec.
 
+    let mut last_warning = Instant::now();
+    let last_warning_duration = Duration::from_secs(10);
+
     loop {
         let recv_result = receiver.recv_deadline(last_time + timeout);
 
@@ -256,6 +279,13 @@ pub fn representation_task(
 
 
         if send_batch {
+            /*if idx < settings::GPU_BATCH_SIZE/2 && (Instant::now() - last_warning) > last_warning_duration {
+                last_warning = Instant::now();
+                log::warn!("Prediction: GPU underused.");
+                log::warn!("Reduce batch size or increase workers. ({}%)", 100*idx/settings::GPU_BATCH_SIZE);
+                log::warn!("");
+            }*/
+
             let reprs = {
                 let (ref graph, ref session) = *g_and_s.read().unwrap();
                 tf::call_representation(&session, &graph, &board_tensor)
