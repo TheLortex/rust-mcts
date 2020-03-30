@@ -1,8 +1,5 @@
 use tensorflow::{Graph, Session, SessionOptions, SessionRunArgs, Tensor};
-
-pub const SUPPORT_SIZE: isize = 1;
-pub const SUPPORT_SHAPE: isize = 2 * SUPPORT_SIZE + 1;
-
+use crate::settings::{SUPPORT_SIZE, SUPPORT_SHAPE};
 fn sign(x: f32) -> f32 {
     if x > 0. {
         1.

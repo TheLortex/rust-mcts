@@ -1,6 +1,5 @@
 use crate::game;
 
-use crate::deep::tf;
 use crate::game::meta::simulated::Simulated;
 use crate::game::GameBuilder;
 use crate::policies::mcts::puct::PUCT;
@@ -282,7 +281,7 @@ pub fn muzero_game_generator<G, GB, H>(
             super::evaluator::prediction_task(
                 repr_size,
                 action_size,
-                tf::SUPPORT_SHAPE as usize,
+                settings::SUPPORT_SHAPE as usize,
                 prediction_tensorflow.as_ref(),
                 pred_rx,
             )
@@ -301,7 +300,7 @@ pub fn muzero_game_generator<G, GB, H>(
             super::evaluator::dynamics_task(
                 repr_size,
                 action_size,
-                tf::SUPPORT_SHAPE as usize,
+                settings::SUPPORT_SHAPE as usize,
                 dynamics_tensorflow.as_ref(),
                 dyn_rx,
             )

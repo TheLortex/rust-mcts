@@ -1,15 +1,15 @@
-use crate::game::{Singleplayer,SingleplayerGameBuilder,Base};
+use crate::game::{Singleplayer,SingleplayerGameBuilder,Base,Playable};
 
 use std::fmt;
 use std::hash::*;
-use std::collections::hash_map::DefaultHasher;
 use std::hash::Hasher;
 use std::cmp::Ordering;
 
 const K: usize = 9;
 const WS_RULE: bool = true;
 
-#[derive(Clone, PartialEq, Eq)]
+/// Weak schur number game.
+#[derive(Clone, Eq)]
 pub struct WeakSchurNumber {
     partitions: [Vec<usize>; K],
     last_value: usize,
@@ -59,11 +59,20 @@ impl WeakSchurNumber {
         }
         best_length
     }
+
+    fn score(&self) -> f32 {
+        self.partitions
+            .iter()
+            .map(|p| Self::best_sequence(&p))
+            .max()
+            .unwrap() as f32
+    }
 }
 
-pub struct WeakSchurNumberBuilder {
+impl Singleplayer for WeakSchurNumber {}
 
-}
+/// Weak schur number game builder
+pub struct WeakSchurNumberBuilder {}
 
 impl SingleplayerGameBuilder<WeakSchurNumber> for WeakSchurNumberBuilder {
     fn create(&self) -> WeakSchurNumber {
@@ -77,35 +86,10 @@ impl SingleplayerGameBuilder<WeakSchurNumber> for WeakSchurNumberBuilder {
     }
 }
 
-impl Singleplayer for WeakSchurNumber {
-    fn score(&self) -> f32 {
-        self.partitions
-            .iter()
-            .map(|p| Self::best_sequence(&p))
-            .max()
-            .unwrap() as f32
-    }
-}
-
-
-type PossibleMovesIterator<'a> = impl Iterator<Item=usize> + 'a;
-
 impl Base for WeakSchurNumber {
     type Move = usize;
-    type MoveIterator<'a> = PossibleMovesIterator<'a>;
 
-    fn play(&mut self, m: &Self::Move) {
-        self.last_value += 1;
-        self.partitions[*m].push(self.last_value);
-    }
-
-    fn hash(&self) -> usize {
-        let mut hasher = DefaultHasher::new();
-        self.partitions.hash(&mut hasher);
-        hasher.finish() as usize
-    }
-
-    fn possible_moves<'a>(&'a self) -> Self::MoveIterator<'a> {
+    fn possible_moves(&self) -> Vec<Self::Move> {
 
         let valid_moves = self.partitions
             .iter()
@@ -113,16 +97,38 @@ impl Base for WeakSchurNumber {
             .filter(move |(_, partition)| WeakSchurNumber::is_valid(self.last_value + 1, partition));
 
         if WS_RULE {
-            panic!("Not implemented.");
-            if let Some((idx, _)) = valid_moves
-                .filter(|(_, partition)| partition.last() == Some(&self.last_value))
-                .next()
+            if let Some((idx, _)) = valid_moves.clone()
+                .find(|(_, partition)| partition.last() == Some(&self.last_value))
             {
-                panic!("Not implemented.");
-                //return vec![idx];
+                return vec![idx];
             }
         }
 
-        valid_moves.map(|(i,_)| i)
+        valid_moves.map(|(i,_)| i).collect()
+    }
+}
+
+
+impl Hash for WeakSchurNumber {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.partitions.hash(state)
+    }
+}
+
+impl PartialEq for WeakSchurNumber {
+    fn eq(&self, other: &WeakSchurNumber) -> bool {
+        self.partitions.eq(&other.partitions)
+    }
+}
+
+impl Playable for WeakSchurNumber {
+    fn play(&mut self, m: &Self::Move) -> f32 {
+        self.last_value += 1;
+        self.partitions[*m].push(self.last_value);
+        if self.is_finished() {
+            self.score()
+        } else {
+            0.
+        }
     }
 }

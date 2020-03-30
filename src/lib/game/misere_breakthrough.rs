@@ -1,8 +1,9 @@
-use crate::game::{Base,Game,GameBuilder};
+use crate::game::{Base,Game,GameBuilder,Playable};
 use crate::game::breakthrough::{Breakthrough, BreakthroughBuilder, Color, Move};
 
 use std::fmt;
 
+/// Misère breakthrough
 #[derive(Clone, PartialEq, Eq)]
 pub struct MisereBreakthrough {
     game: Breakthrough,
@@ -24,20 +25,17 @@ impl GameBuilder<MisereBreakthrough> for BreakthroughBuilder {
 
 impl Base for MisereBreakthrough {
     type Move = Move;
-    type MoveIterator<'a> = <Breakthrough as Base>::MoveIterator<'a>;
 
-    fn play(&mut self, m: &Move) {
-        self.game.play(m)
-    }
-
-    fn hash(&self) -> usize {
-        self.game.hash()
-    }
-
-    fn possible_moves<'a>(&'a self) -> Self::MoveIterator<'a> {
+    fn possible_moves(&self) -> Vec<Move> {
         self.game.possible_moves()
     }
 
+}
+
+impl Playable for MisereBreakthrough {
+    fn play(&mut self, m: &Move) -> f32{
+        -self.game.play(m)
+    }
 }
 
 impl Game for MisereBreakthrough {
@@ -51,12 +49,13 @@ impl Game for MisereBreakthrough {
         self.game.turn()
     }
 
-    fn has_won(&self, c: Color) -> bool {
-        self.game.winner().map(|c| c.adv()) == Some(c)
+    fn player_after(player: Self::Player) -> Self::Player {
+        Breakthrough::player_after(player)
     }
 }
 
 impl MisereBreakthrough {
+    /// Show game state
     pub fn show(&self) {
         self.game.show()
     }

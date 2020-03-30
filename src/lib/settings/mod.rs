@@ -10,6 +10,12 @@ pub const BREAKTHROUGH_K: usize = 5;
 /// MuZero hidden state shape for 5x5 breakthrough.
 pub const MUZ_BT_SHAPE: (usize, usize, usize) = (5, 5, 16);
 
+
+/// Range for the categorical value representation.
+pub const SUPPORT_SIZE: isize = 1;
+/// Resulting shape for the categorical value representation.
+pub const SUPPORT_SHAPE: isize = 2 * SUPPORT_SIZE + 1;
+
 // Batched GPU evaluator.
 
 /// Batch size to send to the GPU (PUCT)

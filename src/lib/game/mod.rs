@@ -14,9 +14,18 @@ use crate::policies::MultiplayerPolicy;
  *  reaches the other side of the board.
  */
 pub mod breakthrough;
-/*pub mod hashcode_20;
+/**
+ *  Google Hashcode 2020 problem.
+ */
+pub mod hashcode_20;
+/**
+ *  Misère breakthrough
+ */
 pub mod misere_breakthrough;
-pub mod weak_schur;*/
+/**
+ *  Weak schur number.
+ */
+pub mod weak_schur;
 /**
  *  Games that takes other games as an input.
  */

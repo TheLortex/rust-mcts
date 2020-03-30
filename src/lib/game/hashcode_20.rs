@@ -1,6 +1,5 @@
-use crate::game::{Singleplayer, Base, SingleplayerGameBuilder};
+use crate::game::*;
 
-use std::collections::hash_map::DefaultHasher;
 use std::collections::{BTreeSet, BTreeMap};
 use std::fmt;
 use std::hash::Hash;
@@ -9,18 +8,20 @@ use std::iter::FromIterator;
 use std::fs::File;
 use std::io::{prelude::*, BufReader};
 
+/// Hashcode 2020 game settings
 #[derive(Debug, Clone)]
 pub struct Hashcode20Settings {
     B: usize,
     L: usize,
     D: usize,
-    books: Vec<usize>,                              // book values
+    books: Vec<usize>,                               // book values
     libraries: Vec<(BTreeSet<usize>, usize, usize)>, // books, time to signup, number of books that can be scanned each day
 }
 
 impl Hashcode20Settings {
+    /// Create a game settings instance given its file description.
     pub fn new_from_file(filename: &str) -> Hashcode20Settings {
-        let file = File::open(filename).expect(&(format!("Failed to read {}", filename)));
+        let file = File::open(filename).unwrap_or_else(|_| panic!("Failed to read {}", filename));
         let mut reader = BufReader::new(file);
         let mut line = String::new();
 
@@ -58,6 +59,7 @@ impl Hashcode20Settings {
     }
 }
 
+/// Hashcode 2020 Game
 #[derive(Clone)]
 pub struct Hashcode20 {
     pending_sign_up: Option<(usize, usize)>, // Library / days left
@@ -70,7 +72,7 @@ pub struct Hashcode20 {
 
     n_books_scanned: BTreeMap<usize, usize>,
 
-    pub day: usize,
+    day: usize,
     rules: Hashcode20Settings,
 }
 
@@ -84,11 +86,14 @@ impl fmt::Debug for Hashcode20 {
     }
 }
 
-
+/// Possible actions
 #[derive(Copy, Clone, PartialEq, Eq, Hash, Debug)]
 pub enum Move {
+    /// Signup a library.
     Signup(usize),
+    /// Scan a book in a library.
     Scan(usize,usize), //(book, library)
+    /// Finish the day.
     Skip,
 }
 
@@ -145,25 +150,35 @@ impl SingleplayerGameBuilder<Hashcode20> for Hashcode20Settings {
 }
 
 impl Singleplayer for Hashcode20 {
-    fn score(&self) -> f32 {
+/*    fn score(&self) -> f32 {
         let score: usize = self.scanned_books.iter().map(|book| self.rules.books[*book]).sum();
         score as f32
-    }
+    }*/
 }
-
-type PossibleMovesIterator<'a> = impl Iterator<Item=Move> + 'a;
 
 impl Base for Hashcode20 {
     type Move = Move;
-    type MoveIterator<'a> = PossibleMovesIterator<'a>;
 
 
-    fn possible_moves<'a>(&'a self) -> Self::MoveIterator<'a> {
-        self.compute_possible_moves().into_iter()
+    fn possible_moves(&self) -> Vec<Move> {
+        self.compute_possible_moves()
     }
+}
 
+impl Hash for Hashcode20 {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.scanned_books.hash(state);
+        self.pending_sign_up.hash(state);
+        self.signedup_libraries.hash(state);
+        self.n_books_scanned.hash(state);
+        self.day.hash(state);
+    }
+}
+
+
+impl Playable for Hashcode20 {
     // assuming the move is valid.
-    fn play(&mut self, m: &Self::Move) {
+    fn play(&mut self, m: &Self::Move) -> f32 {
         match m {
             Move::Skip => {
                 self.day += 1;
@@ -176,26 +191,19 @@ impl Base for Hashcode20 {
                     } else {
                         self.pending_sign_up = Some((library, time_left - 1))
                     }
-                }
+                };
+                0.
             }
             Move::Scan(book, library) => {
                 self.scanned_books.insert(*book);
                 self.unscanned_books.remove(book);
                 *self.n_books_scanned.entry(*library).or_insert(0) += 1;
+                self.rules.books[*book] as f32
             },
             Move::Signup(library) => {
-                self.pending_sign_up = Some((*library, self.rules.libraries[*library].1))
+                self.pending_sign_up = Some((*library, self.rules.libraries[*library].1));
+                0.
             }
-        };
-    }
-
-    fn hash(&self) -> usize {
-        let mut hasher = DefaultHasher::new();
-        self.scanned_books.hash(&mut hasher);
-        self.pending_sign_up.hash(&mut hasher);
-        self.signedup_libraries.hash(&mut hasher);
-        self.n_books_scanned.hash(&mut hasher);
-        self.day.hash(&mut hasher);
-        hasher.finish() as usize
+        }
     }
 }
