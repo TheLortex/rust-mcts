@@ -8,7 +8,10 @@ use tensorflow::{Graph, Session, Tensor};
 use std::sync::mpsc;
 use gstuff::oneshot;
 use std::time::{Instant, Duration};
-use std::sync::{Arc, RwLock};
+use std::sync::{RwLock, atomic::AtomicBool};
+use std::sync::atomic::Ordering;
+use std::{thread, time};
+
 
 
 const WARN_ON_GPU_UNDERUSAGE: bool = false;
@@ -111,9 +114,11 @@ where
 pub fn prediction_task(
     repr_size: usize,
     action_size: usize,
-    g_and_s: Arc<RwLock<(Graph, Session)>>,
+    support_size: usize,
+    tensorflow: &(AtomicBool, RwLock<(Graph, Session)>),
     receiver: mpsc::Receiver<PredictionEvaluatorChannel>,
 ) {
+    let (writer_lock, g_and_s) = tensorflow;
     println!("Starting prediction evaluator..");
 
     
@@ -151,6 +156,10 @@ pub fn prediction_task(
                 log::warn!("");
             }
 
+            while writer_lock.load(Ordering::Relaxed) {
+                thread::sleep(time::Duration::from_millis(1));
+            }
+
             let (policies, values) = {
                 let (ref graph, ref session) = *g_and_s.read().unwrap();
                 tf::call_prediction(&session, &graph, &repr_tensor)
@@ -158,7 +167,7 @@ pub fn prediction_task(
 
             for i in (0..idx).rev() {
                 let policy = Tensor::from(&policies[i * action_size..(i + 1) * action_size]);
-                let value = Tensor::from(values[i]);
+                let value = Tensor::from(&values[i * support_size..(i+1) * support_size]);
                 tx_buf.pop().unwrap().send((policy, value));
             }
             idx = 0;
@@ -173,9 +182,11 @@ pub fn prediction_task(
 pub fn dynamics_task(
     repr_size: usize,
     action_size: usize,
-    g_and_s: Arc<RwLock<(Graph, Session)>>,
+    support_size: usize,
+    tensorflow: &(AtomicBool, RwLock<(Graph, Session)>),
     receiver: mpsc::Receiver<DynamicsEvaluatorChannel>,
 ) {
+    let (writer_lock, g_and_s) = tensorflow;
     println!("Starting dynamics evaluator..");
 
     let mut repr_tensor: Tensor<f32> =
@@ -218,6 +229,10 @@ pub fn dynamics_task(
                 log::warn!("");
             }
 
+            while writer_lock.load(Ordering::Relaxed) {
+                thread::sleep(time::Duration::from_millis(1));
+            }
+
             let (rewards, next_reprs) = {
                 let (ref graph, ref session) = *g_and_s.read().unwrap();
                 tf::call_dynamics(&session, &graph, &repr_tensor, &action_tensor)
@@ -225,7 +240,7 @@ pub fn dynamics_task(
 
             for i in (0..idx).rev() {
                 let next_repr = Tensor::from(&next_reprs[i * repr_size..(i + 1) * repr_size]);
-                let reward = Tensor::from(rewards[i]);
+                let reward = Tensor::from(&rewards[i * support_size..(i+1) * support_size]);
                 tx_buf.pop().unwrap().send((next_repr, reward));
             }
             idx = 0;
@@ -239,9 +254,10 @@ pub fn dynamics_task(
 pub fn representation_task(
     board_size: usize,
     repr_size: usize,
-    g_and_s: Arc<RwLock<(Graph, Session)>>,
+    tensorflow: &(AtomicBool, RwLock<(Graph, Session)>),
     receiver: mpsc::Receiver<RepresentationEvaluatorChannel>,
 ) {
+    let (writer_lock, g_and_s) = tensorflow;
     println!("Starting representation evaluator..");
 
     
@@ -277,6 +293,10 @@ pub fn representation_task(
                 log::warn!("Prediction: GPU underused.");
                 log::warn!("Reduce batch size or increase workers. ({}%)", 100*idx/settings::GPU_BATCH_SIZE);
                 log::warn!("");
+            }
+
+            while writer_lock.load(Ordering::Relaxed) {
+                thread::sleep(time::Duration::from_millis(1));
             }
 
             let reprs = {

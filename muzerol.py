@@ -26,30 +26,11 @@ from networks import representation_network, dynamics_network, prediction_networ
 #    stack_height_limit=30, path_length_limit=50
 #)
 
+game = "mu-breakthrough"
 
 physical_devices = tf.config.list_physical_devices('GPU')
 tf.config.experimental.set_memory_growth(physical_devices[0], True)
 
-
-#ReplayBuffer = namedtuple("ReplayBuffer", ["states_count", "index", "games"])
-#GameEntry    = namedtuple("GameEntry", ["state", "policy", "value", "action", "reward", "turn"])
-class GameEntry:
-    def __init__(self, state, policy, value, action, reward, turn):
-        super().__init__()
-        self.state = state
-        self.policy = policy
-        self.value = value 
-        self.action = action
-        self.reward = reward
-        self.turn = turn
-
-class ReplayBuffer:
-    def __init__(self, states_count, max_index, index, games):
-        super().__init__()
-        self.states_count = states_count
-        self.max_index = max_index
-        self.index = index
-        self.games = games
 
 
 training_data_path = "./training_data/{}/".format(game)
@@ -62,75 +43,10 @@ if os.path.exists(training_data_path+"/replay_buffer.pkl"):
 else:
     print("| Starting replay buffer from scratch")
     os.makedirs(training_data_path, exist_ok=True)
-
     replay_buffer = ReplayBuffer(0,0,0,[None]*REPLAY_BUFFER_SIZE)
 
 
 
-class BufferThread(Thread):
-    def __init__(self):
-        Thread.__init__(self)
-        self.f = None
-
-    def open_fifo(self):
-        print("| Waiting for game generator...", end="", flush=True)
-        self.f = open("./fifo", mode="rb")
-        print("done!")
-
-    def preload(self, limit):
-        global replay_buffer
-        if replay_buffer.index < limit:
-            print("| Booting up first games..")
-            self.run(limit=limit)
-            print("| Done!")
-
-    def run(self, limit=None):
-        global replay_buffer
-
-        self.continuer = True
-
-        if not(limit is None):
-            pbar = tqdm(total=limit)
-        else:
-            pbar = False
-
-        if not self.f:
-            self.open_fifo()
-
-        while self.continuer and ((limit is None) or (replay_buffer.index < limit)):
-            sz = int.from_bytes(self.f.read(8), byteorder="big")
-            # print(sz)
-            pickled = self.f.read(sz)
-            game = pickle.loads(pickled)
-            
-            new_state  = np.array(game["state"], dtype=float).reshape((-1,)+BOARD_SHAPE)
-            new_policy = np.array(game["policy"], dtype=float).reshape((-1,)+ACTION_SHAPE)
-            new_value  = np.array(game["value"], dtype=float).reshape((-1))
-            new_action = np.array(game["action"], dtype=float).reshape((-1,)+ACTION_SHAPE)
-            new_reward = np.array(game["reward"], dtype=float).reshape((-1,))
-            
-            replay_buffer.games[replay_buffer.index] = GameEntry(new_state, new_policy, new_value, new_action, new_reward, game["turn"])
-            replay_buffer.states_count += 1
-            replay_buffer.max_index = min(replay_buffer.max_index + 1, REPLAY_BUFFER_SIZE)
-            
-            replay_buffer.index += 1
-            if replay_buffer.index == REPLAY_BUFFER_SIZE:
-                replay_buffer.index = 0
-
-            if pbar:
-                pbar.update(1)
-
-            if replay_buffer.index % SAVE_REPLAY_BUFFER_FREQ == 0:
-                #print("Saving in training_data/")
-                f = open(training_data_path+"replay_buffer.pkl", "wb")
-                pickle.dump(replay_buffer, f)
-                f.close()
-
-        if pbar:
-            pbar.close()
-
-    def stop(self):
-        self.continuer = False
 
 # scalar to categorical transformation.
 def value_to_support(v):
@@ -208,8 +124,8 @@ class ZerolGenerator(Sequence):
 
     def __getitem__(self, index):
         policy = np.zeros((BATCH_SIZE,N_UNROLL_STEPS)+ACTION_SHAPE)
-        value  = np.zeros((BATCH_SIZE,N_UNROLL_STEPS)+(SUPPORT_SHAPE,))
-        reward = np.zeros((BATCH_SIZE,N_UNROLL_STEPS)+(SUPPORT_SHAPE,))
+        value  = np.zeros((BATCH_SIZE,N_UNROLL_STEPS,SUPPORT_SHAPE))
+        reward = np.zeros((BATCH_SIZE,N_UNROLL_STEPS,SUPPORT_SHAPE))
         state  = np.zeros((BATCH_SIZE,)+BOARD_SHAPE)
         actions= np.zeros((BATCH_SIZE,N_UNROLL_STEPS)+ACTION_SHAPE)
 
@@ -286,7 +202,7 @@ adam = optimizers.Adam(lr=0.001)
 unrolled.compile(optimizer=adam, loss={
                 "policy": custom_loss_policy, "value": custom_loss_value, "reward": custom_loss_reward})
 
-buffer_thr = BufferThread()
+buffer_thr = BufferThread(replay_buffer, training_data_path)
 # waiting until several bootstrap games have been created.
 buffer_thr.preload(SAVE_REPLAY_BUFFER_FREQ)
 buffer_thr.start()

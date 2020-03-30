@@ -1,10 +1,7 @@
-use crate::game;
-
 use tensorflow::{Graph, Session, SessionRunArgs, Tensor, SessionOptions};
-use ndarray::{Dimension, Array, ArrayBase, Axis};
 
-const SUPPORT_SIZE: isize = 1;
-const SUPPORT_SHAPE: isize = 2*SUPPORT_SIZE+1;
+pub const SUPPORT_SIZE: isize = 1;
+pub const SUPPORT_SHAPE: isize = 2*SUPPORT_SIZE+1;
 
 fn sign(x: f32) -> f32 {
     if x > 0. {

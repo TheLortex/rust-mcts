@@ -9,6 +9,7 @@ use crate::policies::{
 };
 use crate::policies::mcts::puct::PUCT;
 use crate::settings;
+use crate::deep::tf;
 
 use indicatif::{ProgressBar, ProgressStyle};
 use ndarray::{Array, Axis, Dimension, Ix1};
@@ -19,6 +20,7 @@ use std::iter::FromIterator;
 use std::marker::PhantomData;
 use std::sync::mpsc;
 use tensorflow::{Graph, Session};
+use std::sync::atomic::AtomicBool;
 
 /**
  *  Asynchronous evaluation functions.
@@ -215,9 +217,9 @@ use std::thread;
 pub fn muzero_game_generator<G, GB, H>(
     settings: (PUCTSettings, H),
     game_builder: GB,
-    prediction_tensorflow: Arc<RwLock<(Graph, Session)>>,
-    dynamics_tensorflow: Arc<RwLock<(Graph, Session)>>,
-    representation_tensorflow: Arc<RwLock<(Graph, Session)>>,
+    prediction_tensorflow: Arc<(AtomicBool, RwLock<(Graph, Session)>)>,
+    dynamics_tensorflow: Arc<(AtomicBool, RwLock<(Graph, Session)>)>,
+    representation_tensorflow: Arc<(AtomicBool, RwLock<(Graph, Session)>)>,
     output_chan: mpsc::SyncSender<GameHistoryEntry<G>>,
 ) where
     G: game::Feature + game::SingleWinner + Send + Sync + Clone + Hash + Eq + 'static,
@@ -277,15 +279,15 @@ pub fn muzero_game_generator<G, GB, H>(
         let dynamics_tensorflow = dynamics_tensorflow.clone();
 
         join_handles_ev.push(thread::spawn(move || {
-            super::evaluator::prediction_task(repr_size, action_size, prediction_tensorflow, pred_rx)
+            super::evaluator::prediction_task(repr_size, action_size, tf::SUPPORT_SHAPE as usize, prediction_tensorflow.as_ref(), pred_rx)
         }));
 
         join_handles_ev.push(thread::spawn(move || {
-            super::evaluator::representation_task(board_size, repr_size, representation_tensorflow, repr_rx)
+            super::evaluator::representation_task(board_size, repr_size, representation_tensorflow.as_ref(), repr_rx)
         }));
 
         join_handles_ev.push(thread::spawn(move || {
-            super::evaluator::dynamics_task(repr_size, action_size, dynamics_tensorflow, dyn_rx)
+            super::evaluator::dynamics_task(repr_size, action_size, tf::SUPPORT_SHAPE as usize, dynamics_tensorflow.as_ref(), dyn_rx)
         }));
     }
 
@@ -438,7 +440,7 @@ pub fn muzero_game_generator<G, GB, H>(
 pub fn alphazero_game_generator<G, GB>(
     puct_settings: PUCTSettings,
     game_builder: GB,
-    prediction_tensorflow: Arc<RwLock<(Graph, Session)>>,
+    prediction_tensorflow: Arc<(AtomicBool, RwLock<(Graph, Session)>)>,
     output_chan: mpsc::SyncSender<GameHistoryEntry<G>>,
 ) where
     G: game::Feature + game::SingleWinner + Send + Sync + Clone + Hash + Eq + 'static,
@@ -485,7 +487,7 @@ pub fn alphazero_game_generator<G, GB>(
         let prediction_tensorflow = prediction_tensorflow.clone();
 
         join_handles_ev.push(thread::spawn(move || {
-            super::evaluator::prediction_task(board_size, action_size, prediction_tensorflow, pred_rx)
+            super::evaluator::prediction_task(board_size, action_size, 1, prediction_tensorflow.as_ref(), pred_rx)
         }));
     }
 

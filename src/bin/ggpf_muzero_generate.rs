@@ -2,16 +2,14 @@
 
 use std::path::Path;
 use std::sync::atomic::AtomicBool;
-use std::sync::atomic::Ordering;
 use std::sync::Arc;
-use std::sync::Mutex;
 use std::sync::RwLock;
-use std::{thread, time};
+use std::{thread};
 use std::sync::mpsc;
 use ndarray::Dim;
 
 
-const MODEL_PATH: &str = "models/breakthrough/";
+const MODEL_PATH: &str = "models/mu-breakthrough/";
 
 use ggpf::game::{
     breakthrough::{Breakthrough, BreakthroughBuilder},
@@ -43,27 +41,24 @@ fn run() {
     let dynamics_path = format!("{}{}", MODEL_PATH, "dyn");
     let representation_path = format!("{}{}", MODEL_PATH, "state");
     
-    let prediction_tensorflow       = Arc::new(RwLock::new(tf::load_model(&prediction_path)));
-    let dynamics_tensorflow         = Arc::new(RwLock::new(tf::load_model(&dynamics_path)));
-    let representation_tensorflow   = Arc::new(RwLock::new(tf::load_model(&representation_path)));
+    let prediction_tensorflow       = Arc::new((AtomicBool::new(false), RwLock::new(tf::load_model(&prediction_path))));
+    let dynamics_tensorflow         = Arc::new((AtomicBool::new(false), RwLock::new(tf::load_model(&dynamics_path))));
+    let representation_tensorflow   = Arc::new((AtomicBool::new(false), RwLock::new(tf::load_model(&representation_path))));
 
 
-    let fm_mtx = Arc::new(Mutex::new(ggpf::deep::filemanager::FileManager::new(
+    let mut fm = ggpf::deep::filemanager::FileManager::new(
         "./fifo",
-    )));
+    );
 
     /*
      * Watches for change in the model, and reload when needed.
      */
 
-    let is_writing_prediction = Arc::new(AtomicBool::new(false));
-    filemanager::watch_model(is_writing_prediction.clone(), prediction_tensorflow.clone(), prediction_path);
+    filemanager::watch_model(prediction_tensorflow.clone(), prediction_path);
 
-    let is_writing_dynamics = Arc::new(AtomicBool::new(false));
-    filemanager::watch_model(is_writing_dynamics.clone(), dynamics_tensorflow.clone(), dynamics_path);
+    filemanager::watch_model(dynamics_tensorflow.clone(), dynamics_path);
 
-    let is_writing_representation = Arc::new(AtomicBool::new(false));
-    filemanager::watch_model(is_writing_representation.clone(), representation_tensorflow.clone(), representation_path);
+    filemanager::watch_model(representation_tensorflow.clone(), representation_path);
 
     // Game channel.
     let (tx_games, rx_games) = mpsc::sync_channel::<GameHistoryEntry<WithHistory<Breakthrough,U2>>>(1024);
@@ -82,13 +77,7 @@ fn run() {
     ));
 
     let game_writer = thread::spawn(move || {
-        let fm_mtx = fm_mtx.clone();
         while let Some(game) = rx_games.recv().ok() {
-            while is_writing_prediction.load(Ordering::Relaxed) || is_writing_dynamics.load(Ordering::Relaxed) || is_writing_representation.load(Ordering::Relaxed){
-                thread::sleep(time::Duration::from_millis(1));
-            }
-
-            let mut fm = fm_mtx.lock().unwrap();
             fm.append(game);
         }
     });

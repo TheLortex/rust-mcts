@@ -164,7 +164,7 @@ fn main() {
         representation_evaluate: |board: Array<f32, <G as game::Feature>::StateDim>| {
             let x = representation_tensorflow.clone();
             let (ref graph, ref session) = x.as_ref();
-            representation_evaluator_single(&session, &graph, Dim(settings::MUZ_BT_SHAPE), board.clone())
+            representation_evaluator_single(&session, &graph, Dim(settings::MUZ_BT_SHAPE), board)
         }
     };
     

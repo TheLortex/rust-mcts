@@ -48,32 +48,45 @@ impl FileManager {
 }
 
 
-use notify::event::*;
 use notify::{RecommendedWatcher, RecursiveMode, Watcher};
 use std::sync::atomic::AtomicBool;
 use std::sync::atomic::Ordering;
-use std::sync::Arc;
 use tensorflow::{Session, Graph};
-use std::sync::RwLock;
+use std::sync::{RwLock, Arc};
+use std::time::Duration;
+use std::sync::mpsc::channel;
+use std::thread;
 
 /// Watch a path for changes and reload the model when content has been modified.
-pub fn watch_model(global_lock: Arc<AtomicBool>, tf_network: Arc<RwLock<(Graph, Session)>>, path: String) {
-    let p = path.clone();
-    let mut watcher: RecommendedWatcher = Watcher::new_immediate(move |x: Result<Event, _>| {
-        if let Ok(x) = x {
-            if x.kind == EventKind::Access(AccessKind::Close(AccessMode::Write)) {
-                log::debug!("Updating model..");
-                global_lock.store(true, Ordering::Relaxed);
-                let mut tf_network = tf_network.write().unwrap();
-                global_lock.store(false, Ordering::Relaxed);
-                let (ref _graph, ref mut session_m) = *tf_network;
-                session_m.close().expect("Unable to close the session.");
+pub fn watch_model(tf: Arc<(AtomicBool, RwLock<(Graph, Session)>)>, path: String) {
+    thread::spawn(move || {
+        // Create a channel to receive the events.
+        let (tx, rx) = channel();
 
-                *tf_network = tf::load_model(&p);
-                log::debug!("Model successfully updated!");
+        let p = path.clone();
+
+        let mut watcher: RecommendedWatcher = Watcher::new(tx, Duration::from_millis(500)).unwrap();
+        
+        log::info!("Watching path {}", path);
+        watcher.watch(path, RecursiveMode::NonRecursive).unwrap();
+
+        loop {
+            match rx.recv() {
+                Ok(_) => {
+                    let (global_lock, tf_network) = tf.as_ref();
+                    log::info!("Updating model.. {}", p);
+                    global_lock.store(true, Ordering::Relaxed);
+                    let mut tf_network = tf_network.write().unwrap();
+                    global_lock.store(false, Ordering::Relaxed);
+                    let (ref _graph, ref mut session_m) = *tf_network;
+                    session_m.close().expect("Unable to close the session.");
+    
+                    *tf_network = tf::load_model(&p);
+                    log::info!("Model successfully updated!");
+                },
+                Err(e) => println!("watch error: {:?}", e),
             }
         }
-    }).unwrap();
-
-    watcher.watch(&path, RecursiveMode::NonRecursive).unwrap();
+    });
+    
 }
