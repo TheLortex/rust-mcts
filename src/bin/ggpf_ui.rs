@@ -1,45 +1,44 @@
 #![allow(non_snake_case)]
 
-use ggpf::game::meta::with_history::{WithHistory, IWithHistory};
-use ggpf::game::breakthrough::*;
-use ggpf::game::{MoveTrait, InteractiveGame, Base, NoFeatures, Feature, Game, SingleWinner};
-use ggpf::policies::{
-    ppa::*, mcts::puct::{PUCT, PUCTSettings, PUCTPolicy_, Evaluator}, MultiplayerPolicy, MultiplayerPolicyBuilder,
-};
-use ggpf::policies::mcts::{MCTSTreeNode};
-use ggpf::settings;
 use ggpf::deep::evaluator::prediction_evaluator_single;
+use ggpf::game::breakthrough::*;
+use ggpf::game::meta::with_history::{IWithHistory, WithHistory};
+use ggpf::game::{Base, Feature, Game, InteractiveGame, MoveTrait, NoFeatures, SingleWinner};
+use ggpf::policies::mcts::MCTSTreeNode;
+use ggpf::policies::{
+    mcts::puct::{Evaluator, PUCTPolicy_, PUCTSettings, PUCT},
+    ppa::*,
+    MultiplayerPolicy, MultiplayerPolicyBuilder,
+};
+use ggpf::settings;
 
-
-use typenum::U2;
-use cursive_tree_view::{Placement, TreeView};
-use cursive::views::{Button, Dialog, ResizedView, LinearLayout, NamedView, Panel};
-use cursive::view::SizeConstraint;
-use cursive::Cursive;
 use cursive::traits::*;
-use tensorflow::{Graph, Session, SessionOptions};
-use ndarray::Array;
+use cursive::view::SizeConstraint;
+use cursive::views::{Button, Dialog, LinearLayout, NamedView, Panel, ResizedView};
+use cursive::Cursive;
 use cursive_flexi_logger_view::FlexiLoggerView;
-use flexi_logger::{Logger, LogTarget};
+use cursive_tree_view::{Placement, TreeView};
+use flexi_logger::{LogTarget, Logger};
+use ndarray::Array;
 use std::cell::RefCell;
+use std::fmt;
 use std::marker::PhantomData;
 use std::rc::Rc;
-use std::fmt;
-
+use tensorflow::{Graph, Session, SessionOptions};
+use typenum::U2;
 
 const MODEL_PATH: &str = "models/alpha-breakthrough";
 
 type G = WithHistory<Breakthrough, U2>;
 type IG = IWithHistory<ui::IBreakthrough, U2>;
 
-
 #[derive(Clone)]
 struct TreeEntry<F>
 where
-    F: Evaluator<G>
+    F: Evaluator<G>,
 {
     name: String,
-    state: Rc<RefCell<MCTSTreeNode<G, PUCTPolicy_<G,F>>>>,
+    state: Rc<RefCell<MCTSTreeNode<G, PUCTPolicy_<G, F>>>>,
     probability: f32,
     value: f32,
     N_visits: f32,
@@ -48,31 +47,39 @@ where
 
 impl<F> fmt::Display for TreeEntry<F>
 where
-    F: Evaluator<G>
+    F: Evaluator<G>,
 {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{} | P{:^2.2} | V{:^2.2} | N{:^4} | R{:^2}", self.name, self.probability, self.value, self.N_visits, self.reward)
+        write!(
+            f,
+            "{} | P{:^2.2} | V{:^2.2} | N{:^4} | R{:^2}",
+            self.name, self.probability, self.value, self.N_visits, self.reward
+        )
     }
 }
 
 impl<F> fmt::Debug for TreeEntry<F>
 where
-    F: Evaluator<G>
+    F: Evaluator<G>,
 {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{} | P:{:^2.2} | V:{:^2.2} | N:{:^4} | R:{:^2}", self.name, self.probability, self.value, self.N_visits, self.reward)
+        write!(
+            f,
+            "{} | P:{:^2.2} | V:{:^2.2} | N:{:^4} | R:{:^2}",
+            self.name, self.probability, self.value, self.N_visits, self.reward
+        )
     }
 }
 
-fn expand_tree<F>(treeview: &mut TreeView<TreeEntry<F>>, parent_row: usize) 
+fn expand_tree<F>(treeview: &mut TreeView<TreeEntry<F>>, parent_row: usize)
 where
-    F: Evaluator<G> + Clone
+    F: Evaluator<G> + Clone,
 {
     let content: TreeEntry<F> = treeview.borrow_item(parent_row).unwrap().clone();
 
     let tree_node = content.state.borrow();
 
-    let mut moves: Vec<&Move> = tree_node.moves.iter().map(|(a,_)| a).collect();
+    let mut moves: Vec<&Move> = tree_node.moves.iter().map(|(a, _)| a).collect();
     moves.sort_by_key(|a| (a.x, a.y));
     for action in moves {
         let move_info = tree_node.info.moves.get(action).unwrap();
@@ -98,24 +105,28 @@ where
 struct GameDuelUI {}
 
 impl GameDuelUI {
-    fn render<P2,F>(
+    fn render<P2, F>(
         start: <G as Game>::Player,
-        pb1: PUCT<G,F>,
+        pb1: PUCT<G, F>,
         pb2: P2,
-    ) -> impl cursive::view::View 
-where
-    P2: MultiplayerPolicyBuilder<G>,
-    P2::P: 'static,
-    F: Fn(<G as Game>::Player, &G) -> (Array<f32, <G as Feature>::ActionDim>, f32) + Clone + 'static
-{
-        
+    ) -> impl cursive::view::View
+    where
+        P2: MultiplayerPolicyBuilder<G>,
+        P2::P: 'static,
+        F: Fn(<G as Game>::Player, &G) -> (Array<f32, <G as Feature>::ActionDim>, f32)
+            + Clone
+            + 'static,
+    {
         let p1 = RefCell::new(pb1.create(G::players()[0]));
         let p2 = RefCell::new(pb2.create(G::players()[1]));
 
         let state = IG::new(start);
 
-        let left = LinearLayout::vertical()
-            .child(ResizedView::new(SizeConstraint::AtMost(100), SizeConstraint::Free, FlexiLoggerView::scrollable()));
+        let left = LinearLayout::vertical().child(ResizedView::new(
+            SizeConstraint::AtMost(100),
+            SizeConstraint::Free,
+            FlexiLoggerView::scrollable(),
+        ));
 
         let middle = LinearLayout::vertical()
             .child(NamedView::new("game", state))
@@ -132,16 +143,21 @@ where
                         let root_node = p1.root.take().unwrap();
                         let count = root_node.borrow().info.node.count;
 
-                        let treeview: &mut TreeView<TreeEntry<F>> = &mut s.find_name("tree").unwrap();
+                        let treeview: &mut TreeView<TreeEntry<F>> =
+                            &mut s.find_name("tree").unwrap();
                         treeview.clear();
-                        treeview.insert_container_item(TreeEntry {
-                            name: "root".to_string(),
-                            state: root_node,
-                            reward: 0.,
-                            probability: 1.,
-                            value: 1.,
-                            N_visits: count
-                        }, Placement::After, 0);
+                        treeview.insert_container_item(
+                            TreeEntry {
+                                name: "root".to_string(),
+                                state: root_node,
+                                reward: 0.,
+                                probability: 1.,
+                                value: 1.,
+                                N_visits: count,
+                            },
+                            Placement::After,
+                            0,
+                        );
                         /* UPDATE STATE*/
                         action
                     } else {
@@ -161,9 +177,8 @@ where
         let mut treeview = TreeView::<TreeEntry<F>>::new();
 
         treeview.set_on_collapse(move |siv: &mut Cursive, row, is_collapsed, children| {
-            if !is_collapsed && children == 0 {                
+            if !is_collapsed && children == 0 {
                 siv.call_on_name("tree", move |treeview: &mut TreeView<TreeEntry<F>>| {
-                    
                     expand_tree(treeview, row);
                 });
             }
@@ -173,7 +188,6 @@ where
 
         log::info!("Welcome to breakthrough!");
 
-
         LinearLayout::horizontal()
             .child(left)
             .weight(1)
@@ -181,7 +195,6 @@ where
             .weight(2)
             .child(ResizedView::with_min_width(60, right))
             .weight(1)
-        
     }
 }
 
@@ -191,12 +204,12 @@ fn main() {
 
     Logger::with_env_or_str("info")
         .log_target(LogTarget::Writer(
-            cursive_flexi_logger_view::cursive_flexi_logger(&siv)))
+            cursive_flexi_logger_view::cursive_flexi_logger(&siv),
+        ))
         .suppress_timestamp()
         .format(flexi_logger::colored_with_thread)
         .start()
         .expect("failed to initialize logger!");
-
 
     let mut graph = Graph::new();
     let session =
@@ -204,7 +217,7 @@ fn main() {
             .unwrap();
 
     let session = Rc::new(Box::new(session));
-    let graph   = Rc::new(Box::new(graph));
+    let graph = Rc::new(Box::new(graph));
 
     let puct = PUCT {
         _g: PhantomData,
@@ -214,17 +227,13 @@ fn main() {
             prediction_evaluator_single(&session, &graph, pov, board, false)
         },
     };
-    
+
     let pb2 = PPA::<_, NoFeatures>::default();
 
     siv.add_layer(
         Dialog::new()
             .title("Breakthrough")
-            .content(GameDuelUI::render(
-                G::players()[1],
-                puct,
-                pb2,
-            )),
+            .content(GameDuelUI::render(G::players()[1], puct, pb2)),
     );
     siv.run();
 }

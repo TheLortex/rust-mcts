@@ -12,7 +12,7 @@ use std::hash::*;
  */
 pub mod ui;
 /// Players
-/// 
+///
 /// Two colors: black and white.
 #[derive(Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Color {
@@ -69,7 +69,7 @@ impl fmt::Debug for Color {
 }
 
 /// Game cell
-/// 
+///
 /// Represents a position on the board.
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum Cell {
@@ -91,7 +91,7 @@ impl fmt::Debug for Cell {
 }
 
 /// Move direction
-/// 
+///
 /// Possible move directions relative to the pawn position.
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 pub enum MoveDirection {
@@ -114,7 +114,7 @@ impl MoveDirection {
 }
 
 /// Move
-/// 
+///
 /// Describes a potentially legal action on the board.
 #[derive(Hash, Eq, PartialEq, Copy, Clone)]
 pub struct Move {
@@ -168,7 +168,7 @@ impl Move {
     }
 
     /// Check if move is valid on the given board.
-    /// 
+    ///
     /// Returns the target coordinate in this case.
     pub fn is_valid(&self, content: &[[Cell; K]; K]) -> Option<(usize, usize)> {
         let c = content[self.x][self.y];
@@ -262,7 +262,7 @@ impl fmt::Debug for Breakthrough {
 }
 
 /// Game builder for Breakthough.
-/// 
+///
 /// This game builder has no settings.
 #[derive(Default, Copy, Clone)]
 pub struct BreakthroughBuilder {}

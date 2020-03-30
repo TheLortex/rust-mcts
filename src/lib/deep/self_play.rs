@@ -1,15 +1,13 @@
 use crate::game;
 
-use crate::game::meta::simulated::Simulated;
-use crate::game::GameBuilder; 
-use crate::policies::{
-    mcts::muz::Muz,
-    mcts::puct::PUCTSettings,
-    MultiplayerPolicy, MultiplayerPolicyBuilder,
-};
-use crate::policies::mcts::puct::PUCT;
-use crate::settings;
 use crate::deep::tf;
+use crate::game::meta::simulated::Simulated;
+use crate::game::GameBuilder;
+use crate::policies::mcts::puct::PUCT;
+use crate::policies::{
+    mcts::muz::Muz, mcts::puct::PUCTSettings, MultiplayerPolicy, MultiplayerPolicyBuilder,
+};
+use crate::settings;
 
 use indicatif::{ProgressBar, ProgressStyle};
 use ndarray::{Array, Axis, Dimension, Ix1};
@@ -18,15 +16,15 @@ use std::collections::HashMap;
 use std::hash::Hash;
 use std::iter::FromIterator;
 use std::marker::PhantomData;
+use std::sync::atomic::AtomicBool;
 use std::sync::mpsc;
 use tensorflow::{Graph, Session};
-use std::sync::atomic::AtomicBool;
 
 /**
  *  Asynchronous evaluation functions.
  *
  *  For each kind of evaluation there is an evaluator that can be
- *  provided to PUCT/Muz and an associated evaluator task that sends 
+ *  provided to PUCT/Muz and an associated evaluator task that sends
  *  the request to the GPU while batching them.
  */
 use super::evaluator::{
@@ -42,7 +40,7 @@ where
 {
     /// List of board states, except for the final state.
     pub state: Array<f32, <G::StateDim as Dimension>::Larger>,
-    /// MCTS exploration statistics for the root node of the curent policy. 
+    /// MCTS exploration statistics for the root node of the curent policy.
     pub policy: Array<f32, <G::ActionDim as Dimension>::Larger>,
     /// One-hot encoding of the action taken by the policy.
     pub action: Array<f32, <G::ActionDim as Dimension>::Larger>,
@@ -54,15 +52,15 @@ where
     pub turn: Vec<f32>,
 }
 
-//  /$$      /$$ /$$   /$$ /$$$$$$$$ /$$$$$$$$ /$$$$$$$   /$$$$$$ 
+//  /$$      /$$ /$$   /$$ /$$$$$$$$ /$$$$$$$$ /$$$$$$$   /$$$$$$
 // | $$$    /$$$| $$  | $$|_____ $$ | $$_____/| $$__  $$ /$$__  $$
 // | $$$$  /$$$$| $$  | $$     /$$/ | $$      | $$  \ $$| $$  \ $$
 // | $$ $$/$$ $$| $$  | $$    /$$/  | $$$$$   | $$$$$$$/| $$  | $$
 // | $$  $$$| $$| $$  | $$   /$$/   | $$__/   | $$__  $$| $$  | $$
 // | $$\  $ | $$| $$  | $$  /$$/    | $$      | $$  \ $$| $$  | $$
 // | $$ \/  | $$|  $$$$$$/ /$$$$$$$$| $$$$$$$$| $$  | $$|  $$$$$$/
-// |__/     |__/ \______/ |________/|________/|__/  |__/ \______/ 
-//                                                                
+// |__/     |__/ \______/ |________/|________/|__/  |__/ \______/
+//
 
 /*
  *  The game generator continuously generates self-play games using Muz policies.
@@ -102,7 +100,7 @@ fn muzero_game_generator_task<G, GB, H>(
                 hidden_shape.clone(),
                 board.clone(),
                 action.clone(),
-                true
+                true,
             )
         },
     };
@@ -152,16 +150,10 @@ fn muzero_game_generator_task<G, GB, H>(
                 .sum();
 
             history_turn.push(state.turn().into() as f32);
-            history_state.push(
-                state
-                    .state_to_feature(state.turn())
-                    .insert_axis(Axis(0)),
-            );
-            history_policy.push(
-                G::moves_to_feature(&monte_carlo_distribution)
-                    .insert_axis(Axis(0)),
-            );
-            history_value .push(Array::from_elem(ndarray::Ix1(1), root_value));
+            history_state.push(state.state_to_feature(state.turn()).insert_axis(Axis(0)));
+            history_policy
+                .push(G::moves_to_feature(&monte_carlo_distribution).insert_axis(Axis(0)));
+            history_value.push(Array::from_elem(ndarray::Ix1(1), root_value));
             history_action.push(G::move_to_feature(action).insert_axis(Axis(0)));
 
             let reward = state.play(&action);
@@ -181,7 +173,7 @@ fn muzero_game_generator_task<G, GB, H>(
                 action: ndarray::stack(Axis(0), &history_action_view).unwrap(),
                 value: ndarray::stack(Axis(0), &history_value_view).unwrap(),
                 reward: ndarray::stack(Axis(0), &history_reward_view).unwrap(),
-                turn: history_turn
+                turn: history_turn,
             })
             .ok()
             .unwrap();
@@ -211,7 +203,7 @@ use std::thread;
  *
  *  # Panics
  *
- *  This function will panic if the evaluator shapes doesn't fit, 
+ *  This function will panic if the evaluator shapes doesn't fit,
  *  or if the CUDA executor goes out of memory.
  */
 pub fn muzero_game_generator<G, GB, H>(
@@ -245,20 +237,21 @@ pub fn muzero_game_generator<G, GB, H>(
 
     let state: G = game_builder.create(G::players()[0]);
 
-    let board_size  = state.state_dimension().size();
+    let board_size = state.state_dimension().size();
     let action_size = G::action_dimension().size();
-    let repr_size   = repr_dims.size(); 
+    let repr_size = repr_dims.size();
 
     log::debug!("Representation: {}", repr_size);
     log::debug!("Action: {}", action_size);
     log::debug!("Board: {}", board_size);
 
-
     for _ in 0..settings::GPU_N_EVALUATORS {
-        
-        let (pred_tx, pred_rx) = mpsc::sync_channel::<PredictionEvaluatorChannel>(2 * settings::GPU_BATCH_SIZE);
-        let (dyn_tx, dyn_rx) = mpsc::sync_channel::<DynamicsEvaluatorChannel>(2 * settings::GPU_BATCH_SIZE);
-        let (repr_tx, repr_rx) = mpsc::sync_channel::<RepresentationEvaluatorChannel>(2 * settings::GPU_BATCH_SIZE);
+        let (pred_tx, pred_rx) =
+            mpsc::sync_channel::<PredictionEvaluatorChannel>(2 * settings::GPU_BATCH_SIZE);
+        let (dyn_tx, dyn_rx) =
+            mpsc::sync_channel::<DynamicsEvaluatorChannel>(2 * settings::GPU_BATCH_SIZE);
+        let (repr_tx, repr_rx) =
+            mpsc::sync_channel::<RepresentationEvaluatorChannel>(2 * settings::GPU_BATCH_SIZE);
 
         for _ in 0..settings::GPU_N_GENERATORS {
             let pred_tx = pred_tx.clone();
@@ -269,25 +262,49 @@ pub fn muzero_game_generator<G, GB, H>(
             let settings = settings.clone();
 
             join_handles.push(thread::spawn(move || {
-               muzero_game_generator_task(settings, game_builder, pred_tx, dyn_tx, repr_tx, output_tx, czop)
+                muzero_game_generator_task(
+                    settings,
+                    game_builder,
+                    pred_tx,
+                    dyn_tx,
+                    repr_tx,
+                    output_tx,
+                    czop,
+                )
             }));
         }
-    
 
         let prediction_tensorflow = prediction_tensorflow.clone();
         let representation_tensorflow = representation_tensorflow.clone();
         let dynamics_tensorflow = dynamics_tensorflow.clone();
 
         join_handles_ev.push(thread::spawn(move || {
-            super::evaluator::prediction_task(repr_size, action_size, tf::SUPPORT_SHAPE as usize, prediction_tensorflow.as_ref(), pred_rx)
+            super::evaluator::prediction_task(
+                repr_size,
+                action_size,
+                tf::SUPPORT_SHAPE as usize,
+                prediction_tensorflow.as_ref(),
+                pred_rx,
+            )
         }));
 
         join_handles_ev.push(thread::spawn(move || {
-            super::evaluator::representation_task(board_size, repr_size, representation_tensorflow.as_ref(), repr_rx)
+            super::evaluator::representation_task(
+                board_size,
+                repr_size,
+                representation_tensorflow.as_ref(),
+                repr_rx,
+            )
         }));
 
         join_handles_ev.push(thread::spawn(move || {
-            super::evaluator::dynamics_task(repr_size, action_size, tf::SUPPORT_SHAPE as usize, dynamics_tensorflow.as_ref(), dyn_rx)
+            super::evaluator::dynamics_task(
+                repr_size,
+                action_size,
+                tf::SUPPORT_SHAPE as usize,
+                dynamics_tensorflow.as_ref(),
+                dyn_rx,
+            )
         }));
     }
 
@@ -300,20 +317,20 @@ pub fn muzero_game_generator<G, GB, H>(
     }
 }
 
-//   /$$$$$$  /$$       /$$$$$$$  /$$   /$$  /$$$$$$        /$$$$$$$$ /$$$$$$$$ /$$$$$$$   /$$$$$$ 
+//   /$$$$$$  /$$       /$$$$$$$  /$$   /$$  /$$$$$$        /$$$$$$$$ /$$$$$$$$ /$$$$$$$   /$$$$$$
 //  /$$__  $$| $$      | $$__  $$| $$  | $$ /$$__  $$      |_____ $$ | $$_____/| $$__  $$ /$$__  $$
 // | $$  \ $$| $$      | $$  \ $$| $$  | $$| $$  \ $$           /$$/ | $$      | $$  \ $$| $$  \ $$
 // | $$$$$$$$| $$      | $$$$$$$/| $$$$$$$$| $$$$$$$$          /$$/  | $$$$$   | $$$$$$$/| $$  | $$
 // | $$__  $$| $$      | $$____/ | $$__  $$| $$__  $$         /$$/   | $$__/   | $$__  $$| $$  | $$
 // | $$  | $$| $$      | $$      | $$  | $$| $$  | $$        /$$/    | $$      | $$  \ $$| $$  | $$
 // | $$  | $$| $$$$$$$$| $$      | $$  | $$| $$  | $$       /$$$$$$$$| $$$$$$$$| $$  | $$|  $$$$$$/
-// |__/  |__/|________/|__/      |__/  |__/|__/  |__/      |________/|________/|__/  |__/ \______/ 
-//                                                                                                 
+// |__/  |__/|________/|__/      |__/  |__/|__/  |__/      |________/|________/|__/  |__/ \______/
+//
 
 /*
  *  The game generator continuously generates self-play games using PUCT policies.
  */
- fn alphazero_game_generator_task<G, GB>(
+fn alphazero_game_generator_task<G, GB>(
     puct_settings: PUCTSettings,
     game_builder: GB,
     prediction_channel: mpsc::SyncSender<PredictionEvaluatorChannel>,
@@ -325,14 +342,13 @@ pub fn muzero_game_generator<G, GB, H>(
     G::Player: Send + Sync,
     GB: GameBuilder<G>,
 {
-
     let puct = PUCT::<G, _> {
         config: puct_settings,
         N_PLAYOUTS: settings::DEFAULT_N_PLAYOUTS,
         evaluate: |pov: G::Player, board: &G| {
             super::evaluator::prediction(prediction_channel.clone(), pov, board.clone(), false)
         },
-        _g: PhantomData
+        _g: PhantomData,
     };
 
     // Generate games indefinitely.
@@ -380,16 +396,10 @@ pub fn muzero_game_generator<G, GB, H>(
                 .sum();
 
             history_turn.push(state.turn().into() as f32);
-            history_state.push(
-                state
-                    .state_to_feature(state.turn())
-                    .insert_axis(Axis(0)),
-            );
-            history_policy.push(
-                G::moves_to_feature(&monte_carlo_distribution)
-                    .insert_axis(Axis(0)),
-            );
-            history_value .push(Array::from_elem(ndarray::Ix1(1), root_value));
+            history_state.push(state.state_to_feature(state.turn()).insert_axis(Axis(0)));
+            history_policy
+                .push(G::moves_to_feature(&monte_carlo_distribution).insert_axis(Axis(0)));
+            history_value.push(Array::from_elem(ndarray::Ix1(1), root_value));
             history_action.push(G::move_to_feature(action).insert_axis(Axis(0)));
 
             let reward = state.play(&action);
@@ -409,7 +419,7 @@ pub fn muzero_game_generator<G, GB, H>(
                 action: ndarray::stack(Axis(0), &history_action_view).unwrap(),
                 value: ndarray::stack(Axis(0), &history_value_view).unwrap(),
                 reward: ndarray::stack(Axis(0), &history_reward_view).unwrap(),
-                turn: history_turn
+                turn: history_turn,
             })
             .ok()
             .unwrap();
@@ -417,7 +427,6 @@ pub fn muzero_game_generator<G, GB, H>(
         indicator_bar.inc(1 as u64);
     }
 }
-
 
 /**
  *  AlphaZero self-play games generator
@@ -434,7 +443,7 @@ pub fn muzero_game_generator<G, GB, H>(
  *
  *  # Panics
  *
- *  This function will panic if the evaluator shapes doesn't fit, 
+ *  This function will panic if the evaluator shapes doesn't fit,
  *  or if the CUDA executor goes out of memory.
  */
 pub fn alphazero_game_generator<G, GB>(
@@ -448,7 +457,6 @@ pub fn alphazero_game_generator<G, GB>(
     G::Player: Send + Sync,
     GB: GameBuilder<G> + Copy + Sync + Send + 'static,
 {
-
     let indicator_bar = ProgressBar::new_spinner();
     indicator_bar.set_style(
         ProgressStyle::default_spinner()
@@ -462,16 +470,15 @@ pub fn alphazero_game_generator<G, GB>(
 
     let state: G = game_builder.create(G::players()[0]);
 
-    let board_size  = state.state_dimension().size();
+    let board_size = state.state_dimension().size();
     let action_size = G::action_dimension().size();
 
     log::debug!("Action: {}", action_size);
     log::debug!("Board: {}", board_size);
 
-
     for _ in 0..settings::GPU_N_EVALUATORS {
-        
-        let (pred_tx, pred_rx) = mpsc::sync_channel::<PredictionEvaluatorChannel>(2 * settings::GPU_BATCH_SIZE);
+        let (pred_tx, pred_rx) =
+            mpsc::sync_channel::<PredictionEvaluatorChannel>(2 * settings::GPU_BATCH_SIZE);
 
         for _ in 0..settings::GPU_N_GENERATORS {
             let pred_tx = pred_tx.clone();
@@ -479,15 +486,20 @@ pub fn alphazero_game_generator<G, GB>(
             let czop = bar_box.clone();
 
             join_handles.push(thread::spawn(move || {
-               alphazero_game_generator_task(puct_settings, game_builder, pred_tx, output_tx, czop)
+                alphazero_game_generator_task(puct_settings, game_builder, pred_tx, output_tx, czop)
             }));
         }
-    
 
         let prediction_tensorflow = prediction_tensorflow.clone();
 
         join_handles_ev.push(thread::spawn(move || {
-            super::evaluator::prediction_task(board_size, action_size, 1, prediction_tensorflow.as_ref(), pred_rx)
+            super::evaluator::prediction_task(
+                board_size,
+                action_size,
+                1,
+                prediction_tensorflow.as_ref(),
+                pred_rx,
+            )
         }));
     }
 

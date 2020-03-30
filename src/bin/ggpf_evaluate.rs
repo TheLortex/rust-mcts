@@ -1,22 +1,24 @@
 #![allow(non_snake_case)]
 
 use atomic_counter::{AtomicCounter, RelaxedCounter};
-use clap::{App, Arg, value_t};
+use clap::{value_t, App, Arg};
 use indicatif::{ProgressBar, ProgressStyle};
+use ndarray::{Array, Dim};
 use rand::seq::SliceRandom;
 use rayon::prelude::*;
 use std::marker::PhantomData;
 use std::sync::Arc;
-use ndarray::{Dim, Array};
 
+use ggpf::deep::evaluator::{
+    dynamics_evaluator_single, prediction_evaluator_single, representation_evaluator_single,
+};
+use ggpf::deep::tf;
 use ggpf::game;
 use ggpf::game::breakthrough::*;
-use ggpf::game::meta::with_history::*;
-use ggpf::deep::evaluator::{dynamics_evaluator_single, representation_evaluator_single, prediction_evaluator_single};
-use ggpf::policies::{get_multi, mcts::puct::*, mcts::muz::*, DynMultiplayerPolicyBuilder};
-use ggpf::settings;
-use ggpf::deep::tf;
 use ggpf::game::meta::simulated::Simulated;
+use ggpf::game::meta::with_history::*;
+use ggpf::policies::{get_multi, mcts::muz::*, mcts::puct::*, DynMultiplayerPolicyBuilder};
+use ggpf::settings;
 
 use typenum::U2;
 
@@ -66,10 +68,8 @@ pub fn game_match<
             let starting_player = *G::players().choose(&mut rand::thread_rng()).unwrap();
             let game = game_factory.create(starting_player);
 
-            let result = if game::simulate(p1, p2, &game)
-                .last()
-                .unwrap()
-                .winner() == Some(G::players()[0])
+            let result = if game::simulate(p1, p2, &game).last().unwrap().winner()
+                == Some(G::players()[0])
             {
                 c1.inc();
                 1
@@ -106,20 +106,20 @@ fn main() {
                 .short("p")
                 .long("policy")
                 .takes_value(true)
-                .possible_values(&["rand", "flat", "flat_ucb", "uct", "rave", "ppa", "nmcs", "alpha", "mu"]),
+                .possible_values(&[
+                    "rand", "flat", "flat_ucb", "uct", "rave", "ppa", "nmcs", "alpha", "mu",
+                ]),
         )
         .arg(
             Arg::with_name("against")
                 .short("a")
                 .long("against")
                 .takes_value(true)
-                .possible_values(&["rand", "flat", "flat_ucb", "uct", "rave", "ppa", "nmcs", "alpha", "mu"]),
+                .possible_values(&[
+                    "rand", "flat", "flat_ucb", "uct", "rave", "ppa", "nmcs", "alpha", "mu",
+                ]),
         )
-        .arg(
-            Arg::with_name("n")
-                .short("n")
-                .takes_value(true)
-        )
+        .arg(Arg::with_name("n").short("n").takes_value(true))
         .arg(Arg::with_name("only-result").long("only-result"))
         .get_matches();
 
@@ -139,14 +139,13 @@ fn main() {
     // MUZ
     let prediction_path = format!("{}{}", MODEL_PATH_MUZERO, "pv");
     let dynamics_path = format!("{}{}", MODEL_PATH_MUZERO, "dyn");
-    let representation_path = format!("{}{}", MODEL_PATH_MUZERO, "state");    
-    
-    let prediction_tensorflow       = Arc::new(tf::load_model(&prediction_path));
-    let dynamics_tensorflow         = Arc::new(tf::load_model(&dynamics_path));
-    let representation_tensorflow   = Arc::new(tf::load_model(&representation_path));
+    let representation_path = format!("{}{}", MODEL_PATH_MUZERO, "state");
 
+    let prediction_tensorflow = Arc::new(tf::load_model(&prediction_path));
+    let dynamics_tensorflow = Arc::new(tf::load_model(&dynamics_path));
+    let representation_tensorflow = Arc::new(tf::load_model(&representation_path));
 
-    let muz  = Muz {
+    let muz = Muz {
         _h: PhantomData,
         _g: PhantomData,
         puct: PUCTSettings::default(),
@@ -156,18 +155,26 @@ fn main() {
             let (ref graph, ref session) = x.as_ref();
             prediction_evaluator_single(&session, &graph, pov, board, true)
         },
-        dynamics_evaluate: move |board: &Array<f32, _>, action: &Array<f32, <G as game::Feature>::ActionDim>| {
-            let x = dynamics_tensorflow.clone();
-            let (ref graph, ref session) = x.as_ref();
-            dynamics_evaluator_single(&session, &graph, Dim(settings::MUZ_BT_SHAPE), board.clone(), action.clone(), true)
-        },
+        dynamics_evaluate:
+            move |board: &Array<f32, _>, action: &Array<f32, <G as game::Feature>::ActionDim>| {
+                let x = dynamics_tensorflow.clone();
+                let (ref graph, ref session) = x.as_ref();
+                dynamics_evaluator_single(
+                    &session,
+                    &graph,
+                    Dim(settings::MUZ_BT_SHAPE),
+                    board.clone(),
+                    action.clone(),
+                    true,
+                )
+            },
         representation_evaluate: |board: Array<f32, <G as game::Feature>::StateDim>| {
             let x = representation_tensorflow.clone();
             let (ref graph, ref session) = x.as_ref();
             representation_evaluator_single(&session, &graph, Dim(settings::MUZ_BT_SHAPE), board)
-        }
+        },
     };
-    
+
     let choice_1 = args.value_of("policy").unwrap_or("rand");
     let p1 = if choice_1 == "alpha" {
         Box::new(puct.clone())

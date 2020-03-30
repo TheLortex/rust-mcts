@@ -1,12 +1,12 @@
-use crate::game;
-use crate::deep::tf;
 use crate::deep::self_play::GameHistoryEntry;
+use crate::deep::tf;
+use crate::game;
 
-use nix::unistd::mkfifo;
 use nix::sys::stat;
+use nix::unistd::mkfifo;
+use std::collections::HashMap;
 use std::fs::{File, OpenOptions};
 use std::io::Write;
-use std::collections::HashMap;
 
 /// File manager.
 pub struct FileManager {
@@ -39,7 +39,6 @@ impl FileManager {
         result.insert("value", game.value.into_raw_vec());
         result.insert("action", game.action.into_raw_vec());
         result.insert("reward", game.reward.into_raw_vec());
-        
 
         let ser = serde_pickle::to_vec(&result, true).unwrap();
         self.f.write_all(&ser.len().to_be_bytes()).expect(":c");
@@ -47,15 +46,14 @@ impl FileManager {
     }
 }
 
-
 use notify::{RecommendedWatcher, RecursiveMode, Watcher};
 use std::sync::atomic::AtomicBool;
 use std::sync::atomic::Ordering;
-use tensorflow::{Session, Graph};
-use std::sync::{RwLock, Arc};
-use std::time::Duration;
 use std::sync::mpsc::channel;
+use std::sync::{Arc, RwLock};
 use std::thread;
+use std::time::Duration;
+use tensorflow::{Graph, Session};
 
 /// Watch a path for changes and reload the model when content has been modified.
 pub fn watch_model(tf: Arc<(AtomicBool, RwLock<(Graph, Session)>)>, path: String) {
@@ -66,7 +64,7 @@ pub fn watch_model(tf: Arc<(AtomicBool, RwLock<(Graph, Session)>)>, path: String
         let p = path.clone();
 
         let mut watcher: RecommendedWatcher = Watcher::new(tx, Duration::from_millis(500)).unwrap();
-        
+
         log::info!("Watching path {}", path);
         watcher.watch(path, RecursiveMode::NonRecursive).unwrap();
 
@@ -80,13 +78,12 @@ pub fn watch_model(tf: Arc<(AtomicBool, RwLock<(Graph, Session)>)>, path: String
                     global_lock.store(false, Ordering::Relaxed);
                     let (ref _graph, ref mut session_m) = *tf_network;
                     session_m.close().expect("Unable to close the session.");
-    
+
                     *tf_network = tf::load_model(&p);
                     log::info!("Model successfully updated!");
-                },
+                }
                 Err(e) => println!("watch error: {:?}", e),
             }
         }
     });
-    
 }

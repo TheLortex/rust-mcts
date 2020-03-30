@@ -3,12 +3,12 @@ use crate::policies::{MultiplayerPolicy, MultiplayerPolicyBuilder};
 use crate::settings;
 
 use rand::seq::SliceRandom;
-use std::f32;
-use std::iter::*;
 use std::collections::HashMap;
-use std::marker::PhantomData;
-use std::hash::Hash;
+use std::f32;
 use std::fmt;
+use std::hash::Hash;
+use std::iter::*;
+use std::marker::PhantomData;
 
 #[derive(Debug)]
 struct PPAMoveInfo {
@@ -25,23 +25,23 @@ struct PPANodeInfo<G: Game> {
 /**
  *  PPA policy instance.
  */
-pub struct PPAPolicy<G, M> 
-where 
+pub struct PPAPolicy<G, M>
+where
     G: Game,
-    M: MoveCode<G>
+    M: MoveCode<G>,
 {
     color: G::Player,
-    s: PPA<G,M>,
+    s: PPA<G, M>,
     tree: HashMap<G, PPANodeInfo<G>>,
     playout_policy: HashMap<usize, f32>,
 
     _m: PhantomData<M>,
 }
 
-impl<G, M> PPAPolicy<G, M> 
-where 
+impl<G, M> PPAPolicy<G, M>
+where
     G: Game + SingleWinner + Clone + Eq + Hash,
-    M: MoveCode<G>
+    M: MoveCode<G>,
 {
     fn next_move(self: &mut PPAPolicy<G, M>, board: &G) -> G::Move {
         let moves = board.possible_moves();
@@ -61,20 +61,25 @@ where
 
         let mut history_playout = vec![];
 
-
-        while {!board.is_finished()} {
+        while { !board.is_finished() } {
             let chosen_move = self.next_move(&board);
             board.play(&chosen_move);
             history_playout.push(chosen_move);
         }
-        
+
         let z = board.winner() == Some(self.color);
 
         self.update(&history_uct, z);
         self.adapt(root_board, &history_uct, &history_playout, z);
     }
 
-    fn adapt(self: &mut PPAPolicy<G,M>, board: &G, history_uct: &[(G, G::Move)], history_playout: &[G::Move], has_won: bool) {
+    fn adapt(
+        self: &mut PPAPolicy<G, M>,
+        board: &G,
+        history_uct: &[(G, G::Move)],
+        history_playout: &[G::Move],
+        has_won: bool,
+    ) {
         let mut board = board.clone();
         for (_, action) in history_uct {
             if (board.turn() == self.color) ^ (!has_won) {
@@ -91,15 +96,24 @@ where
         }
     }
 
-    fn policy_update(self: &mut PPAPolicy<G,M>, board: &G, action: &G::Move) {
-        let node = self.playout_policy.entry(M::code(board, action)).or_insert(0.);
+    fn policy_update(self: &mut PPAPolicy<G, M>, board: &G, action: &G::Move) {
+        let node = self
+            .playout_policy
+            .entry(M::code(board, action))
+            .or_insert(0.);
         *node += self.s.alpha;
 
         let z: f32 = board
-            .possible_moves().iter()
-            .map(|m| self.playout_policy.get(&M::code(board, &m)).unwrap_or(&0.).exp())
+            .possible_moves()
+            .iter()
+            .map(|m| {
+                self.playout_policy
+                    .get(&M::code(board, &m))
+                    .unwrap_or(&0.)
+                    .exp()
+            })
             .sum();
-                
+
         for m in board.possible_moves() {
             let move_node = self.playout_policy.entry(M::code(board, &m)).or_insert(0.);
             let v = move_node.exp();
@@ -107,11 +121,7 @@ where
         }
     }
 
-    fn update(
-        self: &mut PPAPolicy<G, M>,
-        history: &[(G, G::Move)],
-        has_won: bool,
-    ) {
+    fn update(self: &mut PPAPolicy<G, M>, history: &[(G, G::Move)], has_won: bool) {
         let z = if has_won { 1. } else { 0. };
         for (state, action) in history.iter() {
             let mut node = self.tree.get_mut(state).unwrap();
@@ -136,7 +146,8 @@ where
                     if let Some(a) = self.select_move(&b) {
                         history.push((b.clone(), a));
                         b.play(&a)
-                    } else { // surely there was an available move
+                    } else {
+                        // surely there was an available move
                         panic!("? {} {:?}", b.possible_moves().len(), b);
                         //history.push((s_t, None));
                         //return history;
@@ -191,7 +202,8 @@ where
     fn new_node(self: &mut PPAPolicy<G, M>, board: &G) {
         let moves = HashMap::from_iter(
             board
-                .possible_moves().iter()
+                .possible_moves()
+                .iter()
                 .map(|m| (*m, PPAMoveInfo { Q: 0., N_a: 0. })),
         );
 
@@ -200,12 +212,10 @@ where
     }
 }
 
-
-
-impl<G, M> MultiplayerPolicy<G> for PPAPolicy<G, M> 
-where 
-    G: Game + SingleWinner + Clone + Eq + Hash, 
-    M: MoveCode<G>
+impl<G, M> MultiplayerPolicy<G> for PPAPolicy<G, M>
+where
+    G: Game + SingleWinner + Clone + Eq + Hash,
+    M: MoveCode<G>,
 {
     fn play(self: &mut PPAPolicy<G, M>, board: &G) -> G::Move {
         for _ in 0..self.s.N_PLAYOUTS {
@@ -227,16 +237,15 @@ where
     }
 }
 
-
 // POLICY BUILDER
 
 /**
  *  Playout Policy Adaptation policy builder.
  */
-pub struct PPA<G, M> 
+pub struct PPA<G, M>
 where
     G: Game,
-    M: MoveCode<G>
+    M: MoveCode<G>,
 {
     /// Weight for UCT formaula.
     pub UCT_WEIGHT: f32,
@@ -247,45 +256,46 @@ where
     /// PhantomData, storing move encoder type information.
     pub _m: PhantomData<fn() -> M>,
     /// PhantomData, storing game type information.
-    pub _g: PhantomData<fn() -> G>
+    pub _g: PhantomData<fn() -> G>,
 }
 
-impl<G, M> Copy for PPA<G, M> 
+impl<G, M> Copy for PPA<G, M>
 where
     G: Game,
-    M: MoveCode<G>
-{}
+    M: MoveCode<G>,
+{
+}
 
-impl<G, M> Clone for PPA<G, M> 
+impl<G, M> Clone for PPA<G, M>
 where
     G: Game,
-    M: MoveCode<G>
+    M: MoveCode<G>,
 {
     fn clone(&self) -> Self {
         *self
     }
 }
 
-impl<G, M> Default for PPA<G,M> 
+impl<G, M> Default for PPA<G, M>
 where
     G: Game,
-    M: MoveCode<G>
+    M: MoveCode<G>,
 {
-    fn default() -> PPA<G,M> {
-        PPA::<G,M> {
+    fn default() -> PPA<G, M> {
+        PPA::<G, M> {
             alpha: 0.1,
             UCT_WEIGHT: 0.4,
             N_PLAYOUTS: settings::DEFAULT_N_PLAYOUTS,
             _m: PhantomData,
-            _g: PhantomData
+            _g: PhantomData,
         }
     }
 }
 
-impl<G, M> fmt::Display for PPA<G,M> 
+impl<G, M> fmt::Display for PPA<G, M>
 where
     G: Game,
-    M: MoveCode<G>
+    M: MoveCode<G>,
 {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         writeln!(f, "PPA")?;
@@ -293,22 +303,22 @@ where
         writeln!(f, "|| UCT_WEIGHT: {}", self.UCT_WEIGHT)?;
         writeln!(f, "|| N_PLAYOUTS: {}", self.N_PLAYOUTS)
     }
-} 
+}
 
-impl<G, M> MultiplayerPolicyBuilder<G> for PPA<G,M> 
+impl<G, M> MultiplayerPolicyBuilder<G> for PPA<G, M>
 where
     G: Game + SingleWinner + Clone + Eq + Hash,
-    M: MoveCode<G>
+    M: MoveCode<G>,
 {
     type P = PPAPolicy<G, M>;
 
     fn create(&self, color: G::Player) -> PPAPolicy<G, M> {
-        PPAPolicy::<G,M> {
+        PPAPolicy::<G, M> {
             color,
             s: *self,
             playout_policy: HashMap::new(),
             tree: HashMap::new(),
-            _m: PhantomData
+            _m: PhantomData,
         }
     }
 }

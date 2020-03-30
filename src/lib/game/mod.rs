@@ -51,7 +51,7 @@ pub trait Base: Sized + Debug {
  */
 pub trait Playable: Base {
     /**
-     * Mutates game state playing the given action. 
+     * Mutates game state playing the given action.
      * Yields a reward to the player.
      */
     fn play(&mut self, action: &Self::Move) -> f32;
@@ -82,7 +82,7 @@ pub trait Game: Playable {
     fn player_after(player: Self::Player) -> Self::Player;
 
     /**
-     *  Returns the list of players for the game. 
+     *  Returns the list of players for the game.
      */
     fn players() -> Vec<Self::Player>;
 
@@ -97,7 +97,7 @@ pub trait Game: Playable {
  */
 pub trait Playout: Game + Clone {
     /**
-     *  Simulate a game execution using random moves until reaching a final state. 
+     *  Simulate a game execution using random moves until reaching a final state.
      *  It stores moves and state history, along with the total reward and the final state.
      */
     fn playout_history(&self, pov: Self::Player) -> (Self, Vec<(Self, Self::Move)>, f32) {
@@ -109,7 +109,7 @@ pub trait Playout: Game + Clone {
         while { !s.is_finished() } {
             let s_cloned = s.clone();
             let player = s.turn();
-            let (m,r) = s.random_move();
+            let (m, r) = s.random_move();
             if player == pov {
                 total_reward += r;
             }
@@ -154,9 +154,13 @@ impl<G: Singleplayer> Game for G {
         vec![0]
     }
 
-    fn player_after(_player: Self::Player) -> Self::Player {0}
+    fn player_after(_player: Self::Player) -> Self::Player {
+        0
+    }
 
-    fn turn(&self) -> Self::Player {0}
+    fn turn(&self) -> Self::Player {
+        0
+    }
 }
 
 /**
@@ -218,7 +222,7 @@ pub trait Feature: Game {
      *
      *  These features may be relative to a particular player but they should
      *  contain the same amount of information.
-     */ 
+     */
     fn state_to_feature(&self, pov: Self::Player) -> Array<f32, Self::StateDim>;
 
     /**
@@ -237,7 +241,7 @@ pub trait Feature: Game {
     /**
      *  Converts a move distribution feature to the corresponding set of move probabilities, relative to the game state.
      *  
-     *  Invalid moves relative to the game state are discarded. To keep all moves, see 
+     *  Invalid moves relative to the game state are discarded. To keep all moves, see
      *  `all_feature_to_moves`.
      */
     fn feature_to_moves(&self, features: &Array<f32, Self::ActionDim>) -> HashMap<Self::Move, f32>;
@@ -282,7 +286,7 @@ impl<T: Base> MoveCode<T> for NoFeatures {
  *  Games with an user interface.
  *
  *  Terminal user interface is managed by the `cursive` library.
- * 
+ *
  */
 pub trait InteractiveGame: cursive::view::View {
     /**
@@ -307,15 +311,14 @@ pub trait InteractiveGame: cursive::view::View {
 }
 
 /**
- *  Execute two policies on a two-player game 
+ *  Execute two policies on a two-player game
  *  and returns the whole history.
  */
 pub fn simulate<'a, 'b, G: Game + Clone>(
     mut p1: Box<dyn MultiplayerPolicy<G> + 'a>,
     mut p2: Box<dyn MultiplayerPolicy<G> + 'b>,
     game: &G,
-) -> Vec<G> 
-{
+) -> Vec<G> {
     let mut history = vec![game.clone()];
 
     while {

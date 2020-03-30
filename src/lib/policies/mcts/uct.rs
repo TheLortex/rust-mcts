@@ -5,15 +5,15 @@ use crate::policies::{
 };
 use crate::settings;
 
+use std::cell::RefCell;
 use std::f32;
 use std::fmt;
 use std::rc::Rc;
-use std::cell::RefCell;
 
 /* UCT */
 
 /// UCT move information.
-#[derive(Debug,Clone,Copy)]
+#[derive(Debug, Clone, Copy)]
 pub struct UCTMoveInfo {
     /// Node value.
     pub Q: f32,
@@ -22,7 +22,7 @@ pub struct UCTMoveInfo {
 }
 
 /// UCT node information.
-#[derive(Debug,Clone,Copy)]
+#[derive(Debug, Clone, Copy)]
 pub struct UCTNodeInfo {
     /// Number of times visited
     pub count: f32,
@@ -72,7 +72,12 @@ where
         UCTMoveInfo { Q: 0., N_a: 0. }
     }
 
-    fn backpropagate(&mut self, leaf: Rc<RefCell<MCTSTreeNode<G, Self>>>, _history: &[G::Move], playout: Self::PlayoutInfo) {
+    fn backpropagate(
+        &mut self,
+        leaf: Rc<RefCell<MCTSTreeNode<G, Self>>>,
+        _history: &[G::Move],
+        playout: Self::PlayoutInfo,
+    ) {
         let z = if playout { 1. } else { 0. };
 
         let mut current_node = leaf;
@@ -93,10 +98,10 @@ where
 
             let move_info = node.info.moves.get_mut(&action).unwrap();
             move_info.N_a += 1.;
-            move_info.Q   += (z - move_info.Q) / move_info.N_a;
+            move_info.Q += (z - move_info.Q) / move_info.N_a;
         }
     }
-/*
+    /*
     fn backpropagate(
         &self,
         _index: usize,
@@ -169,4 +174,3 @@ where
         )
     }
 }
-

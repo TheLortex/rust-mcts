@@ -5,10 +5,14 @@
 #![warn(missing_docs)]
 
 //! General Game Playing Framework.
-//! 
-//! This crate introduces common APIs for games and policies 
+//!
+//! This crate introduces common APIs for games and policies
 //! to explore general game playing algorithms.
 
+/**
+ *  Features for neural network-based policies.
+ */
+pub mod deep;
 /**
  *  General game traits and implementations.
  */
@@ -21,7 +25,3 @@ pub mod policies;
  *  General game and playout settings.
  */
 pub mod settings;
-/**
- *  Features for neural network-based policies. 
- */
-pub mod deep;

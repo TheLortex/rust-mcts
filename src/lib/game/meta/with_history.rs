@@ -35,9 +35,6 @@ impl<G: Base + Clone, H> Base for WithHistory<G, H> {
     }
 }
 
-
-
-
 impl<G: Playable + Clone, H> Playable for WithHistory<G, H> {
     fn play(&mut self, action: &<Self as Base>::Move) -> f32 {
         let prec = self.prec.take();
@@ -89,7 +86,7 @@ impl<G: Base + Hash, H_> Hash for WithHistory<G, H_> {
 
 /// Interactive UI wrapping a game with history.
 pub struct IWithHistory<IG: InteractiveGame, H> {
-    ig: IG, 
+    ig: IG,
     state: WithHistory<IG::G, H>,
 }
 
@@ -98,10 +95,10 @@ use cursive::event::{Event, EventResult};
 use cursive::Printer;
 use cursive::Vec2;
 
-
-impl<IG: InteractiveGame + cursive::view::View, H: 'static> cursive::view::View for IWithHistory<IG,H> 
+impl<IG: InteractiveGame + cursive::view::View, H: 'static> cursive::view::View
+    for IWithHistory<IG, H>
 where
-    IG::G: Clone
+    IG::G: Clone,
 {
     fn draw(&self, printer: &Printer<'_, '_>) {
         self.ig.draw(printer)
@@ -120,9 +117,9 @@ where
     }
 }
 
-impl<IG: InteractiveGame, H: 'static> InteractiveGame for IWithHistory<IG,H>
-where 
-    IG::G: Game + Clone
+impl<IG: InteractiveGame, H: 'static> InteractiveGame for IWithHistory<IG, H>
+where
+    IG::G: Game + Clone,
 {
     type G = WithHistory<IG::G, H>;
 
@@ -131,12 +128,9 @@ where
         let state = WithHistory {
             prec: None,
             state: ig.get().clone(),
-            _h: PhantomData
+            _h: PhantomData,
         };
-        Self {
-            ig,
-            state,
-        }
+        Self { ig, state }
     }
 
     fn get(&self) -> &Self::G {
@@ -145,7 +139,7 @@ where
 
     fn play(&mut self, action: &<Self::G as Base>::Move) {
         self.ig.play(action);
-        
+
         let prec = self.state.prec.take();
         let new_node = WithHistory {
             prec,
@@ -155,17 +149,16 @@ where
         self.state.prec = Some(Arc::new(new_node));
         self.state.state = self.ig.get().clone();
     }
-/*
+    /*
     fn choose_move<'a>(&'a mut self, cb: Box<dyn 'a + FnOnce(<Self::G as Base>::Move, &mut Self)>) {
         self.ig.choose_move(Box::new(move |action, ig| cb(action, &mut self)))
     }*/
 }
 
-
 /* GAME BUILDER */
 /// Builder for a game with history.
-#[derive(Copy,Clone)]
-pub struct WithHistoryGB<'a, GB, H> (&'a GB, PhantomData<H>);
+#[derive(Copy, Clone)]
+pub struct WithHistoryGB<'a, GB, H>(&'a GB, PhantomData<H>);
 
 impl<'a, GB, H> WithHistoryGB<'a, GB, H> {
     /// Creates a game builder with history, given a correspond standard game builder.
@@ -174,12 +167,14 @@ impl<'a, GB, H> WithHistoryGB<'a, GB, H> {
     }
 }
 
-impl<'a, G: Game + Clone, GB: GameBuilder<G>,H> GameBuilder<WithHistory<G,H>> for WithHistoryGB<'a, GB,H> {
-    fn create(&self, starting: G::Player) -> WithHistory<G,H> {
+impl<'a, G: Game + Clone, GB: GameBuilder<G>, H> GameBuilder<WithHistory<G, H>>
+    for WithHistoryGB<'a, GB, H>
+{
+    fn create(&self, starting: G::Player) -> WithHistory<G, H> {
         WithHistory {
             prec: None,
             state: self.0.create(starting),
-            _h: PhantomData
+            _h: PhantomData,
         }
     }
 }
@@ -208,12 +203,12 @@ impl<G: Feature + Clone, H: Unsigned> Feature for WithHistory<G, H> {
         let features_array: Vec<ndarray::Array<f32, Self::StateDim>> = states_ref
             .iter()
             .rev()
-            .map(|g| {
-                g.state_to_feature(pov).insert_axis(Axis(0))
-            })
+            .map(|g| g.state_to_feature(pov).insert_axis(Axis(0)))
             .collect();
-        let features_array_view: Vec<ndarray::ArrayView<f32, Self::StateDim>> = features_array.iter().map(|x| x.view()).collect();
-        ndarray::stack(Axis(0), &features_array_view).expect("All features should have the same shape.")
+        let features_array_view: Vec<ndarray::ArrayView<f32, Self::StateDim>> =
+            features_array.iter().map(|x| x.view()).collect();
+        ndarray::stack(Axis(0), &features_array_view)
+            .expect("All features should have the same shape.")
     }
 
     fn action_dimension() -> Self::ActionDim {

@@ -257,7 +257,7 @@ impl InteractiveGame for IBreakthrough {
         let reward = self.game.play(action);
         log::info!("Reward: {}", reward);
     }
-/*
+    /*
     fn choose_move(&mut self, cb: Box<dyn FnOnce(<Self::G as Base>::Move, &mut Self)>) {
         let possible_moves = self.game.possible_moves();
         let first_move = possible_moves.first().expect("Not possible moves ?");

@@ -20,7 +20,7 @@ pub struct PUCTMoveInfo {
     pub N_a: f32,
     /// Move policy as predicted by the network.
     pub pi: f32,
-    /// Immediate reward yielded by move. 
+    /// Immediate reward yielded by move.
     pub reward: f32,
 }
 
@@ -83,23 +83,25 @@ where
     max_tree: f32,
 }
 
-
 impl<G, F> PUCTPolicy_<G, F>
 where
     G: game::Feature + super::MCTSGame,
-    F: Evaluator<G>
+    F: Evaluator<G>,
 {
-    fn normalize(&self, x: f32) -> f32{
+    fn normalize(&self, x: f32) -> f32 {
         if self.min_tree < self.max_tree {
-            (x - self.min_tree)/(self.max_tree - self.min_tree)
+            (x - self.min_tree) / (self.max_tree - self.min_tree)
         } else {
             x
         }
     }
 }
 
-
-type PUCTPlayoutInfo<G> = (Option<HashMap<<G as game::Base>::Move, f32>>, f32, <G as game::Game>::Player);
+type PUCTPlayoutInfo<G> = (
+    Option<HashMap<<G as game::Base>::Move, f32>>,
+    f32,
+    <G as game::Game>::Player,
+);
 
 #[allow(clippy::float_cmp)]
 impl<G, F> BaseMCTSPolicy<G> for PUCTPolicy_<G, F>
@@ -194,7 +196,7 @@ where
             tree_position = tree_pointer;
 
             let mut tree_node = tree_position.borrow_mut();
-            
+
             let relative_value = if tree_node.info.state.turn() == pov {
                 value
             } else {
@@ -203,7 +205,13 @@ where
 
             tree_node.info.node.count += 1.;
 
-            let node_reward = tree_node.moves.get_mut(&action).unwrap().borrow().info.reward;
+            let node_reward = tree_node
+                .moves
+                .get_mut(&action)
+                .unwrap()
+                .borrow()
+                .info
+                .reward;
 
             let mut v = tree_node.info.moves.get_mut(&action).unwrap();
             (*v).N_a += 1.;
@@ -217,8 +225,12 @@ where
             if (*v).Q > self.max_tree {
                 self.max_tree = (*v).Q
             }
-            
-            value = if tree_node.info.state.turn() == pov { tree_node.info.reward } else { -tree_node.info.reward } + self.config.DISCOUNT * value;
+
+            value = if tree_node.info.state.turn() == pov {
+                tree_node.info.reward
+            } else {
+                -tree_node.info.reward
+            } + self.config.DISCOUNT * value;
         }
     }
     /*
@@ -289,12 +301,10 @@ where
             config: self.config,
             N_PLAYOUTS: self.N_PLAYOUTS,
             evaluate: self.evaluate.clone(),
-            _g: PhantomData
+            _g: PhantomData,
         }
     }
 }
-
-
 
 impl<G, F> fmt::Display for PUCT<G, F>
 where
@@ -322,7 +332,7 @@ where
                 config: self.config,
                 evaluate: self.evaluate.clone(),
                 min_tree: f32::MAX,
-                max_tree: -f32::MAX
+                max_tree: -f32::MAX,
             },
             self.N_PLAYOUTS,
         )

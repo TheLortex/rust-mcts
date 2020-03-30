@@ -1,7 +1,7 @@
-use tensorflow::{Graph, Session, SessionRunArgs, Tensor, SessionOptions};
+use tensorflow::{Graph, Session, SessionOptions, SessionRunArgs, Tensor};
 
 pub const SUPPORT_SIZE: isize = 1;
-pub const SUPPORT_SHAPE: isize = 2*SUPPORT_SIZE+1;
+pub const SUPPORT_SHAPE: isize = 2 * SUPPORT_SIZE + 1;
 
 fn sign(x: f32) -> f32 {
     if x > 0. {
@@ -13,14 +13,20 @@ fn sign(x: f32) -> f32 {
     }
 }
 
-/// Converts a suport encoding of scalar to the corresponding value. 
+/// Converts a suport encoding of scalar to the corresponding value.
 pub fn support_to_value(support: &Tensor<f32>, batch_size: usize) -> Tensor<f32> {
     let mut res = Tensor::new(&[batch_size as u64]);
 
     for i in 0..batch_size {
-        let value: f32 = (-SUPPORT_SIZE..SUPPORT_SIZE+1).enumerate().map(|(j, v)| support[(SUPPORT_SHAPE as usize)*i+j]*(v as f32)).sum();
-        let value: f32 = sign(value) * ((((1. + 4. * 0.001 * (value.abs() + 1. + 0.001)).sqrt() - 1.) / (2. * 0.001)).powi(2) - 1.); 
-    
+        let value: f32 = (-SUPPORT_SIZE..SUPPORT_SIZE + 1)
+            .enumerate()
+            .map(|(j, v)| support[(SUPPORT_SHAPE as usize) * i + j] * (v as f32))
+            .sum();
+        let value: f32 = sign(value)
+            * ((((1. + 4. * 0.001 * (value.abs() + 1. + 0.001)).sqrt() - 1.) / (2. * 0.001))
+                .powi(2)
+                - 1.);
+
         res[i] = value;
     }
     res
@@ -32,7 +38,6 @@ pub fn call_prediction(
     graph: &Graph,
     board: &Tensor<f32>,
 ) -> (Tensor<f32>, Tensor<f32>) {
-    
     let board_op = graph
         .operation_by_name_required("serving_default_board")
         .unwrap();
@@ -58,7 +63,6 @@ pub fn call_dynamics(
     board: &Tensor<f32>,
     action: &Tensor<f32>,
 ) -> (Tensor<f32>, Tensor<f32>) {
-    
     let board_op = graph
         .operation_by_name_required("serving_default_board")
         .unwrap();
@@ -82,12 +86,7 @@ pub fn call_dynamics(
 }
 
 /// Use representation network inference.
-pub fn call_representation(
-    session: &Session,
-    graph: &Graph,
-    board: &Tensor<f32>,
-) -> Tensor<f32> {
-    
+pub fn call_representation(session: &Session, graph: &Graph, board: &Tensor<f32>) -> Tensor<f32> {
     let board_op = graph
         .operation_by_name_required("serving_default_board")
         .unwrap();
@@ -106,7 +105,6 @@ pub fn call_representation(
 
 /// Load a tensorflow model into a session.
 pub fn load_model(path: &str) -> (Graph, Session) {
-
     let mut graph = Graph::new();
     let mut options = SessionOptions::new();
     /* To get configuration, use python:

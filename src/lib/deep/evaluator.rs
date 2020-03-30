@@ -1,18 +1,16 @@
-use crate::game::meta::simulated::DynamicsNetworkOutput;
-use crate::game;
 use crate::deep::tf;
+use crate::game;
+use crate::game::meta::simulated::DynamicsNetworkOutput;
 use crate::settings;
 
-use ndarray::{Array, ArrayBase, Dimension};
-use tensorflow::{Graph, Session, Tensor};
-use std::sync::mpsc;
 use gstuff::oneshot;
-use std::time::{Instant, Duration};
-use std::sync::{RwLock, atomic::AtomicBool};
+use ndarray::{Array, ArrayBase, Dimension};
 use std::sync::atomic::Ordering;
+use std::sync::mpsc;
+use std::sync::{atomic::AtomicBool, RwLock};
+use std::time::{Duration, Instant};
 use std::{thread, time};
-
-
+use tensorflow::{Graph, Session, Tensor};
 
 const WARN_ON_GPU_UNDERUSAGE: bool = false;
 
@@ -21,26 +19,22 @@ pub type PredictionEvaluatorChannel = (Tensor<f32>, oneshot::Sender<(Tensor<f32>
 /// Takes a tensor and a way to send back the inference result for the representation network.
 pub type RepresentationEvaluatorChannel = (Tensor<f32>, oneshot::Sender<Tensor<f32>>);
 /// Takes a tensor and a way to send back the inference result for the dynamics network.
-pub type DynamicsEvaluatorChannel = ((Tensor<f32>, Tensor<f32>), oneshot::Sender<(Tensor<f32>, Tensor<f32>)>);
+pub type DynamicsEvaluatorChannel = (
+    (Tensor<f32>, Tensor<f32>),
+    oneshot::Sender<(Tensor<f32>, Tensor<f32>)>,
+);
 
 /*      HELPERS          */
 
 fn ndarray_to_tensor<D: Dimension>(arr: Array<f32, D>) -> Tensor<f32> {
-    Tensor::new(
-        &arr
-            .shape()
-            .iter()
-            .map(|i| *i as u64)
-            .collect::<Vec<u64>>(),
-    )
-    .with_values(&arr.into_raw_vec())
-    .unwrap()
+    Tensor::new(&arr.shape().iter().map(|i| *i as u64).collect::<Vec<u64>>())
+        .with_values(&arr.into_raw_vec())
+        .unwrap()
 }
 
-fn tensor_to_ndarray<D: Dimension>(tensor: Tensor<f32>, shape: D) -> Array<f32, D>{
+fn tensor_to_ndarray<D: Dimension>(tensor: Tensor<f32>, shape: D) -> Array<f32, D> {
     ArrayBase::from_shape_vec(shape, tensor.to_vec()).unwrap()
 }
-
 
 /*      EVALUATORS       */
 
@@ -59,20 +53,23 @@ where
     sender.send((board_tensor, resp_tx)).ok().unwrap();
     let (policy_tensor, value_tensor) = resp_rx.recv().unwrap();
     let policy = tensor_to_ndarray(policy_tensor, G::action_dimension());
-    let value = if decode_value { tf::support_to_value(&value_tensor, 1)[0] } else { value_tensor[0] };
+    let value = if decode_value {
+        tf::support_to_value(&value_tensor, 1)[0]
+    } else {
+        value_tensor[0]
+    };
     (policy, value)
 }
 
-
 /// Representation evaluator
-pub fn representation<G,H>(
+pub fn representation<G, H>(
     sender: mpsc::SyncSender<RepresentationEvaluatorChannel>,
     hidden_shape: H,
     state: Array<f32, G>,
 ) -> Array<f32, H>
 where
     G: Dimension,
-    H: Dimension
+    H: Dimension,
 {
     let board_tensor = ndarray_to_tensor(state);
     let (resp_tx, resp_rx) = oneshot::oneshot();
@@ -84,7 +81,7 @@ where
 }
 
 /// Dynamics evaluator
-pub fn dynamics<G,H>(
+pub fn dynamics<G, H>(
     sender: mpsc::SyncSender<DynamicsEvaluatorChannel>,
     hidden_shape: H,
     board: Array<f32, H>,
@@ -93,20 +90,27 @@ pub fn dynamics<G,H>(
 ) -> DynamicsNetworkOutput<H>
 where
     G: Dimension,
-    H: Dimension
+    H: Dimension,
 {
     let board_tensor = ndarray_to_tensor(board);
     let action_tensor = ndarray_to_tensor(action);
     let (resp_tx, resp_rx) = oneshot::oneshot();
 
-    sender.send(((board_tensor, action_tensor), resp_tx)).ok().unwrap();
+    sender
+        .send(((board_tensor, action_tensor), resp_tx))
+        .ok()
+        .unwrap();
     let (next_board_tensor, reward) = resp_rx.recv().unwrap();
 
     let hidden_state = tensor_to_ndarray(next_board_tensor, hidden_shape);
-    let reward = if decode_reward { tf::support_to_value(&reward, 1)[0] } else { reward[0] };
+    let reward = if decode_reward {
+        tf::support_to_value(&reward, 1)[0]
+    } else {
+        reward[0]
+    };
     DynamicsNetworkOutput {
         reward,
-        hidden_state
+        hidden_state,
     }
 }
 
@@ -121,14 +125,13 @@ pub fn prediction_task(
     let (writer_lock, g_and_s) = tensorflow;
     println!("Starting prediction evaluator..");
 
-    
     let mut repr_tensor: Tensor<f32> =
         Tensor::new(&[settings::GPU_BATCH_SIZE as u64, repr_size as u64]);
     let mut tx_buf = vec![];
     let mut idx = 0;
 
     let mut last_time = Instant::now();
-    let timeout =  Duration::from_nanos(1_000_000_000/10_000); //1kHz: Should be the number of CPU-GPU roundtrip/sec.
+    let timeout = Duration::from_nanos(1_000_000_000 / 10_000); //1kHz: Should be the number of CPU-GPU roundtrip/sec.
 
     let mut last_warning = Instant::now();
     let last_warning_duration = Duration::from_secs(10);
@@ -142,17 +145,22 @@ pub fn prediction_task(
                 tx_buf.push(tx);
                 idx += 1;
                 idx == settings::GPU_BATCH_SIZE
-            },
+            }
             Err(mpsc::RecvTimeoutError::Timeout) => idx > 0,
-            x => panic!(x)
+            x => panic!(x),
         };
 
-
         if send_batch {
-            if WARN_ON_GPU_UNDERUSAGE && idx < settings::GPU_BATCH_SIZE/2 && (Instant::now() - last_warning) > last_warning_duration {
+            if WARN_ON_GPU_UNDERUSAGE
+                && idx < settings::GPU_BATCH_SIZE / 2
+                && (Instant::now() - last_warning) > last_warning_duration
+            {
                 last_warning = Instant::now();
                 log::warn!("Prediction: GPU underused.");
-                log::warn!("Reduce batch size or increase workers. ({}%)", 100*idx/settings::GPU_BATCH_SIZE);
+                log::warn!(
+                    "Reduce batch size or increase workers. ({}%)",
+                    100 * idx / settings::GPU_BATCH_SIZE
+                );
                 log::warn!("");
             }
 
@@ -167,7 +175,7 @@ pub fn prediction_task(
 
             for i in (0..idx).rev() {
                 let policy = Tensor::from(&policies[i * action_size..(i + 1) * action_size]);
-                let value = Tensor::from(&values[i * support_size..(i+1) * support_size]);
+                let value = Tensor::from(&values[i * support_size..(i + 1) * support_size]);
                 tx_buf.pop().unwrap().send((policy, value));
             }
             idx = 0;
@@ -176,7 +184,6 @@ pub fn prediction_task(
         }
     }
 }
-
 
 /// Dynamics task
 pub fn dynamics_task(
@@ -195,12 +202,11 @@ pub fn dynamics_task(
     let mut action_tensor: Tensor<f32> =
         Tensor::new(&[settings::GPU_BATCH_SIZE as u64, action_size as u64]);
 
-
     let mut tx_buf = vec![];
     let mut idx = 0;
 
     let mut last_time = Instant::now();
-    let timeout =  Duration::from_nanos(1_000_000_000/10_000); //1kHz: Should be the number of CPU-GPU roundtrip/sec.
+    let timeout = Duration::from_nanos(1_000_000_000 / 10_000); //1kHz: Should be the number of CPU-GPU roundtrip/sec.
 
     let mut last_warning = Instant::now();
     let last_warning_duration = Duration::from_secs(10);
@@ -215,17 +221,22 @@ pub fn dynamics_task(
                 tx_buf.push(tx);
                 idx += 1;
                 idx == settings::GPU_BATCH_SIZE
-            },
+            }
             Err(mpsc::RecvTimeoutError::Timeout) => idx > 0,
-            x => panic!(x)
+            x => panic!(x),
         };
 
-
         if send_batch {
-            if WARN_ON_GPU_UNDERUSAGE && idx < settings::GPU_BATCH_SIZE/2 && (Instant::now() - last_warning) > last_warning_duration {
+            if WARN_ON_GPU_UNDERUSAGE
+                && idx < settings::GPU_BATCH_SIZE / 2
+                && (Instant::now() - last_warning) > last_warning_duration
+            {
                 last_warning = Instant::now();
                 log::warn!("Prediction: GPU underused.");
-                log::warn!("Reduce batch size or increase workers. ({}%)", 100*idx/settings::GPU_BATCH_SIZE);
+                log::warn!(
+                    "Reduce batch size or increase workers. ({}%)",
+                    100 * idx / settings::GPU_BATCH_SIZE
+                );
                 log::warn!("");
             }
 
@@ -240,7 +251,7 @@ pub fn dynamics_task(
 
             for i in (0..idx).rev() {
                 let next_repr = Tensor::from(&next_reprs[i * repr_size..(i + 1) * repr_size]);
-                let reward = Tensor::from(&rewards[i * support_size..(i+1) * support_size]);
+                let reward = Tensor::from(&rewards[i * support_size..(i + 1) * support_size]);
                 tx_buf.pop().unwrap().send((next_repr, reward));
             }
             idx = 0;
@@ -260,14 +271,13 @@ pub fn representation_task(
     let (writer_lock, g_and_s) = tensorflow;
     println!("Starting representation evaluator..");
 
-    
     let mut board_tensor: Tensor<f32> =
         Tensor::new(&[settings::GPU_BATCH_SIZE as u64, board_size as u64]);
     let mut tx_buf = vec![];
     let mut idx = 0;
 
     let mut last_time = Instant::now();
-    let timeout =  Duration::from_nanos(1_000_000_000/10_000); //10kHz: Should be the number of CPU-GPU roundtrip/sec.
+    let timeout = Duration::from_nanos(1_000_000_000 / 10_000); //10kHz: Should be the number of CPU-GPU roundtrip/sec.
 
     let mut last_warning = Instant::now();
     let last_warning_duration = Duration::from_secs(10);
@@ -281,17 +291,22 @@ pub fn representation_task(
                 tx_buf.push(tx);
                 idx += 1;
                 idx == settings::GPU_BATCH_SIZE
-            },
+            }
             Err(mpsc::RecvTimeoutError::Timeout) => idx > 0,
-            x => panic!(x)
+            x => panic!(x),
         };
 
-
         if send_batch {
-            if WARN_ON_GPU_UNDERUSAGE && idx < settings::GPU_BATCH_SIZE/2 && (Instant::now() - last_warning) > last_warning_duration {
+            if WARN_ON_GPU_UNDERUSAGE
+                && idx < settings::GPU_BATCH_SIZE / 2
+                && (Instant::now() - last_warning) > last_warning_duration
+            {
                 last_warning = Instant::now();
                 log::warn!("Prediction: GPU underused.");
-                log::warn!("Reduce batch size or increase workers. ({}%)", 100*idx/settings::GPU_BATCH_SIZE);
+                log::warn!(
+                    "Reduce batch size or increase workers. ({}%)",
+                    100 * idx / settings::GPU_BATCH_SIZE
+                );
                 log::warn!("");
             }
 
@@ -303,7 +318,6 @@ pub fn representation_task(
                 let (ref graph, ref session) = *g_and_s.read().unwrap();
                 tf::call_representation(&session, &graph, &board_tensor)
             };
-
 
             for i in (0..idx).rev() {
                 let repr = Tensor::from(&reprs[i * repr_size..(i + 1) * repr_size]);
@@ -341,11 +355,14 @@ pub fn prediction_evaluator_single<G: game::Feature>(
     .with_values(&board.state_to_feature(pov).into_raw_vec())
     .unwrap();
 
-
     let (policy_tensor, value_tensor) = tf::call_prediction(session, graph, &board_tensor);
-    
+
     let policy = tensor_to_ndarray(policy_tensor, G::action_dimension());
-    let value = if decode_value { tf::support_to_value(&value_tensor, 1)[0] } else { value_tensor[0] };
+    let value = if decode_value {
+        tf::support_to_value(&value_tensor, 1)[0]
+    } else {
+        value_tensor[0]
+    };
     (policy, value)
 }
 
@@ -359,7 +376,8 @@ pub fn dynamics_evaluator_single<G: Dimension, H: Dimension>(
     decode_reward: bool,
 ) -> DynamicsNetworkOutput<H> {
     let board_tensor = Tensor::new(
-        &board.raw_dim()
+        &board
+            .raw_dim()
             .insert_axis(Axis(0))
             .as_array_view()
             .to_slice()
@@ -372,7 +390,8 @@ pub fn dynamics_evaluator_single<G: Dimension, H: Dimension>(
     .unwrap();
 
     let action_tensor = Tensor::new(
-        &action.raw_dim()
+        &action
+            .raw_dim()
             .insert_axis(Axis(0))
             .as_array_view()
             .to_slice()
@@ -384,15 +403,18 @@ pub fn dynamics_evaluator_single<G: Dimension, H: Dimension>(
     .with_values(&action.into_raw_vec())
     .unwrap();
 
+    let (reward, next_board_tensor) =
+        tf::call_dynamics(session, graph, &board_tensor, &action_tensor);
 
-    let (reward, next_board_tensor) = tf::call_dynamics(session, graph, &board_tensor, &action_tensor);
-
-    
     let hidden_state = tensor_to_ndarray(next_board_tensor, hidden_shape);
-    let reward = if decode_reward { tf::support_to_value(&reward, 1)[0] } else { reward[0] };
+    let reward = if decode_reward {
+        tf::support_to_value(&reward, 1)[0]
+    } else {
+        reward[0]
+    };
     DynamicsNetworkOutput {
         hidden_state,
-        reward
+        reward,
     }
 }
 
@@ -404,7 +426,8 @@ pub fn representation_evaluator_single<G: Dimension, H: Dimension>(
     state: Array<f32, G>,
 ) -> Array<f32, H> {
     let board_tensor = Tensor::new(
-        &state.raw_dim()
+        &state
+            .raw_dim()
             .insert_axis(Axis(0))
             .as_array_view()
             .to_slice()
@@ -415,7 +438,6 @@ pub fn representation_evaluator_single<G: Dimension, H: Dimension>(
     )
     .with_values(&state.into_raw_vec())
     .unwrap();
-
 
     let repr_board_tensor = tf::call_representation(session, graph, &board_tensor);
     tensor_to_ndarray(repr_board_tensor, hidden_shape)

@@ -1,4 +1,4 @@
-use crate::game::{Game, Base};
+use crate::game::{Base, Game};
 use crate::policies::MultiplayerPolicy;
 
 use std::collections::HashMap;
@@ -18,22 +18,23 @@ pub mod uct;
 pub trait MCTSGame = Game + Clone;
 /* ABSTRACT MCTS */
 
-use std::rc::{Rc, Weak};
 use std::cell::RefCell;
+use std::rc::{Rc, Weak};
 
-/// Link from child node to parent node. 
-/// 
+/// Link from child node to parent node.
+///
 /// Represented as a weak reference.
-pub type MCTSNodeParent<G, MCTS> = Option<(Weak<RefCell<MCTSTreeNode<G, MCTS>>>, <G as Base>::Move)>;
+pub type MCTSNodeParent<G, MCTS> =
+    Option<(Weak<RefCell<MCTSTreeNode<G, MCTS>>>, <G as Base>::Move)>;
 /// Strong reference to an MCTS tree.
-pub type MCTSNodeChild<G, MCTS>  = Rc<RefCell<MCTSTreeNode<G, MCTS>>>;
+pub type MCTSNodeChild<G, MCTS> = Rc<RefCell<MCTSTreeNode<G, MCTS>>>;
 
 /// MCTS tree node.
 #[derive(Clone)]
 pub struct MCTSTreeNode<G, MCTS>
 where
-    G: MCTSGame, 
-    MCTS: BaseMCTSPolicy<G> 
+    G: MCTSGame,
+    MCTS: BaseMCTSPolicy<G>,
 {
     /// Node parent
     pub parent: MCTSNodeParent<G, MCTS>,
@@ -86,8 +87,8 @@ pub trait BaseMCTSPolicy<G: MCTSGame>: Sized {
     type PlayoutInfo;
 
     /// Get value associated to a node.
-    /// 
-    /// This value should be relative to the current player, 
+    ///
+    /// This value should be relative to the current player,
     /// it will be maximized by the selection process.
     fn get_value(
         &self,
@@ -97,7 +98,7 @@ pub trait BaseMCTSPolicy<G: MCTSGame>: Sized {
         move_info: &Self::MoveInfo,
         exploration: bool,
     ) -> f32;
-    
+
     /// Default node statistics for a given state.
     fn default_node(&self, board: &G) -> Self::NodeInfo;
 
@@ -105,8 +106,8 @@ pub trait BaseMCTSPolicy<G: MCTSGame>: Sized {
     fn default_move(&self, board: &G, action: &G::Move) -> Self::MoveInfo;
 
     /// Backpropagate playout information.
-    /// 
-    /// # Params 
+    ///
+    /// # Params
     /// - `leaf`: the newly created node by expansion, it can
     /// be used to propagate playout information.
     /// - `history`: the list of selected moves until leaf.
@@ -115,7 +116,7 @@ pub trait BaseMCTSPolicy<G: MCTSGame>: Sized {
         &mut self,
         leaf: Rc<RefCell<MCTSTreeNode<G, Self>>>,
         history: &[G::Move],
-        playout: Self::PlayoutInfo
+        playout: Self::PlayoutInfo,
     );
 
     /// Generate playout information starting from board.
@@ -127,8 +128,8 @@ use float_ord::FloatOrd;
 /// Wrapper for MCTS policy.
 pub struct WithMCTSPolicy<G, MCTS>
 where
-    G: MCTSGame, 
-    MCTS: BaseMCTSPolicy<G> 
+    G: MCTSGame,
+    MCTS: BaseMCTSPolicy<G>,
 {
     base_mcts: MCTS,
     N_PLAYOUTS: usize,
@@ -164,10 +165,7 @@ where
             .0
     }
 
-    fn select(
-        &self,
-        root: MCTSNodeChild<G, MCTS>,
-    ) -> (Vec<G::Move>, MCTSNodeChild<G, MCTS>) {
+    fn select(&self, root: MCTSNodeChild<G, MCTS>) -> (Vec<G::Move>, MCTSNodeChild<G, MCTS>) {
         let mut history: Vec<G::Move> = Vec::new();
 
         //let mut tree_pos = Some(root);
@@ -183,7 +181,7 @@ where
                 /* play next move */
                 let a = self.select_move(&last_node_ref, true);
                 history.push(a);
-                
+
                 let node_imm = last_node_ref.moves.get(&a);
                 if let Some(node) = node_imm {
                     if node.borrow().info.state.is_finished() {
@@ -204,16 +202,15 @@ where
         tree_node: MCTSNodeChild<G, MCTS>,
         action: &G::Move,
     ) -> MCTSNodeChild<G, MCTS> {
-
         let mut new_state = tree_node.borrow().info.state.clone();
         let reward = new_state.play(action);
-
 
         let new_node = self.base_mcts.default_node(&new_state);
 
         let moves_info = HashMap::from_iter(
             new_state
-                .possible_moves().iter()
+                .possible_moves()
+                .iter()
                 .map(|m| (*m, self.base_mcts.default_move(&new_state, &m))),
         );
 
@@ -241,13 +238,14 @@ where
         /* SIMULATE */
         let playout = self.base_mcts.simulate(&created_node.borrow().info.state);
         /* BACKUP */
-        self.base_mcts.backpropagate(created_node, &history, playout);
+        self.base_mcts
+            .backpropagate(created_node, &history, playout);
     }
 
     /**
      *  Instanciate a new MCTS policy, given a BaseMCTS instance.
      */
-     pub fn new(p: MCTS, N_PLAYOUTS: usize) -> Self {
+    pub fn new(p: MCTS, N_PLAYOUTS: usize) -> Self {
         WithMCTSPolicy {
             base_mcts: p,
             N_PLAYOUTS,
@@ -271,7 +269,8 @@ where
                 node: self.base_mcts.default_node(board),
                 moves: HashMap::from_iter(
                     board
-                        .possible_moves().iter()
+                        .possible_moves()
+                        .iter()
                         .map(|m| (*m, self.base_mcts.default_move(board, m))),
                 ),
             },

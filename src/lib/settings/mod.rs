@@ -8,12 +8,12 @@ pub const DEFAULT_N_HISTORY_PUCT: usize = 2;
 /// Size of the breakthrough board.
 pub const BREAKTHROUGH_K: usize = 5;
 /// MuZero hidden state shape for 5x5 breakthrough.
-pub const MUZ_BT_SHAPE: (usize, usize, usize) = (5,5,16);
+pub const MUZ_BT_SHAPE: (usize, usize, usize) = (5, 5, 16);
 
 // Batched GPU evaluator.
 
 /// Batch size to send to the GPU (PUCT)
-pub const GPU_BATCH_SIZE: usize   = 64;
+pub const GPU_BATCH_SIZE: usize = 64;
 /// Number of threads sending batches to the GPU
 pub const GPU_N_EVALUATORS: usize = 4;
 /// Number of threads generating games, per evaluator

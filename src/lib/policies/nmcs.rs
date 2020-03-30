@@ -48,8 +48,6 @@ impl NMCSPolicy {
     }
 }
 
-
-
 impl<G: Singleplayer + Clone> SingleplayerPolicy<G> for NMCSPolicy {
     fn solve(self: &mut NMCSPolicy, board: &G) -> Vec<G::Move> {
         let (_, mut sequence) = self.nested(board, self.s.level);
@@ -146,7 +144,7 @@ impl<G: Game + SingleWinner + Clone> MultiplayerPolicy<G> for MultiNMCSPolicy<G>
     fn play(self: &mut MultiNMCSPolicy<G>, board: &G) -> G::Move {
         let mut best_move = None;
         let mut max_visited = 0.;
-        
+
         for m in board.possible_moves() {
             let mut new_board = board.clone();
             new_board.play(&m);

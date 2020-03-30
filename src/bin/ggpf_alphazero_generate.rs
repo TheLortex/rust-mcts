@@ -41,9 +41,8 @@ fn run() {
     /*
      * Watches for change in the model, and reload when needed.
      */
-     let p_tf = prediction_tensorflow.clone();
+    let p_tf = prediction_tensorflow.clone();
     filemanager::watch_model(p_tf, String::from("./models/alpha-breakthrough"));
-
 
     // Game channel.
     let (tx_games, rx_games) =

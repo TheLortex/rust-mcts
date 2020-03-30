@@ -20,7 +20,7 @@ pub mod nmcs;
 pub mod nrpa;
 /**
  *  Playout Policy Adaptation.
- */ 
+ */
 pub mod ppa;
 
 /* MULTIPLAYER POLICY TRAITS */
@@ -89,10 +89,10 @@ pub trait SingleplayerPolicy<T: Game> {
 
 use super::game;
 /// Dynamically map policy names to policy builder instances.
-pub fn get_multi<'a, G>(name: &str) -> Box<dyn DynMultiplayerPolicyBuilder<'a, G> + Sync + 'a> 
+pub fn get_multi<'a, G>(name: &str) -> Box<dyn DynMultiplayerPolicyBuilder<'a, G> + Sync + 'a>
 where
     G: mcts::MCTSGame + game::SingleWinner + 'a + std::hash::Hash + Eq,
-    G::Move: Send
+    G::Move: Send,
 {
     match name {
         "rand" => Box::new(flat::Random::default()),
@@ -102,7 +102,7 @@ where
         "rave" => Box::new(mcts::rave::RAVE::default()),
         "ppa" => Box::new(ppa::PPA::<_, NoFeatures>::default()),
         "nmcs" => Box::new(nmcs::MultiNMCS::default()),
-        _ => panic!("Policy '{}' not found.", name)
+        _ => panic!("Policy '{}' not found.", name),
     }
 }
 

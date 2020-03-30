@@ -1,6 +1,8 @@
-use super::puct::{Evaluator, PUCTSettings, PUCT, PUCTPolicy};
+use super::puct::{Evaluator, PUCTPolicy, PUCTSettings, PUCT};
 use crate::game;
-use crate::game::meta::simulated::{DynamicsEvaluator, Simulated, DynamicsNetworkOutput, RepresentationEvaluator};
+use crate::game::meta::simulated::{
+    DynamicsEvaluator, DynamicsNetworkOutput, RepresentationEvaluator, Simulated,
+};
 use crate::policies::{MultiplayerPolicy, MultiplayerPolicyBuilder};
 use ndarray::Array;
 
@@ -20,7 +22,7 @@ where
     /// PUCT policy instance. Can be taken to gather statistics.
     pub mcts: Option<PUCTPolicy<Simulated<G, H, DE>, PE>>,
 
-    config: Muz<G,H,PE,RE,DE>,
+    config: Muz<G, H, PE, RE, DE>,
 }
 
 impl<G, H, PE, RE, DE> MultiplayerPolicy<G> for MuzPolicy<G, H, PE, RE, DE>
@@ -117,8 +119,6 @@ where
     }
 }
 
-
-
 impl<G, H, PE, RE, DE> MultiplayerPolicyBuilder<G> for Muz<G, H, PE, RE, DE>
 where
     G: game::Feature + 'static,
@@ -136,5 +136,4 @@ where
             mcts: None,
         }
     }
-
 }
