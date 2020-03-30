@@ -57,5 +57,5 @@ features = ["tensorflow_gpu"]
 
 #[replace]
 #'tensorflow:0.14.0' = { path = '/home/lucas/git/tensorflow-rust' }
-[replace]
-'ndarray:0.13.0' = { path = '/home/lucas/git/ndarray'}
+[patch.crates-io]
+ndarray = { git = 'https://github.com/TheLortex/ndarray', branch = 'remove-axis-on-larger-dim'}

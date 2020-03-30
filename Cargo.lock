@@ -593,7 +593,7 @@ dependencies = [
  "gstuff",
  "indicatif",
  "log",
- "ndarray 0.13.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "ndarray",
  "nix",
  "notify",
  "numpy",
@@ -899,6 +899,7 @@ dependencies = [
 [[package]]
 name = "ndarray"
 version = "0.13.0"
+source = "git+https://github.com/TheLortex/ndarray?branch=remove-axis-on-larger-dim#f52f26686c68ce66de4cbccf1e258cb78ab8f882"
 dependencies = [
  "matrixmultiply",
  "num-complex",
@@ -906,13 +907,6 @@ dependencies = [
  "num-traits",
  "rawpointer",
 ]
-
-[[package]]
-name = "ndarray"
-version = "0.13.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "25b001fc2f5df269365fb77bd8396ce6b1f61c9848f7f088c25e57494bacc57b"
-replace = "ndarray 0.13.0"
 
 [[package]]
 name = "net2"
@@ -1055,7 +1049,7 @@ checksum = "579fd891291c3f7d0c5f691ce1efda0655605f8c97465e4a37eb614107efc6d2"
 dependencies = [
  "cfg-if",
  "libc",
- "ndarray 0.13.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "ndarray",
  "num-complex",
  "num-traits",
  "pyo3",
