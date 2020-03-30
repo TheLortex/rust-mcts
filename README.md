@@ -2,6 +2,8 @@
 
 This is a project for the IASD course on Monte-Carlo Search of M. Cazenave (https://www.lamsade.dauphine.fr/~cazenave/MonteCarloSearch.html). It introduces a general framework for game playing and agent policies for these games. Several games and policies have been implemented.
 
+API documentation is [available here](https://www.lortex.org/rust-mcts/ggpf/).
+
 ## Games
 
 ### Multi-player
