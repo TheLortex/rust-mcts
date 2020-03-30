@@ -599,6 +599,37 @@ dependencies = [
 ]
 
 [[package]]
+name = "ggpf"
+version = "0.0.1"
+dependencies = [
+ "ansi_term 0.12.1",
+ "arrayvec",
+ "assert-impl",
+ "atomic-counter",
+ "clap",
+ "cursive",
+ "cursive-flexi-logger-view",
+ "cursive_tree_view",
+ "flexi_logger",
+ "float-ord",
+ "gstuff",
+ "indicatif",
+ "log",
+ "ndarray 0.13.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "nix",
+ "notify",
+ "numpy",
+ "pyo3",
+ "rand 0.7.3",
+ "rand_distr",
+ "rayon",
+ "serde",
+ "serde-pickle",
+ "tensorflow",
+ "typenum",
+]
+
+[[package]]
 name = "ghost"
 version = "0.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1868,34 +1899,3 @@ name = "yansi"
 version = "0.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9fc79f4a1e39857fc00c3f662cbf2651c771f00e9c15fe2abc341806bd46bd71"
-
-[[package]]
-name = "zerol"
-version = "0.1.0"
-dependencies = [
- "ansi_term 0.12.1",
- "arrayvec",
- "assert-impl",
- "atomic-counter",
- "clap",
- "cursive",
- "cursive-flexi-logger-view",
- "cursive_tree_view",
- "flexi_logger",
- "float-ord",
- "gstuff",
- "indicatif",
- "log",
- "ndarray 0.13.0 (registry+https://github.com/rust-lang/crates.io-index)",
- "nix",
- "notify",
- "numpy",
- "pyo3",
- "rand 0.7.3",
- "rand_distr",
- "rayon",
- "serde",
- "serde-pickle",
- "tensorflow",
- "typenum",
-]

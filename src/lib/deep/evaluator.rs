@@ -1,23 +1,47 @@
 use crate::game::meta::simulated::DynamicsNetworkOutput;
 use crate::game;
-use crate::misc::tf;
+use crate::deep::tf;
 use crate::settings;
 
 use ndarray::{Array, ArrayBase, Dimension};
 use tensorflow::{Graph, Session, Tensor};
 use std::sync::mpsc;
 use gstuff::oneshot;
+use std::time::{Instant, Duration};
+use std::sync::{Arc, RwLock};
 
 
 const WARN_ON_GPU_UNDERUSAGE: bool = false;
 
-/*
- * EvaluatorChannels takes a tensor and a way to send back the inference result.
- */
+/// Takes a tensor and a way to send back the inference result for the prediction network.
 pub type PredictionEvaluatorChannel = (Tensor<f32>, oneshot::Sender<(Tensor<f32>, Tensor<f32>)>);
+/// Takes a tensor and a way to send back the inference result for the representation network.
 pub type RepresentationEvaluatorChannel = (Tensor<f32>, oneshot::Sender<Tensor<f32>>);
+/// Takes a tensor and a way to send back the inference result for the dynamics network.
 pub type DynamicsEvaluatorChannel = ((Tensor<f32>, Tensor<f32>), oneshot::Sender<(Tensor<f32>, Tensor<f32>)>);
 
+/*      HELPERS          */
+
+fn ndarray_to_tensor<D: Dimension>(arr: Array<f32, D>) -> Tensor<f32> {
+    Tensor::new(
+        &arr
+            .shape()
+            .iter()
+            .map(|i| *i as u64)
+            .collect::<Vec<u64>>(),
+    )
+    .with_values(&arr.into_raw_vec())
+    .unwrap()
+}
+
+fn tensor_to_ndarray<D: Dimension>(tensor: Tensor<f32>, shape: D) -> Array<f32, D>{
+    ArrayBase::from_shape_vec(shape, tensor.to_vec()).unwrap()
+}
+
+
+/*      EVALUATORS       */
+
+/// Prediction evaluator
 pub fn prediction<G>(
     sender: mpsc::SyncSender<PredictionEvaluatorChannel>,
     pov: G::Player,
@@ -26,27 +50,17 @@ pub fn prediction<G>(
 where
     G: game::Feature,
 {
-    let board_features = board.state_to_feature(pov);
-    let board_tensor = Tensor::new(
-        &board_features.shape()
-            .iter()
-            .map(|i| *i as u64)
-            .collect::<Vec<u64>>(),
-    )
-    .with_values(&board_features.into_raw_vec())
-    .unwrap();
-
+    let board_tensor = ndarray_to_tensor(board.state_to_feature(pov));
     let (resp_tx, resp_rx) = oneshot::oneshot();
-
     sender.send((board_tensor, resp_tx)).ok().unwrap();
     let (policy_tensor, value_tensor) = resp_rx.recv().unwrap();
-
-    let policy =
-        ArrayBase::from_shape_vec(G::action_dimension(), (&policy_tensor).to_vec()).unwrap();
+    let policy = tensor_to_ndarray(policy_tensor, G::action_dimension());
     let value = value_tensor[0];
     (policy, value)
 }
 
+
+/// Representation evaluator
 pub fn representation<G,H>(
     sender: mpsc::SyncSender<RepresentationEvaluatorChannel>,
     hidden_shape: H,
@@ -56,24 +70,16 @@ where
     G: Dimension,
     H: Dimension
 {
-    let board_tensor = Tensor::new(
-        &state.shape()
-            .iter()
-            .map(|i| *i as u64)
-            .collect::<Vec<u64>>(),
-    )
-    .with_values(&state.into_raw_vec())
-    .unwrap();
-
+    let board_tensor = ndarray_to_tensor(state);
     let (resp_tx, resp_rx) = oneshot::oneshot();
 
     sender.send((board_tensor, resp_tx)).ok().unwrap();
     let repr_board_tensor = resp_rx.recv().unwrap();
-    
 
-    ArrayBase::from_shape_vec(hidden_shape, (&repr_board_tensor).to_vec()).unwrap()
+    tensor_to_ndarray(repr_board_tensor, hidden_shape)
 }
 
+/// Dynamics evaluator
 pub fn dynamics<G,H>(
     sender: mpsc::SyncSender<DynamicsEvaluatorChannel>,
     hidden_shape: H,
@@ -84,40 +90,21 @@ where
     G: Dimension,
     H: Dimension
 {
-    let board_tensor = Tensor::new(
-        &board.shape()
-        .iter()
-        .map(|i| *i as u64)
-        .collect::<Vec<u64>>(),
-    )
-    .with_values(&board.into_raw_vec())
-    .unwrap();
-
-    let action_tensor = Tensor::new(
-        &action.shape()
-            .iter()
-            .map(|i| *i as u64)
-            .collect::<Vec<u64>>(),
-    )
-    .with_values(&action.into_raw_vec())
-    .unwrap();
-
+    let board_tensor = ndarray_to_tensor(board);
+    let action_tensor = ndarray_to_tensor(action);
     let (resp_tx, resp_rx) = oneshot::oneshot();
 
     sender.send(((board_tensor, action_tensor), resp_tx)).ok().unwrap();
     let (next_board_tensor, reward) = resp_rx.recv().unwrap();
 
-    let tensor_as_vec = (&next_board_tensor).to_vec();
-    let hidden_state = ArrayBase::from_shape_vec(hidden_shape, tensor_as_vec).unwrap();
+    let hidden_state = tensor_to_ndarray(next_board_tensor, hidden_shape);
     DynamicsNetworkOutput {
         reward: reward[0],
-        hidden_state,
+        hidden_state
     }
 }
 
-use std::time::{Instant, Duration};
-use std::sync::{Arc, RwLock};
-
+/// Prediction task
 pub fn prediction_task(
     repr_size: usize,
     action_size: usize,
@@ -179,6 +166,7 @@ pub fn prediction_task(
 }
 
 
+/// Dynamics task
 pub fn dynamics_task(
     repr_size: usize,
     action_size: usize,
@@ -244,7 +232,7 @@ pub fn dynamics_task(
     }
 }
 
-
+/// Representation task
 pub fn representation_task(
     board_size: usize,
     repr_size: usize,

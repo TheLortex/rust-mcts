@@ -1,2 +1,6 @@
 /target
 **/*.rs.bk
+__pycache__
+logs
+models
+training_data

@@ -18,7 +18,7 @@ use ndarray::Array;
 
 use std::marker::PhantomData;
 use ggpf::settings;
-use ggpf::misc::tf::game_evaluator;
+use ggpf::deep::tf::game_evaluator;
 
 use tensorflow::{Graph, Session, SessionOptions};
 

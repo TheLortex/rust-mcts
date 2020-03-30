@@ -16,16 +16,12 @@ pub mod game;
 /**
  *  General policy traits and implementations.
  */
-pub mod policies; 
-/**
- *  Miscellanous features.
- */
-pub mod misc;
-/**
- *  Asynchronous execution.
- */
-pub mod r#async;
+pub mod policies;
 /**
  *  General game and playout settings.
  */
 pub mod settings;
+/**
+ *  Features for neural network-based policies. 
+ */
+pub mod deep;

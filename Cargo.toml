@@ -1,14 +1,12 @@
 [package]
-name = "zerol"
-version = "0.1.0"
+name = "ggpf"
+version = "0.0.1"
 authors = ["Lucas Pluvinage <lucas.pluvinage@gmail.com>"]
 edition = "2018"
 
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
-
 
 [lib]
-name = "zerol"
+name = "ggpf"
 path = "src/lib/lib.rs"
 
 [dependencies]

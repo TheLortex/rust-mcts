@@ -11,7 +11,7 @@ use tensorflow::{Graph, Session, SessionOptions};
 use ggpf::game;
 use ggpf::game::breakthrough::*;
 use ggpf::game::meta::with_history::*;
-use ggpf::misc::tf::game_evaluator;
+use ggpf::deep::tf::game_evaluator;
 use ggpf::policies::{get_multi, mcts::puct::*, DynMultiplayerPolicyBuilder};
 use ggpf::settings;
 
