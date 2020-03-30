@@ -1,12 +1,5 @@
 #![allow(non_snake_case)]
 
-use cursive::views::{Button, Dialog, ResizedView, LinearLayout, NamedView, Panel};
-use cursive::view::SizeConstraint;
-use cursive::Cursive;
-use cursive::traits::*;
-use std::cell::RefCell;
-
-
 use ggpf::game::meta::with_history::{WithHistory, IWithHistory};
 use ggpf::game::breakthrough::*;
 use ggpf::game::{MoveTrait, InteractiveGame, Base, NoFeatures, Feature, Game, SingleWinner};
@@ -14,24 +7,27 @@ use ggpf::policies::{
     ppa::*, mcts::puct::{PUCT, PUCTSettings, PUCTPolicy_, Evaluator}, MultiplayerPolicy, MultiplayerPolicyBuilder,
 };
 use ggpf::policies::mcts::{MCTSTreeNode};
-use ndarray::Array;
-
-use std::marker::PhantomData;
 use ggpf::settings;
-use ggpf::deep::tf::game_evaluator;
+use ggpf::deep::evaluator::prediction_evaluator_single;
 
-use tensorflow::{Graph, Session, SessionOptions};
-
-use std::rc::Rc;
-use cursive_flexi_logger_view::FlexiLoggerView;
-use flexi_logger::{Logger, LogTarget};
-use std::fmt;
 
 use typenum::U2;
-
 use cursive_tree_view::{Placement, TreeView};
+use cursive::views::{Button, Dialog, ResizedView, LinearLayout, NamedView, Panel};
+use cursive::view::SizeConstraint;
+use cursive::Cursive;
+use cursive::traits::*;
+use tensorflow::{Graph, Session, SessionOptions};
+use ndarray::Array;
+use cursive_flexi_logger_view::FlexiLoggerView;
+use flexi_logger::{Logger, LogTarget};
+use std::cell::RefCell;
+use std::marker::PhantomData;
+use std::rc::Rc;
+use std::fmt;
 
-const MODEL_PATH: &str = "models/breakthrough";// todo: put in settings;
+
+const MODEL_PATH: &str = "models/alpha-breakthrough";
 
 type G = WithHistory<Breakthrough, U2>;
 type IG = IWithHistory<ui::IBreakthrough, U2>;
@@ -215,7 +211,7 @@ fn main() {
         config: PUCTSettings::default(),
         N_PLAYOUTS: settings::DEFAULT_N_PLAYOUTS,
         evaluate: move |pov, board: &G| {
-            game_evaluator(&session, &graph, pov, board)
+            prediction_evaluator_single(&session, &graph, pov, board, false)
         },
     };
     

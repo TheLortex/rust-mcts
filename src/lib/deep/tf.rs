@@ -1,7 +1,6 @@
 use crate::game;
-use crate::settings::GPU_BATCH_SIZE;
 
-use tensorflow::{Graph, Session, SessionRunArgs, Tensor};
+use tensorflow::{Graph, Session, SessionRunArgs, Tensor, SessionOptions};
 use ndarray::{Dimension, Array, ArrayBase, Axis};
 
 const SUPPORT_SIZE: isize = 1;
@@ -17,10 +16,11 @@ fn sign(x: f32) -> f32 {
     }
 }
 
-fn support_to_value(support: &Tensor<f32>) -> Tensor<f32> {
-    let mut res = Tensor::new(&[GPU_BATCH_SIZE as u64]);
+/// Converts a suport encoding of scalar to the corresponding value. 
+pub fn support_to_value(support: &Tensor<f32>, batch_size: usize) -> Tensor<f32> {
+    let mut res = Tensor::new(&[batch_size as u64]);
 
-    for i in 0..GPU_BATCH_SIZE {
+    for i in 0..batch_size {
         let value: f32 = (-SUPPORT_SIZE..SUPPORT_SIZE+1).enumerate().map(|(j, v)| support[(SUPPORT_SHAPE as usize)*i+j]*(v as f32)).sum();
         let value: f32 = sign(value) * ((((1. + 4. * 0.001 * (value.abs() + 1. + 0.001)).sqrt() - 1.) / (2. * 0.001)).powi(2) - 1.); 
     
@@ -51,7 +51,7 @@ pub fn call_prediction(
 
     let policy_tensor: Tensor<f32> = args.fetch(policy_req).unwrap();
     let value_tensor: Tensor<f32> = args.fetch(value_req).unwrap();
-    (policy_tensor, support_to_value(&value_tensor))
+    (policy_tensor, value_tensor)
 }
 
 /// Use dynamics network inference.
@@ -81,7 +81,7 @@ pub fn call_dynamics(
 
     let reward_tensor: Tensor<f32> = args.fetch(reward_req).unwrap();
     let next_board_tensor: Tensor<f32> = args.fetch(next_board_req).unwrap();
-    (support_to_value(&reward_tensor), next_board_tensor)
+    (reward_tensor, next_board_tensor)
 }
 
 /// Use representation network inference.
@@ -107,31 +107,18 @@ pub fn call_representation(
     repr_board_tensor
 }
 
-/// Evaluates a game state for PUCT.
-pub fn game_evaluator<G: game::Feature>(
-    session: &Session,
-    graph: &Graph,
-    pov: G::Player,
-    board: &G,
-) -> (Array<f32, G::ActionDim>, f32) {
-    let input_dimensions = board.state_dimension();
+/// Load a tensorflow model into a session.
+pub fn load_model(path: &str) -> (Graph, Session) {
 
-    let board_tensor = Tensor::new(
-        &input_dimensions
-            .insert_axis(Axis(0))
-            .as_array_view()
-            .to_slice()
-            .unwrap()
-            .iter()
-            .map(|i| *i as u64)
-            .collect::<Vec<u64>>(),
-    )
-    .with_values(&board.state_to_feature(pov).into_raw_vec())
-    .unwrap();
-
-
-    let (policy_tensor, value_tensor) = call_prediction(session, graph, &board_tensor);
-    let policy = ArrayBase::from_shape_vec(G::action_dimension(), (&policy_tensor).to_vec()).unwrap();
-    let value = value_tensor[0];
-    (policy, value)
+    let mut graph = Graph::new();
+    let mut options = SessionOptions::new();
+    /* To get configuration, use python:
+     *      config = tf.ConfigProto()
+     *      config.gpu_options.allow_growth = True
+     *      config.SerializeToString()
+     */
+    let configuration_buf = [50, 2, 32, 1];
+    options.set_config(&configuration_buf).unwrap();
+    let session = Session::from_saved_model(&options, &["serve"], &mut graph, path).unwrap();
+    (graph, session)
 }

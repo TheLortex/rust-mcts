@@ -4,5 +4,5 @@ pub mod tf;
 pub mod evaluator;
 /// Self-play generation.
 pub mod self_play;
-/// File output channel
+/// File output channel.
 pub mod filemanager;

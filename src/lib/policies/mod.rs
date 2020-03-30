@@ -1,4 +1,4 @@
-use crate::game::{Game};
+use crate::game::{Game, NoFeatures};
 
 use std::fmt::Display;
 
@@ -89,8 +89,9 @@ pub trait SingleplayerPolicy<T: Game> {
 
 use super::game;
 /// Dynamically map policy names to policy builder instances.
-pub fn get_multi<'a, G: mcts::MCTSGame + game::SingleWinner + 'a>(name: &str) -> Box<dyn DynMultiplayerPolicyBuilder<'a, G> + Sync + 'a> 
+pub fn get_multi<'a, G>(name: &str) -> Box<dyn DynMultiplayerPolicyBuilder<'a, G> + Sync + 'a> 
 where
+    G: mcts::MCTSGame + game::SingleWinner + 'a + std::hash::Hash + Eq,
     G::Move: Send
 {
     match name {
@@ -99,7 +100,7 @@ where
         "flat_ucb" => Box::new(flat::FlatUCBMonteCarlo::default()),
         "uct" => Box::new(mcts::uct::UCT::default()),
         "rave" => Box::new(mcts::rave::RAVE::default()),
-        /*"ppa" => Box::new(ppa::PPA::<_, NoFeatures>::default()),*/
+        "ppa" => Box::new(ppa::PPA::<_, NoFeatures>::default()),
         "nmcs" => Box::new(nmcs::MultiNMCS::default()),
         _ => panic!("Policy '{}' not found.", name)
     }

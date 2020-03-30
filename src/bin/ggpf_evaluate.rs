@@ -1,25 +1,32 @@
 #![allow(non_snake_case)]
 
 use atomic_counter::{AtomicCounter, RelaxedCounter};
-use clap::{App, Arg, value_t_or_exit};
+use clap::{App, Arg, value_t};
 use indicatif::{ProgressBar, ProgressStyle};
 use rand::seq::SliceRandom;
 use rayon::prelude::*;
 use std::marker::PhantomData;
 use std::sync::Arc;
-use tensorflow::{Graph, Session, SessionOptions};
+use ndarray::{Dim, Array};
+
 use ggpf::game;
 use ggpf::game::breakthrough::*;
 use ggpf::game::meta::with_history::*;
-use ggpf::deep::tf::game_evaluator;
-use ggpf::policies::{get_multi, mcts::puct::*, DynMultiplayerPolicyBuilder};
+use ggpf::deep::evaluator::{dynamics_evaluator_single, representation_evaluator_single, prediction_evaluator_single};
+use ggpf::policies::{get_multi, mcts::puct::*, mcts::muz::*, DynMultiplayerPolicyBuilder};
 use ggpf::settings;
+use ggpf::deep::tf;
+use ggpf::game::meta::simulated::Simulated;
 
 use typenum::U2;
 
-const MODEL_PATH: &str = "models/breakthrough";
+const MODEL_PATH_ALPHAZERO: &str = "models/alpha-breakthrough/";
 
-pub fn monte_carlo_match<
+const MODEL_PATH_MUZERO: &str = "models/mu-breakthrough/";
+
+type G = WithHistory<Breakthrough, U2>;
+
+pub fn game_match<
     'a,
     'c,
     'b,
@@ -99,14 +106,14 @@ fn main() {
                 .short("p")
                 .long("policy")
                 .takes_value(true)
-                .possible_values(&["rand", "flat", "flat_ucb", "uct", "rave", "ppa", "nmcs"]),
+                .possible_values(&["rand", "flat", "flat_ucb", "uct", "rave", "ppa", "nmcs", "alpha", "mu"]),
         )
         .arg(
             Arg::with_name("against")
                 .short("a")
                 .long("against")
                 .takes_value(true)
-                .possible_values(&["rand", "flat", "flat_ucb", "uct", "rave", "ppa", "nmcs"]),
+                .possible_values(&["rand", "flat", "flat_ucb", "uct", "rave", "ppa", "nmcs", "alpha", "mu"]),
         )
         .arg(
             Arg::with_name("n")
@@ -116,31 +123,69 @@ fn main() {
         .arg(Arg::with_name("only-result").long("only-result"))
         .get_matches();
 
-    /* Build PUCT */
-    let mut graph = Graph::new();
-    let session =
-        Session::from_saved_model(&SessionOptions::new(), &["serve"], &mut graph, MODEL_PATH)
-            .unwrap();
-
+    // PUCT
+    let alpha_tf = Arc::new(tf::load_model(MODEL_PATH_ALPHAZERO));
     let puct = PUCT {
         _g: PhantomData,
         config: PUCTSettings::default(),
         N_PLAYOUTS: settings::DEFAULT_N_PLAYOUTS,
-        evaluate: |pov, board: &WithHistory<Breakthrough, U2>| {
-            //evaluate: |pov, board: &Breakthrough| {
-            game_evaluator(&session, &graph, pov, board)
+        evaluate: move |pov, board: &G| {
+            let x = alpha_tf.clone();
+            let (ref graph, ref session) = x.as_ref();
+            prediction_evaluator_single(&session, &graph, pov, board, false)
         },
     };
+
+    // MUZ
+    let prediction_path = format!("{}{}", MODEL_PATH_MUZERO, "pv");
+    let dynamics_path = format!("{}{}", MODEL_PATH_MUZERO, "dyn");
+    let representation_path = format!("{}{}", MODEL_PATH_MUZERO, "state");    
     
-    let p1 = if let Some(val) = args.value_of("against") {
-        get_multi(val)
-    } else {
-        
-        Box::new(puct)
+    let prediction_tensorflow       = Arc::new(tf::load_model(&prediction_path));
+    let dynamics_tensorflow         = Arc::new(tf::load_model(&dynamics_path));
+    let representation_tensorflow   = Arc::new(tf::load_model(&representation_path));
+
+
+    let muz  = Muz {
+        _h: PhantomData,
+        _g: PhantomData,
+        puct: PUCTSettings::default(),
+        N_PLAYOUTS: settings::DEFAULT_N_PLAYOUTS,
+        prediction_evaluate: move |pov: <G as game::Game>::Player, board: &Simulated<G, _, _>| {
+            let x = prediction_tensorflow.clone();
+            let (ref graph, ref session) = x.as_ref();
+            prediction_evaluator_single(&session, &graph, pov, board, true)
+        },
+        dynamics_evaluate: move |board: &Array<f32, _>, action: &Array<f32, <G as game::Feature>::ActionDim>| {
+            let x = dynamics_tensorflow.clone();
+            let (ref graph, ref session) = x.as_ref();
+            dynamics_evaluator_single(&session, &graph, Dim(settings::MUZ_BT_SHAPE), board.clone(), action.clone(), true)
+        },
+        representation_evaluate: |board: Array<f32, <G as game::Feature>::StateDim>| {
+            let x = representation_tensorflow.clone();
+            let (ref graph, ref session) = x.as_ref();
+            representation_evaluator_single(&session, &graph, Dim(settings::MUZ_BT_SHAPE), board.clone())
+        }
     };
+    
+    let choice_1 = args.value_of("policy").unwrap_or("rand");
+    let p1 = if choice_1 == "alpha" {
+        Box::new(puct.clone())
+    } else if choice_1 == "mu" {
+        Box::new(muz.clone())
+    } else {
+        get_multi(choice_1)
+    };
+
     /* Build contender. */
-    let config = args.value_of("policy").unwrap_or("rand");
-    let p2 = get_multi(config);
+    let choice_2 = args.value_of("against").unwrap_or("rand");
+    let p2 = if choice_2 == "alpha" {
+        Box::new(puct)
+    } else if choice_2 == "mu" {
+        Box::new(muz)
+    } else {
+        get_multi(choice_2)
+    };
 
     let gb = WithHistoryGB::<_, U2>::new(&BreakthroughBuilder {});
     //    let gb = BreakthroughBuilder {};
@@ -152,7 +197,7 @@ fn main() {
         println!("Player 2: {}", p2);
     }
 
-    let n_games = value_t_or_exit!(args.value_of("n"), usize);
+    let n_games = value_t!(args.value_of("n"), usize).unwrap_or(100);
 
-    println!("{}", monte_carlo_match::<_, _>(n_games, p1, p2, &gb, silent));
+    println!("{}", game_match::<_, _>(n_games, p1, p2, &gb, silent));
 }

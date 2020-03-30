@@ -279,6 +279,23 @@ where
     pub _g: PhantomData<fn() -> G>,
 }
 
+impl<G, F> Clone for PUCT<G, F>
+where
+    G: game::Feature,
+    F: (Fn(G::Player, &G) -> (Array<f32, G::ActionDim>, f32)) + Clone,
+{
+    fn clone(&self) -> Self {
+        Self {
+            config: self.config,
+            N_PLAYOUTS: self.N_PLAYOUTS,
+            evaluate: self.evaluate.clone(),
+            _g: PhantomData
+        }
+    }
+}
+
+
+
 impl<G, F> fmt::Display for PUCT<G, F>
 where
     G: game::Feature,

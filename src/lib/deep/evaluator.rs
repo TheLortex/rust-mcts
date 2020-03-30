@@ -46,6 +46,7 @@ pub fn prediction<G>(
     sender: mpsc::SyncSender<PredictionEvaluatorChannel>,
     pov: G::Player,
     board: G,
+    decode_value: bool,
 ) -> (Array<f32, G::ActionDim>, f32)
 where
     G: game::Feature,
@@ -55,7 +56,7 @@ where
     sender.send((board_tensor, resp_tx)).ok().unwrap();
     let (policy_tensor, value_tensor) = resp_rx.recv().unwrap();
     let policy = tensor_to_ndarray(policy_tensor, G::action_dimension());
-    let value = value_tensor[0];
+    let value = if decode_value { tf::support_to_value(&value_tensor, 1)[0] } else { value_tensor[0] };
     (policy, value)
 }
 
@@ -84,7 +85,8 @@ pub fn dynamics<G,H>(
     sender: mpsc::SyncSender<DynamicsEvaluatorChannel>,
     hidden_shape: H,
     board: Array<f32, H>,
-    action: Array<f32, G>
+    action: Array<f32, G>,
+    decode_reward: bool,
 ) -> DynamicsNetworkOutput<H>
 where
     G: Dimension,
@@ -98,8 +100,9 @@ where
     let (next_board_tensor, reward) = resp_rx.recv().unwrap();
 
     let hidden_state = tensor_to_ndarray(next_board_tensor, hidden_shape);
+    let reward = if decode_reward { tf::support_to_value(&reward, 1)[0] } else { reward[0] };
     DynamicsNetworkOutput {
-        reward: reward[0],
+        reward,
         hidden_state
     }
 }
@@ -291,4 +294,109 @@ pub fn representation_task(
             last_time = Instant::now();
         }
     }
+}
+
+use ndarray::Axis;
+
+/// Evaluates a game state for PUCT - single batch
+pub fn prediction_evaluator_single<G: game::Feature>(
+    session: &Session,
+    graph: &Graph,
+    pov: G::Player,
+    board: &G,
+    decode_value: bool,
+) -> (Array<f32, G::ActionDim>, f32) {
+    let input_dimensions = board.state_dimension();
+
+    let board_tensor = Tensor::new(
+        &input_dimensions
+            .insert_axis(Axis(0))
+            .as_array_view()
+            .to_slice()
+            .unwrap()
+            .iter()
+            .map(|i| *i as u64)
+            .collect::<Vec<u64>>(),
+    )
+    .with_values(&board.state_to_feature(pov).into_raw_vec())
+    .unwrap();
+
+
+    let (policy_tensor, value_tensor) = tf::call_prediction(session, graph, &board_tensor);
+    
+    let policy = tensor_to_ndarray(policy_tensor, G::action_dimension());
+    let value = if decode_value { tf::support_to_value(&value_tensor, 1)[0] } else { value_tensor[0] };
+    (policy, value)
+}
+
+/// Dynamics evaluator - single batch
+pub fn dynamics_evaluator_single<G: Dimension, H: Dimension>(
+    session: &Session,
+    graph: &Graph,
+    hidden_shape: H,
+    board: Array<f32, H>,
+    action: Array<f32, G>,
+    decode_reward: bool,
+) -> DynamicsNetworkOutput<H> {
+    let board_tensor = Tensor::new(
+        &board.raw_dim()
+            .insert_axis(Axis(0))
+            .as_array_view()
+            .to_slice()
+            .unwrap()
+            .iter()
+            .map(|i| *i as u64)
+            .collect::<Vec<u64>>(),
+    )
+    .with_values(&board.into_raw_vec())
+    .unwrap();
+
+    let action_tensor = Tensor::new(
+        &action.raw_dim()
+            .insert_axis(Axis(0))
+            .as_array_view()
+            .to_slice()
+            .unwrap()
+            .iter()
+            .map(|i| *i as u64)
+            .collect::<Vec<u64>>(),
+    )
+    .with_values(&action.into_raw_vec())
+    .unwrap();
+
+
+    let (reward, next_board_tensor) = tf::call_dynamics(session, graph, &board_tensor, &action_tensor);
+
+    
+    let hidden_state = tensor_to_ndarray(next_board_tensor, hidden_shape);
+    let reward = if decode_reward { tf::support_to_value(&reward, 1)[0] } else { reward[0] };
+    DynamicsNetworkOutput {
+        hidden_state,
+        reward
+    }
+}
+
+/// State to representation for Muz - single batch
+pub fn representation_evaluator_single<G: Dimension, H: Dimension>(
+    session: &Session,
+    graph: &Graph,
+    hidden_shape: H,
+    state: Array<f32, G>,
+) -> Array<f32, H> {
+    let board_tensor = Tensor::new(
+        &state.raw_dim()
+            .insert_axis(Axis(0))
+            .as_array_view()
+            .to_slice()
+            .unwrap()
+            .iter()
+            .map(|i| *i as u64)
+            .collect::<Vec<u64>>(),
+    )
+    .with_values(&state.into_raw_vec())
+    .unwrap();
+
+
+    let repr_board_tensor = tf::call_representation(session, graph, &board_tensor);
+    tensor_to_ndarray(repr_board_tensor, hidden_shape)
 }
