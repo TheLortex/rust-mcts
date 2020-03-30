@@ -7,12 +7,13 @@ use std::fs::{File, OpenOptions};
 use std::io::Write;
 use std::collections::HashMap;
 
-
+/// File manager.
 pub struct FileManager {
     f: File,
 }
 
 impl FileManager {
+    /// Instanciate file manager on given file.
     pub fn new(path: &str) -> Self {
         match mkfifo(path, stat::Mode::S_IRWXU) {
             Ok(_) => println!("Created FIFO {}.", path),
@@ -27,6 +28,7 @@ impl FileManager {
         FileManager { f }
     }
 
+    /// Add a new game history entry to file.
     pub fn append<G: game::Feature>(&mut self, game: GameHistoryEntry<G>) {
         let mut result = HashMap::new();
 

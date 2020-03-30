@@ -8,9 +8,12 @@ use tensorflow::{Graph, Session, Tensor};
 use std::sync::mpsc;
 use gstuff::oneshot;
 
-use crate::game::meta::simulated::NetworkOutput;
-/* 
- * EvaluatorChannel takes a tensor and a way to send back the inference result.
+use crate::game::meta::simulated::DynamicsNetworkOutput;
+
+const WARN_ON_GPU_UNDERUSAGE: bool = false;
+
+/*
+ * EvaluatorChannels takes a tensor and a way to send back the inference result.
  */
 pub type PredictionEvaluatorChannel = (Tensor<f32>, oneshot::Sender<(Tensor<f32>, Tensor<f32>)>);
 pub type RepresentationEvaluatorChannel = (Tensor<f32>, oneshot::Sender<Tensor<f32>>);
@@ -77,7 +80,7 @@ pub fn dynamics<G,H>(
     hidden_shape: H,
     board: Array<f32, H>,
     action: Array<f32, G>
-) -> NetworkOutput<H>
+) -> DynamicsNetworkOutput<H>
 where
     G: Dimension,
     H: Dimension
@@ -107,7 +110,7 @@ where
 
     let tensor_as_vec = (&next_board_tensor).to_vec();
     let hidden_state = ArrayBase::from_shape_vec(hidden_shape, tensor_as_vec).unwrap();
-    NetworkOutput {
+    DynamicsNetworkOutput {
         reward: reward[0],
         hidden_state,
     }
@@ -152,12 +155,12 @@ pub fn prediction_task(
 
 
         if send_batch {
-            /*if idx < settings::GPU_BATCH_SIZE/2 && (Instant::now() - last_warning) > last_warning_duration {
+            if WARN_ON_GPU_UNDERUSAGE && idx < settings::GPU_BATCH_SIZE/2 && (Instant::now() - last_warning) > last_warning_duration {
                 last_warning = Instant::now();
                 log::warn!("Prediction: GPU underused.");
                 log::warn!("Reduce batch size or increase workers. ({}%)", 100*idx/settings::GPU_BATCH_SIZE);
                 log::warn!("");
-            }*/
+            }
 
             let (policies, values) = {
                 let (ref graph, ref session) = *g_and_s.read().unwrap();
@@ -218,12 +221,12 @@ pub fn dynamics_task(
 
 
         if send_batch {
-            /*if idx < settings::GPU_BATCH_SIZE/2 && (Instant::now() - last_warning) > last_warning_duration {
+            if WARN_ON_GPU_UNDERUSAGE && idx < settings::GPU_BATCH_SIZE/2 && (Instant::now() - last_warning) > last_warning_duration {
                 last_warning = Instant::now();
                 log::warn!("Prediction: GPU underused.");
                 log::warn!("Reduce batch size or increase workers. ({}%)", 100*idx/settings::GPU_BATCH_SIZE);
                 log::warn!("");
-            }*/
+            }
 
             let (rewards, next_reprs) = {
                 let (ref graph, ref session) = *g_and_s.read().unwrap();
@@ -279,12 +282,12 @@ pub fn representation_task(
 
 
         if send_batch {
-            /*if idx < settings::GPU_BATCH_SIZE/2 && (Instant::now() - last_warning) > last_warning_duration {
+            if WARN_ON_GPU_UNDERUSAGE && idx < settings::GPU_BATCH_SIZE/2 && (Instant::now() - last_warning) > last_warning_duration {
                 last_warning = Instant::now();
                 log::warn!("Prediction: GPU underused.");
                 log::warn!("Reduce batch size or increase workers. ({}%)", 100*idx/settings::GPU_BATCH_SIZE);
                 log::warn!("");
-            }*/
+            }
 
             let reprs = {
                 let (ref graph, ref session) = *g_and_s.read().unwrap();

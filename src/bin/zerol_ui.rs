@@ -7,18 +7,18 @@ use cursive::traits::*;
 use std::cell::RefCell;
 
 
-use zerol::game::meta::with_history::{WithHistory, IWithHistory};
-use zerol::game::breakthrough::*;
-use zerol::game::{MoveTrait, InteractiveGame, Base, NoFeatures, Feature, Game, SingleWinner};
-use zerol::policies::{
+use ggpf::game::meta::with_history::{WithHistory, IWithHistory};
+use ggpf::game::breakthrough::*;
+use ggpf::game::{MoveTrait, InteractiveGame, Base, NoFeatures, Feature, Game, SingleWinner};
+use ggpf::policies::{
     ppa::*, mcts::puct::{PUCT, PUCTSettings, PUCTPolicy_, Evaluator}, MultiplayerPolicy, MultiplayerPolicyBuilder,
 };
-use zerol::policies::mcts::{MCTSTree};
+use ggpf::policies::mcts::{MCTSTreeNode};
 use ndarray::Array;
 
 use std::marker::PhantomData;
-use zerol::settings;
-use zerol::misc::tf::game_evaluator;
+use ggpf::settings;
+use ggpf::misc::tf::game_evaluator;
 
 use tensorflow::{Graph, Session, SessionOptions};
 
@@ -43,7 +43,7 @@ where
     F: Evaluator<G>
 {
     name: String,
-    state: Rc<RefCell<MCTSTree<G, PUCTPolicy_<G,F>>>>,
+    state: Rc<RefCell<MCTSTreeNode<G, PUCTPolicy_<G,F>>>>,
     probability: f32,
     value: f32,
     N_visits: f32,

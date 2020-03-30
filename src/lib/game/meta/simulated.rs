@@ -2,12 +2,15 @@ use crate::game::*;
 
 use ndarray::{Array, Dimension};
 
-pub struct NetworkOutput<H: Dimension> {
+/// Output from the dynamics network.
+pub struct DynamicsNetworkOutput<H: Dimension> {
+    /// Predicted reward.
     pub reward: f32,
+    /// Predicted next state.
     pub hidden_state: Array<f32, H>
 }
 
-
+/// Inference function for the representation network.
 pub trait RepresentationEvaluator<G,H>: Fn(Array<f32, G::StateDim>) -> Array<f32, H>
 where 
     G: Feature,
@@ -21,7 +24,8 @@ where
     I: Fn(Array<f32, G::StateDim>) -> Array<f32, H>
 {}
 
-pub trait DynamicsEvaluator<G,H>: Clone + Fn(&Array<f32, H>, &Array<f32, G::ActionDim>) -> NetworkOutput<H>
+/// Inference function for the dynamics network.
+pub trait DynamicsEvaluator<G,H>: Clone + Fn(&Array<f32, H>, &Array<f32, G::ActionDim>) -> DynamicsNetworkOutput<H>
 where
     G: Feature,
     H: Dimension,
@@ -30,9 +34,10 @@ impl<G,H,I> DynamicsEvaluator<G,H> for I
 where
     G: Feature,
     H: Dimension,
-    I: Clone + Fn(&Array<f32, H>, &Array<f32, G::ActionDim>) -> NetworkOutput<H>
+    I: Clone + Fn(&Array<f32, H>, &Array<f32, G::ActionDim>) -> DynamicsNetworkOutput<H>
 {}
 
+/// Simulated game
 pub struct Simulated<G, H, DE>
 where
     G: Feature,
@@ -71,6 +76,14 @@ where
     H: Dimension,
     DE: DynamicsEvaluator<G, H> 
 {
+    /// Instanciate a new simulated game.
+    /// 
+    /// # Params
+    /// 
+    /// - `turn`: starting player.
+    /// - `hidden_state`: initial hidden state.
+    /// - `initial_possible_moves`: available moves for the initial state.
+    /// - `dynamics_evaluator`: evaluator for the dynamics network.
     pub fn new(turn: G::Player, hidden_state: Array<f32, H>, initial_possible_moves: Vec<G::Move>, dynamics_evaluator: DE) -> Self {
         let hidden_dimension = hidden_state.raw_dim();
         Simulated {

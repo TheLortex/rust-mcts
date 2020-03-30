@@ -1,6 +1,6 @@
 use crate::game::{Game, Playout, SingleWinner};
 use crate::policies::{
-    mcts::{BaseMCTSPolicy, MCTSTree, WithMCTSPolicy},
+    mcts::{BaseMCTSPolicy, MCTSTreeNode, WithMCTSPolicy},
     MultiplayerPolicyBuilder,
 };
 use crate::settings;
@@ -12,7 +12,7 @@ use std::rc::Rc;
 use std::cell::RefCell;
 
 /* RAVE */
-
+/// RAVE move statistics.
 #[derive(Debug,Clone,Copy)]
 pub struct RAVEMoveInfo {
     wins: f32,
@@ -20,12 +20,12 @@ pub struct RAVEMoveInfo {
     wins_AMAF: f32,
     count_AMAF: f32,
 }
-
+/// RAVE node statistics.
 #[derive(Debug,Clone,Copy)]
 pub struct RAVENodeInfo {
     count: f32,
 }
-
+/// RAVE policy description.
 pub struct RAVEPolicy_<G: Game> {
     color: G::Player,
     UCT_WEIGHT: f32,
@@ -63,7 +63,7 @@ impl<G: super::MCTSGame + SingleWinner> BaseMCTSPolicy<G> for RAVEPolicy_<G> {
         }
     }
 
-    fn backpropagate(&mut self, leaf: Rc<RefCell<MCTSTree<G, Self>>>, history: &[G::Move], (has_won, history_default): Self::PlayoutInfo) {
+    fn backpropagate(&mut self, leaf: Rc<RefCell<MCTSTreeNode<G, Self>>>, history: &[G::Move], (has_won, history_default): Self::PlayoutInfo) {
         let z = if has_won { 1. } else { 0. };
 
         let mut index = history.len();
@@ -166,8 +166,10 @@ impl<G: super::MCTSGame> RAVEPolicy_<G> {
     }
 }
 
+/// RAVE policy built from MCTS description.
 pub type RAVEPolicy<G> = WithMCTSPolicy<G, RAVEPolicy_<G>>;
 
+/// RAVE builder.
 pub struct RAVE {
     UCT_WEIGHT: f32,
     N_PLAYOUTS: usize,

@@ -8,12 +8,12 @@ use rayon::prelude::*;
 use std::marker::PhantomData;
 use std::sync::Arc;
 use tensorflow::{Graph, Session, SessionOptions};
-use zerol::game;
-use zerol::game::breakthrough::*;
-use zerol::game::meta::with_history::*;
-use zerol::misc::tf::game_evaluator;
-use zerol::policies::{get_multi, mcts::puct::*, DynMultiplayerPolicyBuilder};
-use zerol::settings;
+use ggpf::game;
+use ggpf::game::breakthrough::*;
+use ggpf::game::meta::with_history::*;
+use ggpf::misc::tf::game_evaluator;
+use ggpf::policies::{get_multi, mcts::puct::*, DynMultiplayerPolicyBuilder};
+use ggpf::settings;
 
 use typenum::U2;
 

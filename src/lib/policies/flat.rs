@@ -6,8 +6,9 @@ use rand::seq::SliceRandom;
 use std::collections::HashMap;
 
 
-/* RANDOM POLICY */
-
+/// Random policy
+/// 
+/// Takes a random move at each step.
 pub struct RandomPolicy {}
 
 
@@ -27,6 +28,7 @@ impl<G: Singleplayer + Clone> SingleplayerPolicy<G> for RandomPolicy {
     }
 }
 
+/// Random policy builder.
 #[derive(Default)]
 pub struct Random {}
 
@@ -53,8 +55,7 @@ impl<G: Singleplayer + Clone> SingleplayerPolicyBuilder<G> for Random {
     }
 }
 
-/* FLAT MONTE CARLO POLICY */
-
+/// Flat Monte Carlo policy
 pub struct FlatMonteCarloPolicy<G: Game> {
     color: G::Player,
     N_PLAYOUTS: usize,
@@ -90,6 +91,7 @@ impl<G: Game + SingleWinner + Clone> MultiplayerPolicy<G> for FlatMonteCarloPoli
     }
 }
 
+/// Flat Monte Carlo policy builder
 pub struct FlatMonteCarlo {
     N_PLAYOUTS: usize
 }
@@ -116,7 +118,7 @@ impl<G: Game + SingleWinner + Clone> MultiplayerPolicyBuilder<G> for FlatMonteCa
     }
 }
 
-/* Flat UCB */
+/// Flat Monte Carlo with UCB policy
 pub struct FlatUCBMonteCarloPolicy<G: Game> {
     color: G::Player,
     N_PLAYOUTS: usize,
@@ -185,6 +187,7 @@ impl<G: Game + SingleWinner + Clone> MultiplayerPolicy<G> for FlatUCBMonteCarloP
     }
 }
 
+/// Flat Monte Carlo with UCB policy builder
 pub struct FlatUCBMonteCarlo {    
     N_PLAYOUTS: usize,
     UCB_WEIGHT: f32,

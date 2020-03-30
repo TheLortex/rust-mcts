@@ -1,5 +1,5 @@
 use crate::game;
-use crate::policies::mcts::{BaseMCTSPolicy, MCTSTree, WithMCTSPolicy};
+use crate::policies::mcts::{BaseMCTSPolicy, MCTSTreeNode, WithMCTSPolicy};
 use crate::policies::MultiplayerPolicyBuilder;
 
 use ndarray::Array;
@@ -11,16 +11,23 @@ use std::iter::*;
 use std::marker::PhantomData;
 use std::rc::Rc;
 
+/// PUCT move statistics.
 #[derive(Debug, Clone, Copy)]
 pub struct PUCTMoveInfo {
+    /// Value (expected discounted reward for move, relative to current player)
     pub Q: f32,
+    /// Number of times the move has been explored.
     pub N_a: f32,
+    /// Move policy as predicted by the network.
     pub pi: f32,
+    /// Immediate reward yielded by move. 
     pub reward: f32,
 }
 
+/// PUCT node statistics.
 #[derive(Debug, Clone, Copy)]
 pub struct PUCTNodeInfo {
+    /// Node visit count.
     pub count: f32,
 }
 /**
@@ -36,10 +43,15 @@ impl<G: game::Feature, F: Fn(G::Player, &G) -> (Array<f32, G::ActionDim>, f32)> 
  */
 #[derive(Copy, Clone, fmt::Debug)]
 pub struct PUCTSettings {
+    /// PUCT formule base constant.
     pub C_BASE: f32,
+    /// PUCT formula init constant.
     pub C_INIT: f32,
+    /// Dirichlet noise alpha.
     pub ROOT_DIRICHLET_ALPHA: f32,
+    /// Dirichlet noise fraction.
     pub ROOT_EXPLORATION_FRACTION: f32,
+    /// Value discounting.
     pub DISCOUNT: f32,
 }
 
@@ -58,14 +70,15 @@ impl Default for PUCTSettings {
     }
 }
 
+/// PUCT policy.
 #[derive(Clone)]
 pub struct PUCTPolicy_<G: game::Feature, F>
 where
     F: Evaluator<G>,
 {
-    pub color: G::Player,
-    pub config: PUCTSettings,
-    pub evaluate: F,
+    color: G::Player,
+    config: PUCTSettings,
+    evaluate: F,
     min_tree: f32,
     max_tree: f32,
 }
@@ -134,7 +147,7 @@ where
 
     fn backpropagate(
         &mut self,
-        leaf: Rc<RefCell<MCTSTree<G, Self>>>,
+        leaf: Rc<RefCell<MCTSTreeNode<G, Self>>>,
         _history: &[G::Move],
         (policy, mut value, pov): Self::PlayoutInfo,
     ) {
@@ -246,18 +259,23 @@ where
 use std::fmt;
 
 /**
- *  POLICY BUILDERS - ASYNC
+ *  PUCT policy built from MCTS description.
  */
 pub type PUCTPolicy<G, F> = WithMCTSPolicy<G, PUCTPolicy_<G, F>>;
 
+/// PUCT policy builder.
 pub struct PUCT<G, F>
 where
     G: game::Feature,
     F: (Fn(G::Player, &G) -> (Array<f32, G::ActionDim>, f32)),
 {
+    /// PUCT configuration.
     pub config: PUCTSettings,
+    /// Number of playouts.
     pub N_PLAYOUTS: usize,
+    /// State evaluation function.
     pub evaluate: F,
+    /// PhantomData storing game type.
     pub _g: PhantomData<fn() -> G>,
 }
 

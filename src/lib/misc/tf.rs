@@ -29,6 +29,7 @@ fn support_to_value(support: &Tensor<f32>) -> Tensor<f32> {
     res
 }
 
+/// Use prediction network inference.
 pub fn call_prediction(
     session: &Session,
     graph: &Graph,
@@ -53,6 +54,7 @@ pub fn call_prediction(
     (policy_tensor, support_to_value(&value_tensor))
 }
 
+/// Use dynamics network inference.
 pub fn call_dynamics(
     session: &Session,
     graph: &Graph,
@@ -82,7 +84,7 @@ pub fn call_dynamics(
     (support_to_value(&reward_tensor), next_board_tensor)
 }
 
-
+/// Use representation network inference.
 pub fn call_representation(
     session: &Session,
     graph: &Graph,
@@ -105,7 +107,7 @@ pub fn call_representation(
     repr_board_tensor
 }
 
-
+/// Evaluates a game state for PUCT.
 pub fn game_evaluator<G: game::Feature>(
     session: &Session,
     graph: &Graph,

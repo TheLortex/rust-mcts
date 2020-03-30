@@ -6,6 +6,7 @@ use crate::policies::{
 use std::f32;
 use std::iter::*;
 
+/// Nested Monte Carlo Search
 pub struct NMCSPolicy {
     s: NMCS,
 }
@@ -57,6 +58,7 @@ impl<G: Singleplayer + Clone> SingleplayerPolicy<G> for NMCSPolicy {
     }
 }
 
+/// Nested Monte Carlo Search policy builder.
 #[derive(Copy, Clone)]
 pub struct NMCS {
     level: usize,
@@ -76,7 +78,7 @@ impl<G: Singleplayer + Clone> SingleplayerPolicyBuilder<G> for NMCS {
     }
 }
 
-/* MULTI NMCS  */
+/// Multiplayer NMCS
 pub struct MultiNMCSPolicy<G: Game> {
     color: G::Player,
     s: MultiNMCS,
@@ -159,6 +161,7 @@ impl<G: Game + SingleWinner + Clone> MultiplayerPolicy<G> for MultiNMCSPolicy<G>
     }
 }
 
+/// Multiplayer NMCS policy builder.
 #[derive(Copy, Clone)]
 pub struct MultiNMCS {
     discounting: bool,

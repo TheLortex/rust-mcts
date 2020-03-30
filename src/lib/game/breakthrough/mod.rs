@@ -7,11 +7,18 @@ use rand::Rng;
 use std::fmt;
 use std::hash::*;
 
+/**
+ *  Breakthrough interactive interface.
+ */
 pub mod ui;
-/* PLAYERS */
+/// Players
+/// 
+/// Two colors: black and white.
 #[derive(Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Color {
+    /// Black
     Black = 0,
+    /// White
     White = 1,
 }
 
@@ -22,6 +29,7 @@ impl Into<u8> for Color {
 }
 
 impl Color {
+    /// Returns the adversary of the player.
     pub fn adv(self) -> Color {
         match self {
             Color::Black => Color::White,
@@ -29,6 +37,7 @@ impl Color {
         }
     }
 
+    /// Returns a random player.
     pub fn random() -> Color {
         if rand::random() {
             Color::Black
@@ -59,10 +68,14 @@ impl fmt::Debug for Color {
     }
 }
 
-/* CELL */
+/// Game cell
+/// 
+/// Represents a position on the board.
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum Cell {
+    /// Empty cell.
     Empty,
+    /// Cell containing a pawn of given color.
     C(Color),
 }
 
@@ -77,12 +90,16 @@ impl fmt::Debug for Cell {
     }
 }
 
-/* MOVE */
-
+/// Move direction
+/// 
+/// Possible move directions relative to the pawn position.
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 pub enum MoveDirection {
+    /// Front
     Front,
+    /// Front left
     FrontLeft,
+    /// Front right
     FrontRight,
 }
 
@@ -96,11 +113,18 @@ impl MoveDirection {
     }
 }
 
+/// Move
+/// 
+/// Describes a potentially legal action on the board.
 #[derive(Hash, Eq, PartialEq, Copy, Clone)]
 pub struct Move {
+    /// Player
     pub color: Color,
+    /// Current position x
     pub x: usize,
+    /// Current position y
     pub y: usize,
+    /// Move direction
     pub direction: MoveDirection,
 }
 
@@ -117,6 +141,7 @@ impl fmt::Debug for Move {
 }
 
 impl Move {
+    /// Write a human readable name for the move.
     pub fn name(&self) -> String {
         let (px, py) = self.target(); // todo: extract helper
         format!(
@@ -129,6 +154,7 @@ impl Move {
         )
     }
 
+    /// Compute move target.
     pub fn target(&self) -> (usize, usize) {
         let delta_y = if self.color == Color::Black { 1 } else { -1 };
         let delta_x = match self.direction {
@@ -141,6 +167,9 @@ impl Move {
         (px, py)
     }
 
+    /// Check if move is valid on the given board.
+    /// 
+    /// Returns the target coordinate in this case.
     pub fn is_valid(&self, content: &[[Cell; K]; K]) -> Option<(usize, usize)> {
         let c = content[self.x][self.y];
         if c != Cell::C(self.color) {
@@ -165,16 +194,11 @@ impl Move {
     }
 }
 
-#[derive(Hash, Eq, PartialEq, Copy, Clone, Debug)]
-pub enum PendingMove {
-    SelectingPosition(usize, usize),
-    SelectingMove(Move),
-}
-
 use arrayvec::ArrayVec;
+/// Breakthrough game state instance
 #[derive(Clone, Eq)]
 pub struct Breakthrough {
-    pub content: [[Cell; K]; K],
+    content: [[Cell; K]; K],
 
     positions_black: ArrayVec<[(usize, usize); 2 * K]>,
     positions_white: ArrayVec<[(usize, usize); 2 * K]>,
@@ -237,6 +261,9 @@ impl fmt::Debug for Breakthrough {
     }
 }
 
+/// Game builder for Breakthough.
+/// 
+/// This game builder has no settings.
 #[derive(Default, Copy, Clone)]
 pub struct BreakthroughBuilder {}
 
@@ -427,6 +454,7 @@ impl Playable for Breakthrough {
 }
 
 impl Breakthrough {
+    /// Prints a nice representation of the board.
     pub fn show(&self) {
         println!("{:?}", self);
     }

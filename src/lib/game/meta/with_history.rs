@@ -2,8 +2,10 @@ use crate::game::*;
 use std::marker::PhantomData;
 use std::sync::Arc;
 
+/// A game with its history.
 pub struct WithHistory<G: Base, H> {
     prec: Option<Arc<Self>>,
+    /// Current game state.
     pub state: G, // TODO: create accessor
     _h: PhantomData<fn() -> H>,
 }
@@ -85,6 +87,7 @@ impl<G: Base + Hash, H_> Hash for WithHistory<G, H_> {
 }
 /* GUI */
 
+/// Interactive UI wrapping a game with history.
 pub struct IWithHistory<IG: InteractiveGame, H> {
     ig: IG, 
     state: WithHistory<IG::G, H>,
@@ -160,10 +163,12 @@ where
 
 
 /* GAME BUILDER */
+/// Builder for a game with history.
 #[derive(Copy,Clone)]
 pub struct WithHistoryGB<'a, GB, H> (&'a GB, PhantomData<H>);
 
 impl<'a, GB, H> WithHistoryGB<'a, GB, H> {
+    /// Creates a game builder with history, given a correspond standard game builder.
     pub fn new(gb: &'a GB) -> Self {
         Self(gb, PhantomData)
     }

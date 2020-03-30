@@ -19,26 +19,42 @@ use std::marker::PhantomData;
 use std::sync::mpsc;
 use tensorflow::{Graph, Session};
 
-pub mod evaluator;
+/**
+ *  Asynchronous evaluation functions.
+ *
+ *  For each kind of evaluation there is an evaluator that can be
+ *  provided to PUCT/Muz and an associated evaluator task that sends 
+ *  the request to the GPU while batching them.
+ */
+mod evaluator;
 use self::evaluator::{
     DynamicsEvaluatorChannel, PredictionEvaluatorChannel, RepresentationEvaluatorChannel,
 };
 
-/*
- * EvaluatorChannel takes a tensor and a way to send back the inference result.
+/**
+ *  Game history data generated from self-play
  */
 pub struct GameHistoryEntry<G>
 where
     G: game::Feature,
 {
+    /// List of board states, except for the final state.
     pub state: Array<f32, <G::StateDim as Dimension>::Larger>,
+    /// MCTS exploration statistics for the root node of the curent policy. 
     pub policy: Array<f32, <G::ActionDim as Dimension>::Larger>,
+    /// One-hot encoding of the action taken by the policy.
     pub action: Array<f32, <G::ActionDim as Dimension>::Larger>,
+    /// Value estimation of the root node.
     pub value: Array<f32, Ix1>,
+    /// Reward obtained after performing the action.
     pub reward: Array<f32, Ix1>,
+    /// Whose turn.
     pub turn: Vec<f32>,
 }
 
+/*
+ *  The game generator continuously generates self-play games using Muz policies.
+ */
 fn game_generator_task<G, GB>(
     puct_settings: PUCTSettings,
     game_builder: GB,
@@ -60,10 +76,10 @@ fn game_generator_task<G, GB>(
         _h: PhantomData,
         N_PLAYOUTS: 150,
         puct: puct_settings,
-        hidden_evaluate: |pov: G::Player, board: &Simulated<G, ndarray::Ix3, _>| {
+        prediction_evaluate: |pov: G::Player, board: &Simulated<G, ndarray::Ix3, _>| {
             evaluator::prediction(prediction_channel.clone(), pov, board.clone())
         },
-        state_evaluate: |board: Array<f32, G::StateDim>| {
+        representation_evaluate: |board: Array<f32, G::StateDim>| {
             evaluator::representation(representation_channel.clone(), hidden_shape, board)
         },
         dynamics_evaluate: |board, action| {
@@ -163,6 +179,26 @@ use std::sync::Arc;
 use std::sync::RwLock;
 use std::thread;
 
+/**
+ *  MuZero self-play games generator
+ *
+ *  Spawn several tasks (number according to settings) that performs self-play games
+ *  using the MuZero policy, sending them in the `output_chan` channel.
+ *
+ *  # Params
+ *
+ *  - `puct_settings`: configuration for PUCT policy.
+ *  - `game_builder`: game builder.
+ *  - `prediction_tensorflow`: interface for the prediction network.
+ *  - `dynamics_tensorflow`: interface for the dynamics network.
+ *  - `representation_tensorflow`: interface for the representation network.
+ *  - `output_chan`: communication channel to emit the generated games.
+ *
+ *  # Panics
+ *
+ *  This function will panic if the evaluator shapes doesn't fit, 
+ *  or if the CUDA executor goes out of memory.
+ */
 pub fn game_generator<G, GB>(
     puct_settings: PUCTSettings,
     game_builder: GB,

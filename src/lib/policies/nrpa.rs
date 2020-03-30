@@ -7,6 +7,7 @@ use std::iter::*;
 use std::marker::PhantomData;
 use std::collections::HashMap;
 
+/// Nested Rollout Policy Adaptation
 pub struct NRPAPolicy<G: Singleplayer, M: MoveCode<G>> {
     s: NRPA<G,M>,
     _m: PhantomData<M>,
@@ -120,12 +121,32 @@ impl<G: Singleplayer + Clone, M: MoveCode<G> + Send> SingleplayerPolicy<G> for N
     }
 }
 
+/// Nested Rollout Policy Adaptation policy builder.
 pub struct NRPA<G: Singleplayer, M: MoveCode<G>>  {
     N: usize,
     level: usize,
     alpha: f32,
     _m: PhantomData<M>,
     _g: PhantomData<G>
+}
+
+impl <G: Singleplayer, M: MoveCode<G>> NRPA<G, M> {
+    /// Instanciate a new policy builder for NRPA 
+    /// 
+    /// # Params
+    /// 
+    /// - `N`: number of calls per level.
+    /// - `level`: nesting level.
+    /// - `alpha`: policy gradient multiplier.
+    pub fn new(N: usize, level: usize, alpha: f32) -> Self {
+        Self {
+            N,
+            level,
+            alpha,
+            _m: PhantomData,
+            _g: PhantomData
+        }
+    }
 }
 
 impl<G: Singleplayer, M: MoveCode<G>> Copy for NRPA<G, M> {}

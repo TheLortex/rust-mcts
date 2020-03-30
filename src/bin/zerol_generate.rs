@@ -16,12 +16,12 @@ use tensorflow::{Graph, Session, SessionOptions};
 
 const MODEL_PATH: &str = "models/breakthrough/";
 
-use zerol::game::{
+use ggpf::game::{
     breakthrough::{Breakthrough, BreakthroughBuilder},
 };
-use zerol::game::meta::with_history::*;
-use zerol::policies::mcts::puct::PUCTSettings;
-use zerol::r#async::GameHistoryEntry;
+use ggpf::game::meta::with_history::*;
+use ggpf::policies::mcts::puct::PUCTSettings;
+use ggpf::r#async::GameHistoryEntry;
 
 use typenum::U2;
 
@@ -62,7 +62,7 @@ fn run() {
     let i_w = is_writing.clone();
 
     //graph.operation_iter().map(|o| println!("{:?}", o.name().unwrap())).collect::<()>();
-    let fm_mtx = Arc::new(Mutex::new(zerol::misc::filemanager::FileManager::new(
+    let fm_mtx = Arc::new(Mutex::new(ggpf::misc::filemanager::FileManager::new(
         "./fifo",
     )));
 
@@ -105,7 +105,7 @@ fn run() {
 
     let game_builder = WithHistoryGB::<_, U2>::new(&BreakthroughBuilder {});
 
-    let game_gen = thread::spawn(move || zerol::r#async::game_generator(
+    let game_gen = thread::spawn(move || ggpf::r#async::game_generator(
         PUCTSettings::default(),
         game_builder,
         prediction_tensorflow,

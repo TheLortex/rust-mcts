@@ -1,5 +1,12 @@
 use super::*;
 
+#[derive(Hash, Eq, PartialEq, Copy, Clone, Debug)]
+enum PendingMove {
+    SelectingPosition(usize, usize),
+    SelectingMove(Move),
+}
+
+/// Interactive interface for Breakthrough
 pub struct IBreakthrough {
     game: Breakthrough,
     choosing_move: Option<PendingMove>,

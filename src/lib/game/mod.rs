@@ -5,14 +5,24 @@ use std::convert::TryFrom;
 use std::fmt::Debug;
 use std::hash::{Hash, Hasher};
 
+use crate::policies::MultiplayerPolicy;
 
-
+/**
+ *  Breakthrough game implementation
+ *
+ *  The rules are simple, a player wins when one of its pawns
+ *  reaches the other side of the board.
+ */
 pub mod breakthrough;
 /*pub mod hashcode_20;
 pub mod misere_breakthrough;
 pub mod weak_schur;*/
+/**
+ *  Games that takes other games as an input.
+ */
 pub mod meta;
 
+/// Action that may be applied to a game state.
 pub trait MoveTrait = PartialEq + Eq + Copy + Clone + Hash + Debug;
 
 /**
@@ -24,7 +34,8 @@ pub trait Base: Sized + Debug {
      */
     type Move: MoveTrait;
     /**
-     * Given the game state and turn, list possible actions.
+     * Given the game state and turn, list possible actions to the current player.
+     * If the game has ended, no action should be available.
      */
     fn possible_moves(&self) -> Vec<Self::Move>;
     /**
@@ -35,7 +46,9 @@ pub trait Base: Sized + Debug {
     }
 }
 
-
+/**
+ * Mutable game by playing moves.
+ */
 pub trait Playable: Base {
     /**
      * Mutates game state playing the given action. 
@@ -54,8 +67,39 @@ pub trait Playable: Base {
     }
 }
 
+/**
+ *  Game with one or multiple players.
+ */
+pub trait Game: Playable {
+    /**
+     *  The type representing each player.
+     */
+    type Player: PartialEq + Eq + Copy + Clone + Debug + Sync + Send + Into<u8>;
 
+    /**
+     *  Assuming a static player order, returns who should play after given player.
+     */
+    fn player_after(player: Self::Player) -> Self::Player;
+
+    /**
+     *  Returns the list of players for the game. 
+     */
+    fn players() -> Vec<Self::Player>;
+
+    /**
+     *  Returns whose turn it is.
+     */
+    fn turn(&self) -> Self::Player;
+}
+
+/**
+ *  Game playouts
+ */
 pub trait Playout: Game + Clone {
+    /**
+     *  Simulate a game execution using random moves until reaching a final state. 
+     *  It stores moves and state history, along with the total reward and the final state.
+     */
     fn playout_history(&self, pov: Self::Player) -> (Self, Vec<(Self, Self::Move)>, f32) {
         let mut s = self.clone();
         let mut hist = Vec::new();
@@ -75,6 +119,10 @@ pub trait Playout: Game + Clone {
         (s, hist, total_reward)
     }
 
+    /**
+     *  Simulates a game execution using random moves until reaching a final state.
+     *  It returns the total reward with the final state.
+     */
     fn playout_board(&self, pov: Self::Player) -> (Self, f32) {
         let (s, _, total_reward) = self.playout_history(pov);
         (s, total_reward)
@@ -82,21 +130,23 @@ pub trait Playout: Game + Clone {
 }
 impl<G: Game + Clone> Playout for G {}
 
-pub trait Game: Playable {
-    type Player: PartialEq + Eq + Copy + Clone + Debug + Sync + Send + Into<u8>;
-
-
-    fn player_after(player: Self::Player) -> Self::Player;
-    fn players() -> Vec<Self::Player>;
-    fn turn(&self) -> Self::Player;
-}
-
+/**
+ *  Non-cooperative games.
+ */
 pub trait SingleWinner: Game {
+    /// Returns the winner of the game, or None if no one has won yet.
     fn winner(&self) -> Option<Self::Player>;
 }
 
+/**
+ *  Single-player games.
+ */
 pub trait Singleplayer: Playable {}
 
+/**
+ *  A single-player game can be written as a game with a default player
+ *  that plays all the turns.
+ */
 impl<G: Singleplayer> Game for G {
     type Player = u8;
 
@@ -109,13 +159,28 @@ impl<G: Singleplayer> Game for G {
     fn turn(&self) -> Self::Player {0}
 }
 
+/**
+ *  Game builders.
+ */
 pub trait GameBuilder<G: Game> {
+    /**
+     *  Create a new game starting for player `starting`.
+     */
     fn create(&self, starting: G::Player) -> G;
 }
 
+/**
+ *  Builders for single-player games.
+ */
 pub trait SingleplayerGameBuilder<G: Singleplayer> {
+    /**
+     *  Create a new single-player game instance.
+     */
     fn create(&self) -> G;
 }
+/**
+ *  Single-player game builder is an instance of GameBuilder
+ */
 impl<G: Singleplayer, GB: SingleplayerGameBuilder<G>> GameBuilder<G> for GB {
     fn create(&self, _starting: <G as Game>::Player) -> G {
         self.create()
@@ -123,34 +188,87 @@ impl<G: Singleplayer, GB: SingleplayerGameBuilder<G>> GameBuilder<G> for GB {
 }
 
 use std::collections::HashMap;
-/* FeatureGame */
+/**
+ * Games that can be represented as multi-dimensional arrays.
+ *
+ * These games are the ones that can be played by neural network-based policies,
+ * such as PUCT or Muz.
+ */
 pub trait Feature: Game {
+    /**
+     *  Type dimension of the game state feature space.
+     */
     type StateDim: Dimension;
+    /**
+     *  Type dimension of the action feature space.
+     */
     type ActionDim: Dimension;
 
+    /**
+     *  Game state dimension.
+     */
     fn state_dimension(&self) -> Self::StateDim;
+    /**
+     *  Action space dimension.
+     */
     fn action_dimension() -> Self::ActionDim;
 
+    /**
+     *  Converts the game state to features (multi-dimensional array).
+     *
+     *  These features may be relative to a particular player but they should
+     *  contain the same amount of information.
+     */ 
     fn state_to_feature(&self, pov: Self::Player) -> Array<f32, Self::StateDim>;
+
+    /**
+     *  Converts an action probability distribution to the action features.
+     */
     fn moves_to_feature(moves: &HashMap<Self::Move, f32>) -> Array<f32, Self::ActionDim>;
 
+    /**
+     *  Converts a single move to a one-hot feature encoding of the move.
+     */
     fn move_to_feature(action: Self::Move) -> Array<f32, Self::ActionDim> {
         let mut hash = HashMap::new();
         hash.insert(action, 1.);
         Self::moves_to_feature(&hash)
     }
-
+    /**
+     *  Converts a move distribution feature to the corresponding set of move probabilities, relative to the game state.
+     *  
+     *  Invalid moves relative to the game state are discarded. To keep all moves, see 
+     *  `all_feature_to_moves`.
+     */
     fn feature_to_moves(&self, features: &Array<f32, Self::ActionDim>) -> HashMap<Self::Move, f32>;
 
+    /**
+     *  Returns action space
+     */
     fn all_possible_moves() -> Vec<Self::Move>;
+
+    /**
+     *  Converts a move distribution feature to the corresponding set of move probabilities, independently from the game state.
+     *
+     *  To consider only valid moves, see `feature_to_moves`.
+     */
     fn all_feature_to_moves(features: &Array<f32, Self::ActionDim>) -> HashMap<Self::Move, f32>;
 }
 
-/* TODO: MoveCode */
+/**
+ *  Move encoders
+ */
 pub trait MoveCode<G: Base> {
+    /**
+     *  Encode a move given the current state.
+     */
     fn code(game: &G, action: &G::Move) -> usize;
 }
 
+/**
+ *  A move encoder that doesn't take into account the
+ *  board state.
+ */
 pub struct NoFeatures {}
 impl<T: Base> MoveCode<T> for NoFeatures {
     fn code(_: &T, action: &T::Move) -> usize {
@@ -160,19 +278,38 @@ impl<T: Base> MoveCode<T> for NoFeatures {
     }
 }
 
-/* GAME WITH AN UI */
+/**
+ *  Games with an user interface.
+ *
+ *  Terminal user interface is managed by the `cursive` library.
+ * 
+ */
 pub trait InteractiveGame: cursive::view::View {
+    /**
+     *  Interfaced game type
+     */
     type G: Game;
 
+    /**
+     *  Create a new instance of the UI.
+     */
     fn new(turn: <Self::G as Game>::Player) -> Self;
 
+    /**
+     *  Play a chosen move.
+     */
     fn play(&mut self, action: &<Self::G as Base>::Move);
+
+    /**
+     *  Retrieve internal game state.
+     */
     fn get(&self) -> &Self::G;
-   //TODO fn choose_move(&mut self, cb: Box<dyn FnOnce(<Self::G as Base>::Move, &mut Self)>);
 }
 
-use crate::policies::MultiplayerPolicy;
-
+/**
+ *  Execute two policies on a two-player game 
+ *  and returns the whole history.
+ */
 pub fn simulate<'a, 'b, G: Game + Clone>(
     mut p1: Box<dyn MultiplayerPolicy<G> + 'a>,
     mut p2: Box<dyn MultiplayerPolicy<G> + 'b>,

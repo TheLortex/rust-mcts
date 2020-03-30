@@ -1,6 +1,6 @@
 use crate::game::{Game, Playout, SingleWinner};
 use crate::policies::{
-    mcts::{BaseMCTSPolicy, MCTSTree, WithMCTSPolicy},
+    mcts::{BaseMCTSPolicy, MCTSTreeNode, WithMCTSPolicy},
     MultiplayerPolicyBuilder,
 };
 use crate::settings;
@@ -12,17 +12,23 @@ use std::cell::RefCell;
 
 /* UCT */
 
+/// UCT move information.
 #[derive(Debug,Clone,Copy)]
 pub struct UCTMoveInfo {
+    /// Node value.
     pub Q: f32,
+    /// Number of times visited.
     pub N_a: f32,
 }
 
+/// UCT node information.
 #[derive(Debug,Clone,Copy)]
 pub struct UCTNodeInfo {
+    /// Number of times visited
     pub count: f32,
 }
 
+/// UCT policy description.
 pub struct UCTPolicy_<G: Game> {
     color: G::Player,
     UCT_WEIGHT: f32,
@@ -66,7 +72,7 @@ where
         UCTMoveInfo { Q: 0., N_a: 0. }
     }
 
-    fn backpropagate(&mut self, leaf: Rc<RefCell<MCTSTree<G, Self>>>, _history: &[G::Move], playout: Self::PlayoutInfo) {
+    fn backpropagate(&mut self, leaf: Rc<RefCell<MCTSTreeNode<G, Self>>>, _history: &[G::Move], playout: Self::PlayoutInfo) {
         let z = if playout { 1. } else { 0. };
 
         let mut current_node = leaf;
@@ -119,8 +125,10 @@ where
     }
 }
 
+/// UCT policy as an MCTS policy.
 pub type UCTPolicy<G> = WithMCTSPolicy<G, UCTPolicy_<G>>;
 
+/// UCT policy builder.
 pub struct UCT {
     UCT_WEIGHT: f32,
     N_PLAYOUTS: usize,
