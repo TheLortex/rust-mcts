@@ -27,6 +27,7 @@ const MODEL_PATH_ALPHAZERO: &str = "models/alpha-breakthrough/";
 const MODEL_PATH_MUZERO: &str = "models/mu-breakthrough/";
 
 type G = WithHistory<Breakthrough, U2>;
+//type G = Breakthrough;
 
 pub fn game_match<
     'a,
@@ -123,18 +124,21 @@ fn main() {
         .arg(Arg::with_name("only-result").long("only-result"))
         .get_matches();
 
-    // PUCT
+
     let alpha_tf = Arc::new(tf::load_model(MODEL_PATH_ALPHAZERO));
+    let evaluate: Arc<dyn Evaluator<G> + Send + Sync> = Arc::new(move |pov, board: &G| {
+        let x = alpha_tf.clone();
+        let (ref graph, ref session) = x.as_ref();
+        prediction_evaluator_single(&session, &graph, pov, board, false)
+    }); 
+    // PUCT
     let puct = PUCT {
         _g: PhantomData,
         config: PUCTSettings::default(),
         N_PLAYOUTS: settings::DEFAULT_N_PLAYOUTS,
-        evaluate: move |pov, board: &G| {
-            let x = alpha_tf.clone();
-            let (ref graph, ref session) = x.as_ref();
-            prediction_evaluator_single(&session, &graph, pov, board, false)
-        },
+        evaluate,
     };
+    let puct_box: Box<dyn DynMultiplayerPolicyBuilder<G> + Sync> = Box::new(puct.clone());
 
     // MUZ
     let prediction_path = format!("{}{}", MODEL_PATH_MUZERO, "pv");
@@ -150,13 +154,13 @@ fn main() {
         _g: PhantomData,
         puct: PUCTSettings::default(),
         N_PLAYOUTS: settings::DEFAULT_N_PLAYOUTS,
-        prediction_evaluate: move |pov: <G as game::Game>::Player, board: &Simulated<G, _, _>| {
+        prediction_evaluate: Arc::new(move |pov: <G as game::Game>::Player, board: &Simulated<G, _>| {
             let x = prediction_tensorflow.clone();
             let (ref graph, ref session) = x.as_ref();
             prediction_evaluator_single(&session, &graph, pov, board, true)
-        },
+        }),
         dynamics_evaluate:
-            move |board: &Array<f32, _>, action: &Array<f32, <G as game::Feature>::ActionDim>| {
+            Arc::new(move |board: &Array<f32, _>, action: &Array<f32, <G as game::Feature>::ActionDim>| {
                 let x = dynamics_tensorflow.clone();
                 let (ref graph, ref session) = x.as_ref();
                 dynamics_evaluator_single(
@@ -167,17 +171,17 @@ fn main() {
                     action.clone(),
                     true,
                 )
-            },
-        representation_evaluate: |board: Array<f32, <G as game::Feature>::StateDim>| {
+            }),
+        representation_evaluate: Arc::new(move |board: Array<f32, <G as game::Feature>::StateDim>| {
             let x = representation_tensorflow.clone();
             let (ref graph, ref session) = x.as_ref();
             representation_evaluator_single(&session, &graph, Dim(settings::MUZ_BT_SHAPE), board)
-        },
+        }),
     };
 
     let choice_1 = args.value_of("policy").unwrap_or("rand");
     let p1 = if choice_1 == "alpha" {
-        Box::new(puct.clone())
+        puct_box
     } else if choice_1 == "mu" {
         Box::new(muz.clone())
     } else {
@@ -195,7 +199,7 @@ fn main() {
     };
 
     let gb = WithHistoryGB::<_, U2>::new(&BreakthroughBuilder {});
-    //    let gb = BreakthroughBuilder {};
+    //let gb = BreakthroughBuilder {};
 
     let silent = args.is_present("only-result");
 

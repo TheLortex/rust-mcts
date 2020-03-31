@@ -10,6 +10,7 @@ use std::f32;
 use std::iter::*;
 use std::marker::PhantomData;
 use std::rc::Rc;
+use std::sync::Arc;
 
 /// PUCT move statistics.
 #[derive(Debug, Clone, Copy)]
@@ -33,11 +34,10 @@ pub struct PUCTNodeInfo {
 /**
  * The game state evaluator
  */
-pub trait Evaluator<G: game::Feature>:
-    Fn(G::Player, &G) -> (Array<f32, G::ActionDim>, f32)
-{
-}
-impl<G: game::Feature, F: Fn(G::Player, &G) -> (Array<f32, G::ActionDim>, f32)> Evaluator<G> for F {}
+pub trait Evaluator<G: game::Feature> = Fn(<G as game::Game>::Player, &G) -> (Array<f32, <G as game::Feature>::ActionDim>, f32)
+    + Send
+    + Sync;
+
 /**
  * Common PUCT
  */
@@ -72,21 +72,20 @@ impl Default for PUCTSettings {
 
 /// PUCT policy.
 #[derive(Clone)]
-pub struct PUCTPolicy_<G: game::Feature, F>
+pub struct PUCTPolicy_<G>
 where
-    F: Evaluator<G>,
+    G: game::Feature,
 {
     color: G::Player,
     config: PUCTSettings,
-    evaluate: F,
+    evaluate: Arc<dyn Evaluator<G>>,
     min_tree: f32,
     max_tree: f32,
 }
 
-impl<G, F> PUCTPolicy_<G, F>
+impl<G> PUCTPolicy_<G>
 where
     G: game::Feature + super::MCTSGame,
-    F: Evaluator<G>,
 {
     fn normalize(&self, x: f32) -> f32 {
         if self.min_tree < self.max_tree {
@@ -104,10 +103,9 @@ type PUCTPlayoutInfo<G> = (
 );
 
 #[allow(clippy::float_cmp)]
-impl<G, F> BaseMCTSPolicy<G> for PUCTPolicy_<G, F>
+impl<G> BaseMCTSPolicy<G> for PUCTPolicy_<G>
 where
     G: game::Feature + super::MCTSGame,
-    F: Evaluator<G>,
 {
     type NodeInfo = PUCTNodeInfo;
     type MoveInfo = PUCTMoveInfo;
@@ -273,28 +271,26 @@ use std::fmt;
 /**
  *  PUCT policy built from MCTS description.
  */
-pub type PUCTPolicy<G, F> = WithMCTSPolicy<G, PUCTPolicy_<G, F>>;
+pub type PUCTPolicy<G> = WithMCTSPolicy<G, PUCTPolicy_<G>>;
 
 /// PUCT policy builder.
-pub struct PUCT<G, F>
+pub struct PUCT<G>
 where
     G: game::Feature,
-    F: (Fn(G::Player, &G) -> (Array<f32, G::ActionDim>, f32)),
 {
     /// PUCT configuration.
     pub config: PUCTSettings,
     /// Number of playouts.
     pub N_PLAYOUTS: usize,
     /// State evaluation function.
-    pub evaluate: F,
+    pub evaluate: Arc<dyn Evaluator<G>>,
     /// PhantomData storing game type.
     pub _g: PhantomData<fn() -> G>,
 }
 
-impl<G, F> Clone for PUCT<G, F>
+impl<G> Clone for PUCT<G>
 where
     G: game::Feature,
-    F: (Fn(G::Player, &G) -> (Array<f32, G::ActionDim>, f32)) + Clone,
 {
     fn clone(&self) -> Self {
         Self {
@@ -306,10 +302,9 @@ where
     }
 }
 
-impl<G, F> fmt::Display for PUCT<G, F>
+impl<G> fmt::Display for PUCT<G>
 where
     G: game::Feature,
-    F: (Fn(G::Player, &G) -> (Array<f32, G::ActionDim>, f32)),
 {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         writeln!(f, "BATCHED PUCT")?;
@@ -317,17 +312,15 @@ where
     }
 }
 
-impl<G, F> MultiplayerPolicyBuilder<G> for PUCT<G, F>
+impl<G> MultiplayerPolicyBuilder<G> for PUCT<G>
 where
     G: game::Feature + super::MCTSGame,
-    F: (Fn(G::Player, &G) -> (Array<f32, G::ActionDim>, f32)),
-    F: Clone,
 {
-    type P = PUCTPolicy<G, F>;
+    type P = PUCTPolicy<G>;
 
-    fn create(&self, color: G::Player) -> PUCTPolicy<G, F> {
+    fn create(&self, color: G::Player) -> PUCTPolicy<G> {
         WithMCTSPolicy::new(
-            PUCTPolicy_::<G, F> {
+            PUCTPolicy_::<G> {
                 color,
                 config: self.config,
                 evaluate: self.evaluate.clone(),

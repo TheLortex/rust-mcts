@@ -1,6 +1,7 @@
 use crate::game::*;
 
 use ndarray::{Array, Dimension};
+use std::sync::Arc;
 
 /// Output from the dynamics network.
 pub struct DynamicsNetworkOutput<H: Dimension> {
@@ -11,57 +12,32 @@ pub struct DynamicsNetworkOutput<H: Dimension> {
 }
 
 /// Inference function for the representation network.
-pub trait RepresentationEvaluator<G, H>: Fn(Array<f32, G::StateDim>) -> Array<f32, H>
-where
-    G: Feature,
-    H: Dimension,
-{
-}
-
-impl<G, H, I> RepresentationEvaluator<G, H> for I
-where
-    G: Feature,
-    H: Dimension,
-    I: Fn(Array<f32, G::StateDim>) -> Array<f32, H>,
-{
-}
+pub trait RepresentationEvaluator<G: Feature, H: Dimension> =
+    Fn(Array<f32, <G as Feature>::StateDim>) -> Array<f32, H> + Send + Sync;
 
 /// Inference function for the dynamics network.
-pub trait DynamicsEvaluator<G, H>:
-    Clone + Fn(&Array<f32, H>, &Array<f32, G::ActionDim>) -> DynamicsNetworkOutput<H>
-where
-    G: Feature,
-    H: Dimension,
-{
-}
-impl<G, H, I> DynamicsEvaluator<G, H> for I
-where
-    G: Feature,
-    H: Dimension,
-    I: Clone + Fn(&Array<f32, H>, &Array<f32, G::ActionDim>) -> DynamicsNetworkOutput<H>,
-{
-}
+pub trait DynamicsEvaluator<G: Feature, H: Dimension> = Fn(&Array<f32, H>, &Array<f32, <G as Feature>::ActionDim>) -> DynamicsNetworkOutput<H>
+    + Send
+    + Sync;
 
 /// Simulated game
-pub struct Simulated<G, H, DE>
+pub struct Simulated<G, H>
 where
     G: Feature,
     H: Dimension,
-    DE: DynamicsEvaluator<G, H>,
 {
     turn: G::Player,
     hidden_state: Array<f32, H>,
     possible_moves: Vec<G::Move>,
     total_reward: f32,
-    dynamics_evaluator: DE,
+    dynamics_evaluator: Arc<dyn DynamicsEvaluator<G, H>>,
     hidden_dimension: H,
 }
 
-impl<G, H, DE> Clone for Simulated<G, H, DE>
+impl<G, H> Clone for Simulated<G, H>
 where
     G: Feature,
     H: Dimension,
-    DE: DynamicsEvaluator<G, H>,
 {
     fn clone(&self) -> Self {
         Self {
@@ -75,11 +51,10 @@ where
     }
 }
 
-impl<G, H, DE> Simulated<G, H, DE>
+impl<G, H> Simulated<G, H>
 where
     G: Feature,
     H: Dimension,
-    DE: DynamicsEvaluator<G, H>,
 {
     /// Instanciate a new simulated game.
     ///
@@ -93,7 +68,7 @@ where
         turn: G::Player,
         hidden_state: Array<f32, H>,
         initial_possible_moves: Vec<G::Move>,
-        dynamics_evaluator: DE,
+        dynamics_evaluator: Arc<dyn DynamicsEvaluator<G, H>>,
     ) -> Self {
         let hidden_dimension = hidden_state.raw_dim();
         Simulated {
@@ -109,11 +84,10 @@ where
 
 use std::fmt::*;
 
-impl<G, H, DE> Debug for Simulated<G, H, DE>
+impl<G, H> Debug for Simulated<G, H>
 where
     G: Feature,
     H: Dimension,
-    DE: DynamicsEvaluator<G, H>,
 {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result {
         write!(
@@ -124,11 +98,10 @@ where
     }
 }
 
-impl<G, H, SD> Base for Simulated<G, H, SD>
+impl<G, H> Base for Simulated<G, H>
 where
     G: Feature + 'static,
     H: Dimension,
-    SD: DynamicsEvaluator<G, H>,
 {
     type Move = G::Move;
 
@@ -137,11 +110,10 @@ where
     }
 }
 
-impl<G, H, SD> Playable for Simulated<G, H, SD>
+impl<G, H> Playable for Simulated<G, H>
 where
     G: Feature + 'static,
     H: Dimension,
-    SD: DynamicsEvaluator<G, H>,
 {
     fn play(&mut self, action: &Self::Move) -> f32 {
         let mut move_as_prob: HashMap<Self::Move, f32> = HashMap::new();
@@ -160,11 +132,10 @@ where
     }
 }
 
-impl<G, H, SD> Game for Simulated<G, H, SD>
+impl<G, H> Game for Simulated<G, H>
 where
     G: Feature + 'static,
     H: Dimension,
-    SD: DynamicsEvaluator<G, H>,
 {
     type Player = G::Player;
 
@@ -181,11 +152,10 @@ where
     }
 }
 
-impl<G, H, SD> Feature for Simulated<G, H, SD>
+impl<G, H> Feature for Simulated<G, H>
 where
     G: Feature + 'static,
     H: Dimension,
-    SD: DynamicsEvaluator<G, H>,
 {
     type StateDim = H;
     type ActionDim = G::ActionDim;

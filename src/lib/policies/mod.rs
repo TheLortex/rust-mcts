@@ -89,7 +89,7 @@ pub trait SingleplayerPolicy<T: Game> {
 
 use super::game;
 /// Dynamically map policy names to policy builder instances.
-pub fn get_multi<'a, G>(name: &str) -> Box<dyn DynMultiplayerPolicyBuilder<'a, G> + Sync + 'a>
+pub fn get_multi<'a, G>(name: &str) -> Box<dyn DynMultiplayerPolicyBuilder<'a, G> + Sync + Send + 'a>
 where
     G: mcts::MCTSGame + game::SingleWinner + 'a + std::hash::Hash + Eq,
     G::Move: Send,

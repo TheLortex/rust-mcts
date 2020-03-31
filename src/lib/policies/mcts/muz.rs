@@ -1,37 +1,30 @@
 use super::puct::{Evaluator, PUCTPolicy, PUCTSettings, PUCT};
 use crate::game;
 use crate::game::meta::simulated::{
-    DynamicsEvaluator, DynamicsNetworkOutput, RepresentationEvaluator, Simulated,
+    DynamicsEvaluator, RepresentationEvaluator, Simulated,
 };
 use crate::policies::{MultiplayerPolicy, MultiplayerPolicyBuilder};
-use ndarray::Array;
 
 use ndarray::Dimension;
 use std::marker::PhantomData;
+use std::sync::Arc;
 
 /// MuZero policy
-pub struct MuzPolicy<G, H, PE, RE, DE>
+pub struct MuzPolicy<G, H>
 where
     G: game::Feature + 'static,
     H: Dimension,
-    RE: RepresentationEvaluator<G, H>,
-    DE: DynamicsEvaluator<G, H>,
-    PE: Evaluator<Simulated<G, H, DE>>,
 {
     player: G::Player,
     /// PUCT policy instance. Can be taken to gather statistics.
-    pub mcts: Option<PUCTPolicy<Simulated<G, H, DE>, PE>>,
-
-    config: Muz<G, H, PE, RE, DE>,
+    pub mcts: Option<PUCTPolicy<Simulated<G, H>>>,
+    config: Muz<G, H>,
 }
 
-impl<G, H, PE, RE, DE> MultiplayerPolicy<G> for MuzPolicy<G, H, PE, RE, DE>
+impl<G, H> MultiplayerPolicy<G> for MuzPolicy<G, H>
 where
     G: game::Feature + 'static,
     H: Dimension,
-    RE: RepresentationEvaluator<G, H>,
-    DE: DynamicsEvaluator<G, H>,
-    PE: Evaluator<Simulated<G, H, DE>> + Clone,
 {
     fn play(&mut self, board: &G) -> G::Move {
         let net_output = (self.config.representation_evaluate)(board.state_to_feature(self.player));
@@ -42,7 +35,7 @@ where
             self.config.dynamics_evaluate.clone(),
         );
 
-        let mcts_policy_builder: PUCT<Simulated<G, H, DE>, PE> = PUCT {
+        let mcts_policy_builder: PUCT<Simulated<G, H>> = PUCT {
             _g: PhantomData,
             evaluate: self.config.prediction_evaluate.clone(),
             config: self.config.puct,
@@ -58,24 +51,21 @@ where
 }
 
 /// MuZero policy builder.
-pub struct Muz<G, H, PE, RE, DE>
+pub struct Muz<G, H>
 where
     G: game::Feature + 'static,
     H: Dimension,
-    RE: Fn(Array<f32, G::StateDim>) -> Array<f32, H>,
-    DE: Fn(&Array<f32, H>, &Array<f32, G::ActionDim>) -> DynamicsNetworkOutput<H> + Clone,
-    PE: Fn(G::Player, &Simulated<G, H, DE>) -> (Array<f32, G::ActionDim>, f32),
 {
     /// PUCT settings.
     pub puct: PUCTSettings,
     /// Number of PUCT playouts per move.
     pub N_PLAYOUTS: usize,
     /// Evaluator for the prediction network.
-    pub prediction_evaluate: PE,
+    pub prediction_evaluate: Arc<dyn Evaluator<Simulated<G, H>>>,
     /// Evaluator for the representation network.
-    pub representation_evaluate: RE,
+    pub representation_evaluate: Arc<dyn RepresentationEvaluator<G, H>>,
     /// Evaluator for the dynamics network.
-    pub dynamics_evaluate: DE,
+    pub dynamics_evaluate: Arc<dyn DynamicsEvaluator<G, H>>,
     /// PhantomData storing game type information.
     pub _g: PhantomData<fn() -> G>,
     /// PhantomData storing dimension type information.
@@ -84,13 +74,10 @@ where
 
 use std::fmt;
 
-impl<G, H, PE, RE, DE> fmt::Display for Muz<G, H, PE, RE, DE>
+impl<G, H> fmt::Display for Muz<G, H>
 where
     G: game::Feature + 'static,
     H: Dimension,
-    RE: RepresentationEvaluator<G, H>,
-    DE: DynamicsEvaluator<G, H>,
-    PE: Evaluator<Simulated<G, H, DE>>,
 {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         writeln!(f, "MUZ")?;
@@ -98,13 +85,10 @@ where
     }
 }
 
-impl<G, H, PE, RE, DE> Clone for Muz<G, H, PE, RE, DE>
+impl<G, H> Clone for Muz<G, H>
 where
     G: game::Feature + 'static,
     H: Dimension,
-    RE: RepresentationEvaluator<G, H> + Clone,
-    DE: DynamicsEvaluator<G, H>,
-    PE: Evaluator<Simulated<G, H, DE>> + Clone,
 {
     fn clone(&self) -> Self {
         Muz {
@@ -119,15 +103,12 @@ where
     }
 }
 
-impl<G, H, PE, RE, DE> MultiplayerPolicyBuilder<G> for Muz<G, H, PE, RE, DE>
+impl<G, H> MultiplayerPolicyBuilder<G> for Muz<G, H>
 where
     G: game::Feature + 'static,
     H: Dimension,
-    RE: RepresentationEvaluator<G, H> + Clone,
-    DE: DynamicsEvaluator<G, H>,
-    PE: Evaluator<Simulated<G, H, DE>> + Clone,
 {
-    type P = MuzPolicy<G, H, PE, RE, DE>;
+    type P = MuzPolicy<G, H>;
 
     fn create(&self, color: G::Player) -> Self::P {
         MuzPolicy {

@@ -3,10 +3,10 @@
 use ggpf::deep::evaluator::prediction_evaluator_single;
 use ggpf::game::breakthrough::*;
 use ggpf::game::meta::with_history::{IWithHistory, WithHistory};
-use ggpf::game::{Base, Feature, Game, InteractiveGame, MoveTrait, NoFeatures, SingleWinner};
+use ggpf::game::{Base, Game, InteractiveGame, MoveTrait, NoFeatures, SingleWinner};
 use ggpf::policies::mcts::MCTSTreeNode;
 use ggpf::policies::{
-    mcts::puct::{Evaluator, PUCTPolicy_, PUCTSettings, PUCT},
+    mcts::puct::{PUCTPolicy_, PUCTSettings, PUCT},
     ppa::*,
     MultiplayerPolicy, MultiplayerPolicyBuilder,
 };
@@ -19,7 +19,7 @@ use cursive::Cursive;
 use cursive_flexi_logger_view::FlexiLoggerView;
 use cursive_tree_view::{Placement, TreeView};
 use flexi_logger::{LogTarget, Logger};
-use ndarray::Array;
+use std::sync::Arc;
 use std::cell::RefCell;
 use std::fmt;
 use std::marker::PhantomData;
@@ -33,21 +33,17 @@ type G = WithHistory<Breakthrough, U2>;
 type IG = IWithHistory<ui::IBreakthrough, U2>;
 
 #[derive(Clone)]
-struct TreeEntry<F>
-where
-    F: Evaluator<G>,
+struct TreeEntry
 {
     name: String,
-    state: Rc<RefCell<MCTSTreeNode<G, PUCTPolicy_<G, F>>>>,
+    state: Rc<RefCell<MCTSTreeNode<G, PUCTPolicy_<G>>>>,
     probability: f32,
     value: f32,
     N_visits: f32,
     reward: f32,
 }
 
-impl<F> fmt::Display for TreeEntry<F>
-where
-    F: Evaluator<G>,
+impl fmt::Display for TreeEntry
 {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(
@@ -58,9 +54,7 @@ where
     }
 }
 
-impl<F> fmt::Debug for TreeEntry<F>
-where
-    F: Evaluator<G>,
+impl fmt::Debug for TreeEntry
 {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(
@@ -71,11 +65,9 @@ where
     }
 }
 
-fn expand_tree<F>(treeview: &mut TreeView<TreeEntry<F>>, parent_row: usize)
-where
-    F: Evaluator<G> + Clone,
+fn expand_tree(treeview: &mut TreeView<TreeEntry>, parent_row: usize)
 {
-    let content: TreeEntry<F> = treeview.borrow_item(parent_row).unwrap().clone();
+    let content: TreeEntry = treeview.borrow_item(parent_row).unwrap().clone();
 
     let tree_node = content.state.borrow();
 
@@ -105,17 +97,14 @@ where
 struct GameDuelUI {}
 
 impl GameDuelUI {
-    fn render<P2, F>(
+    fn render<P2>(
         start: <G as Game>::Player,
-        pb1: PUCT<G, F>,
+        pb1: PUCT<G>,
         pb2: P2,
     ) -> impl cursive::view::View
     where
         P2: MultiplayerPolicyBuilder<G>,
         P2::P: 'static,
-        F: Fn(<G as Game>::Player, &G) -> (Array<f32, <G as Feature>::ActionDim>, f32)
-            + Clone
-            + 'static,
     {
         let p1 = RefCell::new(pb1.create(G::players()[0]));
         let p2 = RefCell::new(pb2.create(G::players()[1]));
@@ -143,7 +132,7 @@ impl GameDuelUI {
                         let root_node = p1.root.take().unwrap();
                         let count = root_node.borrow().info.node.count;
 
-                        let treeview: &mut TreeView<TreeEntry<F>> =
+                        let treeview: &mut TreeView<TreeEntry> =
                             &mut s.find_name("tree").unwrap();
                         treeview.clear();
                         treeview.insert_container_item(
@@ -174,11 +163,11 @@ impl GameDuelUI {
                 }
             }));
 
-        let mut treeview = TreeView::<TreeEntry<F>>::new();
+        let mut treeview = TreeView::<TreeEntry>::new();
 
         treeview.set_on_collapse(move |siv: &mut Cursive, row, is_collapsed, children| {
             if !is_collapsed && children == 0 {
-                siv.call_on_name("tree", move |treeview: &mut TreeView<TreeEntry<F>>| {
+                siv.call_on_name("tree", move |treeview: &mut TreeView<TreeEntry>| {
                     expand_tree(treeview, row);
                 });
             }
@@ -215,17 +204,17 @@ fn main() {
     let session =
         Session::from_saved_model(&SessionOptions::new(), &["serve"], &mut graph, MODEL_PATH)
             .unwrap();
-
-    let session = Rc::new(Box::new(session));
-    let graph = Rc::new(Box::new(graph));
-
+/*
+    let session = Arc::new(Box::new(session));
+    let graph = Arc::new(Box::new(graph));
+*/
     let puct = PUCT {
         _g: PhantomData,
         config: PUCTSettings::default(),
         N_PLAYOUTS: settings::DEFAULT_N_PLAYOUTS,
-        evaluate: move |pov, board: &G| {
+        evaluate: Arc::new(move |pov, board: &G| {
             prediction_evaluator_single(&session, &graph, pov, board, false)
-        },
+        }),
     };
 
     let pb2 = PPA::<_, NoFeatures>::default();

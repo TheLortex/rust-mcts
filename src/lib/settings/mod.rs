@@ -19,11 +19,11 @@ pub const SUPPORT_SHAPE: isize = 2 * SUPPORT_SIZE + 1;
 // Batched GPU evaluator.
 
 /// Batch size to send to the GPU (PUCT)
-pub const GPU_BATCH_SIZE: usize = 64;
+pub const GPU_BATCH_SIZE: usize = 4;
 /// Number of threads sending batches to the GPU
-pub const GPU_N_EVALUATORS: usize = 4;
+pub const GPU_N_EVALUATORS: usize = 2;
 /// Number of threads generating games, per evaluator
-pub const GPU_N_GENERATORS: usize = 128;
+pub const GPU_N_GENERATORS: usize = 4;
 
 /*
 pub const GPU_BATCH_SIZE: usize   = 1;

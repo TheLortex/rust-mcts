@@ -77,23 +77,23 @@ fn muzero_game_generator_task<G, GB, H>(
     G::Move: Send + Sync,
     G::Player: Send + Sync,
     GB: GameBuilder<G>,
-    H: Dimension,
+    H: Dimension + 'static,
 {
     let (puct_settings, hidden_shape) = settings;
     let h1 = hidden_shape.clone();
 
-    let muz = Muz::<G, H, _, _, _> {
+    let muz = Muz::<G, H> {
         _g: PhantomData,
         _h: PhantomData,
         N_PLAYOUTS: settings::DEFAULT_N_PLAYOUTS,
         puct: puct_settings,
-        prediction_evaluate: |pov: G::Player, board: &Simulated<G, H, _>| {
+        prediction_evaluate: Arc::new(move |pov: G::Player, board: &Simulated<G, H>| {
             super::evaluator::prediction(prediction_channel.clone(), pov, board.clone(), true)
-        },
-        representation_evaluate: move |board: Array<f32, G::StateDim>| {
+        }),
+        representation_evaluate: Arc::new(move |board: Array<f32, G::StateDim>| {
             super::evaluator::representation(representation_channel.clone(), h1.clone(), board)
-        },
-        dynamics_evaluate: move |board, action| {
+        }),
+        dynamics_evaluate: Arc::new(move |board, action| {
             super::evaluator::dynamics(
                 dynamics_channel.clone(),
                 hidden_shape.clone(),
@@ -101,7 +101,7 @@ fn muzero_game_generator_task<G, GB, H>(
                 action.clone(),
                 true,
             )
-        },
+        }),
     };
 
     loop {
@@ -341,12 +341,12 @@ fn alphazero_game_generator_task<G, GB>(
     G::Player: Send + Sync,
     GB: GameBuilder<G>,
 {
-    let puct = PUCT::<G, _> {
+    let puct = PUCT::<G> {
         config: puct_settings,
         N_PLAYOUTS: settings::DEFAULT_N_PLAYOUTS,
-        evaluate: |pov: G::Player, board: &G| {
+        evaluate: Arc::new(move |pov: G::Player, board: &G| {
             super::evaluator::prediction(prediction_channel.clone(), pov, board.clone(), false)
-        },
+        }),
         _g: PhantomData,
     };
 
