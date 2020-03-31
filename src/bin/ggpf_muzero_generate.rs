@@ -10,7 +10,7 @@ use std::thread;
 
 const MODEL_PATH: &str = "models/mu-breakthrough/";
 
-use ggpf::deep::filemanager;
+use ggpf::deep::file_manager;
 use ggpf::deep::self_play::GameHistoryEntry;
 use ggpf::deep::tf;
 use ggpf::game::breakthrough::{Breakthrough, BreakthroughBuilder};
@@ -51,17 +51,17 @@ fn run() {
         RwLock::new(tf::load_model(&representation_path)),
     ));
 
-    let mut fm = ggpf::deep::filemanager::FileManager::new("./fifo");
+    let mut fm = ggpf::deep::file_manager::FileManager::new("./fifo");
 
     /*
      * Watches for change in the model, and reload when needed.
      */
 
-    filemanager::watch_model(prediction_tensorflow.clone(), prediction_path);
+    file_manager::watch_model(prediction_tensorflow.clone(), prediction_path);
 
-    filemanager::watch_model(dynamics_tensorflow.clone(), dynamics_path);
+    file_manager::watch_model(dynamics_tensorflow.clone(), dynamics_path);
 
-    filemanager::watch_model(representation_tensorflow.clone(), representation_path);
+    file_manager::watch_model(representation_tensorflow.clone(), representation_path);
 
     // Game channel.
     let (tx_games, rx_games) =

@@ -7,7 +7,7 @@ use std::sync::Arc;
 use std::sync::RwLock;
 use std::thread;
 
-use ggpf::deep::filemanager;
+use ggpf::deep::file_manager;
 use ggpf::deep::self_play::GameHistoryEntry;
 use ggpf::deep::tf;
 use ggpf::game::breakthrough::{Breakthrough, BreakthroughBuilder};
@@ -42,7 +42,7 @@ fn run() {
      * Watches for change in the model, and reload when needed.
      */
     let p_tf = prediction_tensorflow.clone();
-    filemanager::watch_model(p_tf, String::from("./models/alpha-breakthrough"));
+    file_manager::watch_model(p_tf, String::from("./models/alpha-breakthrough"));
 
     // Game channel.
     let (tx_games, rx_games) =
@@ -62,7 +62,7 @@ fn run() {
     });
 
     // Game writer.
-    let mut fm = filemanager::FileManager::new("./fifo");
+    let mut fm = file_manager::FileManager::new("./fifo");
     let game_writer = thread::spawn(move || {
         while let Some(game) = rx_games.recv().ok() {
             fm.append(game);
