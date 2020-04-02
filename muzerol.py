@@ -1,3 +1,4 @@
+from datetime import datetime
 from subprocess import PIPE, DEVNULL
 from tensorflow.keras.utils import Sequence
 from tqdm import tqdm
@@ -22,15 +23,14 @@ from collections import namedtuple
 from settings import *
 from networks import representation_network, dynamics_network, prediction_network_mu, unroll_networks, policy_value_network_alpha
 
-#tf.debugging.enable_check_numerics(
+# tf.debugging.enable_check_numerics(
 #    stack_height_limit=30, path_length_limit=50
-#)
+# )
 
 game = "mu-breakthrough"
 
 physical_devices = tf.config.list_physical_devices('GPU')
 tf.config.experimental.set_memory_growth(physical_devices[0], True)
-
 
 
 training_data_path = "./training_data/{}/".format(game)
@@ -43,9 +43,7 @@ if os.path.exists(training_data_path+"/replay_buffer.pkl"):
 else:
     print("| Starting replay buffer from scratch")
     os.makedirs(training_data_path, exist_ok=True)
-    replay_buffer = ReplayBuffer(0,0,0,[None]*REPLAY_BUFFER_SIZE)
-
-
+    replay_buffer = ReplayBuffer(0, 0, 0, [None]*REPLAY_BUFFER_SIZE)
 
 
 # scalar to categorical transformation.
@@ -65,6 +63,7 @@ def value_to_support(v):
     result[int(v2) + SUPPORT_SIZE] = p2
     return result
 
+
 class ZerolGenerator(Sequence):
     def __init__(self, replay_buffer):
         self.replay_buffer = replay_buffer
@@ -78,18 +77,18 @@ class ZerolGenerator(Sequence):
     def generate_target(self):
 
         game_id = np.random.randint(self.replay_buffer.max_index)
-        game    = self.replay_buffer.games[game_id]
+        game = self.replay_buffer.games[game_id]
 
         game_length = len(game.state)
         move_id = np.random.randint(game_length)
 
         target_policy = np.zeros((N_UNROLL_STEPS,)+ACTION_SHAPE)
-        target_value  = np.zeros((N_UNROLL_STEPS,)+(SUPPORT_SHAPE,))
+        target_value = np.zeros((N_UNROLL_STEPS,)+(SUPPORT_SHAPE,))
         target_reward = np.zeros((N_UNROLL_STEPS,)+(SUPPORT_SHAPE,))
-        target_state  = np.zeros((BOARD_SHAPE))
-        target_actions= np.zeros((N_UNROLL_STEPS,)+ACTION_SHAPE)
+        target_state = np.zeros((BOARD_SHAPE))
+        target_actions = np.zeros((N_UNROLL_STEPS,)+ACTION_SHAPE)
 
-        target_state[:]  = game.state[move_id]
+        target_state[:] = game.state[move_id]
 
         for t_idx, i in enumerate(range(move_id, move_id + N_UNROLL_STEPS)):
 
@@ -104,48 +103,67 @@ class ZerolGenerator(Sequence):
                     value += discounted_reward
                 else:
                     value -= discounted_reward
-            
+
             # still in game
             if i < game_length:
-                target_reward[t_idx]  = value_to_support(game.reward[i])
-                target_value[t_idx]   = value_to_support(value)
+                target_reward[t_idx] = value_to_support(game.reward[i])
+                target_value[t_idx] = value_to_support(value)
                 target_actions[t_idx] = game.action[i]
-                target_policy[t_idx]  = game.policy[i]
+                target_policy[t_idx] = game.policy[i]
             # game has finished
             else:
-                target_reward[t_idx]  = value_to_support(0)
-                target_value[t_idx]   = value_to_support(0)
-                random_action = (np.random.random(size=len(ACTION_SHAPE)) * ACTION_SHAPE).astype(int)
+                target_reward[t_idx] = value_to_support(0)
+                target_value[t_idx] = value_to_support(0)
+                random_action = (np.random.random(
+                    size=len(ACTION_SHAPE)) * ACTION_SHAPE).astype(int)
                 target_actions[t_idx][random_action] = 1
-                target_policy[t_idx]  = 1/target_policy[t_idx].size # uniform policy.
-    
+                # uniform policy.
+                target_policy[t_idx] = 1/target_policy[t_idx].size
+
         return target_policy, target_value, target_reward, target_state, target_actions
-        
 
     def __getitem__(self, index):
-        policy = np.zeros((BATCH_SIZE,N_UNROLL_STEPS)+ACTION_SHAPE)
-        value  = np.zeros((BATCH_SIZE,N_UNROLL_STEPS,SUPPORT_SHAPE))
-        reward = np.zeros((BATCH_SIZE,N_UNROLL_STEPS,SUPPORT_SHAPE))
-        state  = np.zeros((BATCH_SIZE,)+BOARD_SHAPE)
-        actions= np.zeros((BATCH_SIZE,N_UNROLL_STEPS)+ACTION_SHAPE)
+        policy = np.zeros((BATCH_SIZE, N_UNROLL_STEPS)+ACTION_SHAPE)
+        value = np.zeros((BATCH_SIZE, N_UNROLL_STEPS, SUPPORT_SHAPE))
+        reward = np.zeros((BATCH_SIZE, N_UNROLL_STEPS, SUPPORT_SHAPE))
+        state = np.zeros((BATCH_SIZE,)+BOARD_SHAPE)
+        actions = np.zeros((BATCH_SIZE, N_UNROLL_STEPS)+ACTION_SHAPE)
 
         for i in range(BATCH_SIZE):
             res = self.generate_target()
-            #policy[i], value[i], reward[i], state[i], actions[i] = res
+            # policy[i], value[i], reward[i], state[i], actions[i] = res
             policy[i], value[i], reward[i], state[i], actions[i] = res
 
-
-        X = [actions, state]
+        X = {"actions": actions, "starting_board": state}
         y = {"policy": policy,
              "value":  value,
              "reward": reward}
 
-        #print(np.sum(y["policy"]), np.sum(y["value"]), np.sum(y["reward"]))
+        # print(np.sum(y["policy"]), np.sum(y["value"]), np.sum(y["reward"]))
         return X, y
+
+    def generate(self):
+        for _ in range(EPOCH_SIZE):
+            yield self[0]
+
+
+trainGenerator = ZerolGenerator(replay_buffer)
+
+shapes = ({"actions": tf.TensorShape((None, N_UNROLL_STEPS,)+ACTION_SHAPE), "starting_board": tf.TensorShape((None,)+ BOARD_SHAPE)}, {
+    "reward": tf.TensorShape((None, N_UNROLL_STEPS,)+(SUPPORT_SHAPE,)),
+    "policy": tf.TensorShape((None, N_UNROLL_STEPS,)+ACTION_SHAPE),
+    "value": tf.TensorShape((None, N_UNROLL_STEPS,)+(SUPPORT_SHAPE,))
+})
+trainDataset = tf.data.Dataset.from_generator(trainGenerator.generate,
+                                              output_types=({"actions": tf.float32, "starting_board": tf.float32}, {"policy": tf.float32, "value": tf.float32, "reward": tf.float32}), output_shapes=shapes)
+
+
+trainDataset = tf.data.Dataset.range(4).interleave(lambda x: trainDataset, num_parallel_calls=4)\
+    .prefetch(tf.data.experimental.AUTOTUNE)
 
 
 models_path = "models/{}/".format(game)
-if os.path.exists(models_path+"pv"): # TODO
+if os.path.exists(models_path+"pv"):  # TODO
     print("| Loaded previous instance of the models.")
     pv = models.load_model(models_path+"pv", compile=False)
     state = models.load_model(models_path+"state", compile=False)
@@ -173,46 +191,50 @@ else:
 
 def custom_loss_policy(y_true, y_pred):
     policy_loss = 0.
-    
+
     for i in range(N_UNROLL_STEPS):
-        policy_loss += losses.categorical_crossentropy(y_true[:,i], y_pred[:,i]) / N_UNROLL_STEPS
+        policy_loss += losses.mean_squared_error(
+            y_true[:, i], y_pred[:, i]) / N_UNROLL_STEPS
 
     return policy_loss
 
+
 def custom_loss_value(y_true, y_pred):
-    value_loss  = 0.
-    
+    value_loss = 0.
+
     for i in range(N_UNROLL_STEPS):
-        value_loss  += losses.categorical_crossentropy(y_true[:,i], y_pred[:,i])  / N_UNROLL_STEPS
+        value_loss += losses.mean_squared_error(
+            y_true[:, i], y_pred[:, i]) / N_UNROLL_STEPS
 
     return value_loss
 
+
 def custom_loss_reward(y_true, y_pred):
     reward_loss = 0.
-    
+
     for i in range(N_UNROLL_STEPS):
-        reward_loss += losses.categorical_crossentropy(y_true[:,i], y_pred[:,i]) / N_UNROLL_STEPS
+        reward_loss += losses.mean_squared_error(
+            y_true[:, i], y_pred[:, i]) / N_UNROLL_STEPS
 
     return reward_loss
 
 
-
 unrolled = unroll_networks(state, pv, dynamics)
-adam = optimizers.Adam(lr=0.001)
+adam = optimizers.Adam(lr=0.01)
 unrolled.compile(optimizer=adam, loss={
-                "policy": custom_loss_policy, "value": custom_loss_value, "reward": custom_loss_reward})
+    "policy": custom_loss_policy, "value": custom_loss_value, "reward": custom_loss_reward})
 
 buffer_thr = BufferThread(replay_buffer, training_data_path)
 # waiting until several bootstrap games have been created.
 buffer_thr.preload(SAVE_REPLAY_BUFFER_FREQ)
 buffer_thr.start()
 
-trainGenerator = ZerolGenerator(replay_buffer)
+
 # CHECKPOINT
-#checkpoint_callback = ModelCheckpoint(
+# checkpoint_callback = ModelCheckpoint(
 #    model_path, verbose=1, save_weights_only=False, save_freq=CHECKPOINT_FREQ)
 # LOGS
-logdir = "logs/{}".format(game)
+logdir = "logs/{}/{}/".format(game, datetime.now().strftime("%Y%m%d-%H%M%S"))
 file_writer = tf.summary.create_file_writer(logdir)
 file_writer.set_as_default()
 
@@ -225,26 +247,41 @@ class StatsLogger(tf.keras.callbacks.Callback):
         global pv, dynamics, state
 
         self.n += EPOCH_SIZE
-        tf.summary.scalar('Generated games', data=replay_buffer.states_count, step=epoch)
-        tf.summary.scalar('Games length', data=sum([len(g.turn) for g in replay_buffer.games[:replay_buffer.index]])/replay_buffer.index, step=epoch)
+        tf.summary.scalar('Generated games',
+                          data=replay_buffer.states_count, step=epoch)
+        tf.summary.scalar('Games length', data=sum(
+            [len(g.turn) for g in replay_buffer.games[:replay_buffer.index]])/replay_buffer.index, step=epoch)
 
         if self.n > CHECKPOINT_FREQ:
             self.n = 0
             print("Saving models..")
             np.save(models_path+"epoch.npy", epoch)
-            models.save_model(pv, models_path+"pv", save_format="tf")
-            models.save_model(dynamics, models_path+"dyn", save_format="tf")
-            models.save_model(state, models_path+"state", save_format="tf")
+            models.save_model(pv, models_path+"pv", save_format="tf", include_optimizer=False)
+            models.save_model(dynamics, models_path+"dyn", save_format="tf", include_optimizer=False)
+            models.save_model(state, models_path+"state", save_format="tf", include_optimizer=False)
 
 
-tensorboard_callback = keras.callbacks.TensorBoard(log_dir=logdir)
+            #models.save_model(pv, models_path+str(epoch) +
+            #                  ".pv", save_format="tf")
+            #models.save_model(dynamics, models_path +
+            #                  str(epoch)+".dyn", save_format="tf")
+            #models.save_model(state, models_path+str(epoch) +
+            #                  ".state", save_format="tf")
+
+
+tensorboard_callback = keras.callbacks.TensorBoard(
+    log_dir=logdir, profile_batch=20)
 
 stats_callback = StatsLogger()
 
 tqdm_callback = tfa.callbacks.TQDMProgressBar()
 
-unrolled.fit(trainGenerator, epochs=N_EPOCH, verbose=0, callbacks=[
-            tqdm_callback, tensorboard_callback, stats_callback], initial_epoch=start_epoch)
+
+# tf.compat.v1.keras.backend.set_session(
+#    tf_debug.TensorBoardDebugWrapperSession(tf.compat.v1.Session(), "duck:6064"))
+
+unrolled.fit(trainDataset, epochs=N_EPOCH, steps_per_epoch=EPOCH_SIZE//BATCH_SIZE, verbose=0, callbacks=[tqdm_callback,
+                                                                                                         tensorboard_callback, stats_callback], initial_epoch=start_epoch)
 
 
 buffer_thr.stop()

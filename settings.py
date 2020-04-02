@@ -12,19 +12,19 @@ SUPPORT_SIZE   =  1
 SUPPORT_SHAPE  = 2*SUPPORT_SIZE+1
 
 # MUZERO SPECIFIC
-N_UNROLL_STEPS = 5
+N_UNROLL_STEPS = 2
 N_TD_STEPS     = 50
 DISCOUNT       = 0.997
 
 WEIGHT_DECAY = 1e-4
 
 REPLAY_BUFFER_SIZE        = 5000 # SAVE THE LAST 5k GAMES
-EPOCH_SIZE                = 50*REPLAY_BUFFER_SIZE
+EPOCH_SIZE                = 5*REPLAY_BUFFER_SIZE
 BATCH_SIZE                = 512
 N_EPOCH                   = 50000
 
 SAVE_REPLAY_BUFFER_FREQ   = 64            # backup replay buffer every _ games
-CHECKPOINT_FREQ           = 1*EPOCH_SIZE   # save model
+CHECKPOINT_FREQ           = 10*EPOCH_SIZE   # save model
 EVALUATION_FREQ           = 5*EPOCH_SIZE    # evaluate model
 
 class GameEntry:
