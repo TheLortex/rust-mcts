@@ -7,6 +7,14 @@ use nix::unistd::mkfifo;
 use std::collections::HashMap;
 use std::fs::{File, OpenOptions};
 use std::io::Write;
+use notify::{RecommendedWatcher, RecursiveMode, Watcher};
+use std::sync::atomic::AtomicBool;
+use std::sync::atomic::Ordering;
+use std::sync::mpsc::channel;
+use std::sync::{Arc, RwLock};
+use std::thread;
+use std::time::Duration;
+use tensorflow::{Graph, Session};
 
 /// File manager.
 pub struct FileManager {
@@ -46,27 +54,21 @@ impl FileManager {
     }
 }
 
-use notify::{RecommendedWatcher, RecursiveMode, Watcher};
-use std::sync::atomic::AtomicBool;
-use std::sync::atomic::Ordering;
-use std::sync::mpsc::channel;
-use std::sync::{Arc, RwLock};
-use std::thread;
-use std::time::Duration;
-use tensorflow::{Graph, Session};
 
 /// Watch a path for changes and reload the model when content has been modified.
-pub fn watch_model(tf: Arc<(AtomicBool, RwLock<(Graph, Session)>)>, path: String) {
+pub fn watch_model(tf: Arc<(AtomicBool, RwLock<(Graph, Session)>)>, path: &str) {
+    let p: String = path.into();
+
     thread::spawn(move || {
         // Create a channel to receive the events.
         let (tx, rx) = channel();
 
-        let p = path.clone();
-
         let mut watcher: RecommendedWatcher = Watcher::new(tx, Duration::from_millis(500)).unwrap();
 
-        log::info!("Watching path {}", path);
-        watcher.watch(path, RecursiveMode::NonRecursive).unwrap();
+        log::info!("Watching path {}", p);
+        watcher
+            .watch(p.clone(), RecursiveMode::NonRecursive)
+            .unwrap();
 
         loop {
             match rx.recv() {

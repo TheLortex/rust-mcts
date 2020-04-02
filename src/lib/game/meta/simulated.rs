@@ -1,107 +1,96 @@
+use crate::deep::evaluator::{dynamics, DynamicsEvaluatorChannel};
 use crate::game::*;
 
 use ndarray::{Array, Dimension};
-use std::sync::Arc;
+use tokio::sync::mpsc;
+use ndarray::Ix3;
+
 
 /// Output from the dynamics network.
 pub struct DynamicsNetworkOutput<H: Dimension> {
     /// Predicted reward.
     pub reward: f32,
     /// Predicted next state.
-    pub hidden_state: Array<f32, H>,
+    pub repr_state: Array<f32, H>,
 }
-
-/// Inference function for the representation network.
-pub trait RepresentationEvaluator<G: Feature, H: Dimension> =
-    Fn(Array<f32, <G as Feature>::StateDim>) -> Array<f32, H> + Send + Sync;
-
-/// Inference function for the dynamics network.
-pub trait DynamicsEvaluator<G: Feature, H: Dimension> = Fn(&Array<f32, H>, &Array<f32, <G as Feature>::ActionDim>) -> DynamicsNetworkOutput<H>
-    + Send
-    + Sync;
 
 /// Simulated game
-pub struct Simulated<G, H>
+pub struct Simulated<G>
 where
     G: Feature,
-    H: Dimension,
 {
     turn: G::Player,
-    hidden_state: Array<f32, H>,
+    repr_state: Array<f32, Ix3>,
     possible_moves: Vec<G::Move>,
     total_reward: f32,
-    dynamics_evaluator: Arc<dyn DynamicsEvaluator<G, H>>,
-    hidden_dimension: H,
+    dynamics_evaluator: mpsc::Sender<DynamicsEvaluatorChannel>,
+    repr_dimension: Ix3,
 }
 
-impl<G, H> Clone for Simulated<G, H>
+impl<G> Clone for Simulated<G>
 where
     G: Feature,
-    H: Dimension,
 {
     fn clone(&self) -> Self {
         Self {
             turn: self.turn,
             possible_moves: self.possible_moves.clone(),
-            hidden_dimension: self.hidden_dimension.clone(),
-            hidden_state: self.hidden_state.clone(),
+            repr_state: self.repr_state.clone(),
             dynamics_evaluator: self.dynamics_evaluator.clone(),
             total_reward: self.total_reward,
+            repr_dimension: self.repr_dimension,
         }
     }
 }
 
-impl<G, H> Simulated<G, H>
+impl<G> Simulated<G>
 where
     G: Feature,
-    H: Dimension,
 {
     /// Instanciate a new simulated game.
     ///
     /// # Params
     ///
     /// - `turn`: starting player.
-    /// - `hidden_state`: initial hidden state.
+    /// - `repr_state`: initial repr state.
     /// - `initial_possible_moves`: available moves for the initial state.
     /// - `dynamics_evaluator`: evaluator for the dynamics network.
     pub fn new(
         turn: G::Player,
-        hidden_state: Array<f32, H>,
+        repr_state: Array<f32, Ix3>,
         initial_possible_moves: Vec<G::Move>,
-        dynamics_evaluator: Arc<dyn DynamicsEvaluator<G, H>>,
+        dynamics_evaluator: mpsc::Sender<DynamicsEvaluatorChannel>,
     ) -> Self {
-        let hidden_dimension = hidden_state.raw_dim();
+        let repr_dimension = repr_state.raw_dim();
         Simulated {
             turn,
             possible_moves: initial_possible_moves,
-            hidden_state,
+            repr_state,
             total_reward: 0.,
-            hidden_dimension,
             dynamics_evaluator,
+            repr_dimension,
         }
     }
 }
 
 use std::fmt::*;
 
-impl<G, H> Debug for Simulated<G, H>
+impl<G> Debug for Simulated<G>
 where
     G: Feature,
-    H: Dimension,
 {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result {
         write!(
             f,
             "Simulated: {:?}\n{:?}",
-            self.total_reward, self.hidden_state
+            self.total_reward, self.repr_state
         )
     }
 }
 
-impl<G, H> Base for Simulated<G, H>
+impl<G> Base for Simulated<G>
 where
     G: Feature + 'static,
-    H: Dimension,
 {
     type Move = G::Move;
 
@@ -110,18 +99,24 @@ where
     }
 }
 
-impl<G, H> Playable for Simulated<G, H>
+#[async_trait]
+impl<G> Playable for Simulated<G>
 where
     G: Feature + 'static,
-    H: Dimension,
 {
-    fn play(&mut self, action: &Self::Move) -> f32 {
-        let mut move_as_prob: HashMap<Self::Move, f32> = HashMap::new();
+    async fn play(&mut self, action: &<Self as Base>::Move) -> f32 {
+        let mut move_as_prob: HashMap<<Self as Base>::Move, f32> = HashMap::new();
         move_as_prob.insert(*action, 1.);
         let move_encoded = G::moves_to_feature(&move_as_prob);
 
-        let network_output = (self.dynamics_evaluator)(&self.hidden_state, &move_encoded);
-        self.hidden_state = network_output.hidden_state;
+        let network_output = dynamics(
+            self.dynamics_evaluator.clone(),
+            &self.repr_state,
+            &move_encoded,
+            true,
+        )
+        .await;
+        self.repr_state = network_output.repr_state;
 
         self.possible_moves = G::all_possible_moves().to_vec();
 
@@ -132,10 +127,9 @@ where
     }
 }
 
-impl<G, H> Game for Simulated<G, H>
+impl<G> Game for Simulated<G>
 where
     G: Feature + 'static,
-    H: Dimension,
 {
     type Player = G::Player;
 
@@ -152,20 +146,19 @@ where
     }
 }
 
-impl<G, H> Feature for Simulated<G, H>
+impl<G> Feature for Simulated<G>
 where
     G: Feature + 'static,
-    H: Dimension,
 {
-    type StateDim = H;
+    type StateDim = Ix3;
     type ActionDim = G::ActionDim;
 
     fn state_dimension(&self) -> Self::StateDim {
-        self.hidden_dimension.clone()
+        self.repr_dimension
     }
 
     fn state_to_feature(&self, _pov: Self::Player) -> Array<f32, Self::StateDim> {
-        self.hidden_state.clone()
+        self.repr_state.clone()
     }
 
     fn action_dimension() -> Self::ActionDim {

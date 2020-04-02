@@ -1,5 +1,6 @@
 use crate::game::{Game, NoFeatures};
 
+use async_trait::async_trait;
 use std::fmt::Display;
 
 /**
@@ -28,11 +29,12 @@ pub mod ppa;
 /**
  * A static policy.
  */
+#[async_trait]
 pub trait MultiplayerPolicy<T: Game> {
     /**
      *  Chooses the next action given the current game state.
      */
-    fn play(&mut self, board: &T) -> T::Move;
+    async fn play(&mut self, board: &T) -> T::Move;
 }
 /**
  * A static policy builder.
@@ -55,7 +57,7 @@ pub trait DynMultiplayerPolicyBuilder<'a, T: Game>: Display {
     /**
      *  Initializes a new policy instance for player `color`, but *dynamically*.
      */
-    fn create(&self, color: T::Player) -> Box<dyn MultiplayerPolicy<T> + 'a>;
+    fn create(&self, color: T::Player) -> Box<dyn MultiplayerPolicy<T> + Send + Sync + 'a>;
 }
 
 /// Converts a static policy builder to a dynamic one.
@@ -63,9 +65,9 @@ impl<'a, G, PB> DynMultiplayerPolicyBuilder<'a, G> for PB
 where
     G: Game,
     PB: MultiplayerPolicyBuilder<G>,
-    PB::P: 'a,
+    PB::P: 'a + Send + Sync,
 {
-    fn create(&self, color: G::Player) -> Box<dyn MultiplayerPolicy<G> + 'a> {
+    fn create(&self, color: G::Player) -> Box<dyn MultiplayerPolicy<G> + Send + Sync + 'a> {
         Box::new(PB::create(self, color))
     }
 }
@@ -80,16 +82,19 @@ pub trait SingleplayerPolicyBuilder<T: Game> {
 }
 
 /// Single-player policy.
+#[async_trait]
 pub trait SingleplayerPolicy<T: Game> {
     /// Plans the sequence of moves to finish the game.
-    fn solve(&mut self, board: &T) -> Vec<T::Move>;
+    async fn solve(&mut self, board: &T) -> Vec<T::Move>;
 }
 
 /* MULTIPLAYER POLICIES */
 
 use super::game;
 /// Dynamically map policy names to policy builder instances.
-pub fn get_multi<'a, G>(name: &str) -> Box<dyn DynMultiplayerPolicyBuilder<'a, G> + Sync + Send + 'a>
+pub fn get_multi<'a, G>(
+    name: &str,
+) -> Box<dyn DynMultiplayerPolicyBuilder<'a, G> + Sync + Send + 'a>
 where
     G: mcts::MCTSGame + game::SingleWinner + 'a + std::hash::Hash + Eq,
     G::Move: Send,

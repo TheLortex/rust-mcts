@@ -1,11 +1,12 @@
+use crate::policies::MultiplayerPolicy;
+
+use async_trait::async_trait;
 use ndarray::{Array, Axis, Dimension};
 use rand::seq::SliceRandom;
 use std::collections::hash_map::DefaultHasher;
 use std::convert::TryFrom;
 use std::fmt::Debug;
 use std::hash::{Hash, Hasher};
-
-use crate::policies::MultiplayerPolicy;
 
 /**
  *  Breakthrough game implementation
@@ -19,6 +20,10 @@ pub mod breakthrough;
  */
 pub mod hashcode_20;
 /**
+ *  Games that takes other games as an input.
+ */
+pub mod meta;
+/**
  *  Misère breakthrough
  */
 pub mod misere_breakthrough;
@@ -26,18 +31,14 @@ pub mod misere_breakthrough;
  *  Weak schur number.
  */
 pub mod weak_schur;
-/**
- *  Games that takes other games as an input.
- */
-pub mod meta;
 
 /// Action that may be applied to a game state.
-pub trait MoveTrait = PartialEq + Eq + Copy + Clone + Hash + Debug;
+pub trait MoveTrait = PartialEq + Eq + Copy + Clone + Hash + Debug + Send + Sync;
 
 /**
  * Common interface for single and multiplayer games
  */
-pub trait Base: Sized + Debug {
+pub trait Base: Sized + Debug + Send + Sync {
     /**
      * The type for a Move.
      */
@@ -58,20 +59,21 @@ pub trait Base: Sized + Debug {
 /**
  * Mutable game by playing moves.
  */
+#[async_trait]
 pub trait Playable: Base {
     /**
      * Mutates game state playing the given action.
      * Yields a reward to the player.
      */
-    fn play(&mut self, action: &Self::Move) -> f32;
+    async fn play(&mut self, action: &Self::Move) -> f32;
 
     /**
      * Plays a random move. Yields a reward.
      */
-    fn random_move(&mut self) -> (Self::Move, f32) {
+    async fn random_move(&mut self) -> (Self::Move, f32) {
         let actions = self.possible_moves();
         let chosen_action = actions.choose(&mut rand::thread_rng()).unwrap();
-        let reward = self.play(chosen_action);
+        let reward = self.play(chosen_action).await;
         (*chosen_action, reward)
     }
 }
@@ -104,12 +106,13 @@ pub trait Game: Playable {
 /**
  *  Game playouts
  */
-pub trait Playout: Game + Clone {
+#[async_trait]
+pub trait Playout: Game + Clone + Send {
     /**
      *  Simulate a game execution using random moves until reaching a final state.
      *  It stores moves and state history, along with the total reward and the final state.
      */
-    fn playout_history(&self, pov: Self::Player) -> (Self, Vec<(Self, Self::Move)>, f32) {
+    async fn playout_history(&self, pov: Self::Player) -> (Self, Vec<(Self, Self::Move)>, f32) {
         let mut s = self.clone();
         let mut hist = Vec::new();
 
@@ -118,7 +121,7 @@ pub trait Playout: Game + Clone {
         while { !s.is_finished() } {
             let s_cloned = s.clone();
             let player = s.turn();
-            let (m, r) = s.random_move();
+            let (m, r) = s.random_move().await;
             if player == pov {
                 total_reward += r;
             }
@@ -132,12 +135,12 @@ pub trait Playout: Game + Clone {
      *  Simulates a game execution using random moves until reaching a final state.
      *  It returns the total reward with the final state.
      */
-    fn playout_board(&self, pov: Self::Player) -> (Self, f32) {
-        let (s, _, total_reward) = self.playout_history(pov);
+    async fn playout_board(&self, pov: Self::Player) -> (Self, f32) {
+        let (s, _, total_reward) = self.playout_history(pov).await;
         (s, total_reward)
     }
 }
-impl<G: Game + Clone> Playout for G {}
+impl<G: Game + Clone + Send> Playout for G {}
 
 /**
  *  Non-cooperative games.
@@ -271,7 +274,7 @@ pub trait Feature: Game {
 /**
  *  Move encoders
  */
-pub trait MoveCode<G: Base> {
+pub trait MoveCode<G: Base>: Send + Sync {
     /**
      *  Encode a move given the current state.
      */
@@ -297,35 +300,25 @@ impl<T: Base> MoveCode<T> for NoFeatures {
  *  Terminal user interface is managed by the `cursive` library.
  *
  */
-pub trait InteractiveGame: cursive::view::View {
+pub trait GameView: cursive::view::View {
     /**
      *  Interfaced game type
      */
     type G: Game;
 
     /**
-     *  Create a new instance of the UI.
+     *  Set UI game state.
      */
-    fn new(turn: <Self::G as Game>::Player) -> Self;
-
-    /**
-     *  Play a chosen move.
-     */
-    fn play(&mut self, action: &<Self::G as Base>::Move);
-
-    /**
-     *  Retrieve internal game state.
-     */
-    fn get(&self) -> &Self::G;
+    fn set_state(&mut self, state: Self::G);
 }
 
 /**
  *  Execute two policies on a two-player game
  *  and returns the whole history.
  */
-pub fn simulate<'a, 'b, G: Game + Clone>(
-    mut p1: Box<dyn MultiplayerPolicy<G> + 'a>,
-    mut p2: Box<dyn MultiplayerPolicy<G> + 'b>,
+pub async fn simulate<'a, 'b, G: Game + Clone>(
+    mut p1: Box<dyn MultiplayerPolicy<G> + Sync + Send + 'a>,
+    mut p2: Box<dyn MultiplayerPolicy<G> + Sync + Send + 'b>,
     game: &G,
 ) -> Vec<G> {
     let mut history = vec![game.clone()];
@@ -333,11 +326,11 @@ pub fn simulate<'a, 'b, G: Game + Clone>(
     while {
         let mut board = history.last().unwrap().clone();
         let action = if board.turn() == G::players()[0] {
-            p1.play(&board)
+            p1.play(&board).await
         } else {
-            p2.play(&board)
+            p2.play(&board).await
         };
-        board.play(&action);
+        board.play(&action).await;
         //println!("{:?} => {:?}", action, board);
         let game_has_ended = board.is_finished();
         history.push(board);

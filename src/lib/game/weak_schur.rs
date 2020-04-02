@@ -1,9 +1,10 @@
-use crate::game::{Singleplayer,SingleplayerGameBuilder,Base,Playable};
+use crate::game::{Base, Playable, Singleplayer, SingleplayerGameBuilder};
 
-use std::fmt;
-use std::hash::*;
-use std::hash::Hasher;
+use async_trait::async_trait;
 use std::cmp::Ordering;
+use std::fmt;
+use std::hash::Hasher;
+use std::hash::*;
 
 const K: usize = 9;
 const WS_RULE: bool = true;
@@ -90,24 +91,26 @@ impl Base for WeakSchurNumber {
     type Move = usize;
 
     fn possible_moves(&self) -> Vec<Self::Move> {
-
-        let valid_moves = self.partitions
+        let valid_moves = self
+            .partitions
             .iter()
             .enumerate()
-            .filter(move |(_, partition)| WeakSchurNumber::is_valid(self.last_value + 1, partition));
+            .filter(move |(_, partition)| {
+                WeakSchurNumber::is_valid(self.last_value + 1, partition)
+            });
 
         if WS_RULE {
-            if let Some((idx, _)) = valid_moves.clone()
+            if let Some((idx, _)) = valid_moves
+                .clone()
                 .find(|(_, partition)| partition.last() == Some(&self.last_value))
             {
                 return vec![idx];
             }
         }
 
-        valid_moves.map(|(i,_)| i).collect()
+        valid_moves.map(|(i, _)| i).collect()
     }
 }
-
 
 impl Hash for WeakSchurNumber {
     fn hash<H: Hasher>(&self, state: &mut H) {
@@ -121,8 +124,10 @@ impl PartialEq for WeakSchurNumber {
     }
 }
 
+#[async_trait]
 impl Playable for WeakSchurNumber {
-    fn play(&mut self, m: &Self::Move) -> f32 {
+    #[allow(clippy::trivially_copy_pass_by_ref)]
+    async fn play(&mut self, m: &<Self as Base>::Move) -> f32 {
         self.last_value += 1;
         self.partitions[*m].push(self.last_value);
         if self.is_finished() {

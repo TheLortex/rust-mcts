@@ -4,6 +4,7 @@ use crate::policies::{
 };
 use crate::settings;
 
+use async_trait::async_trait;
 use rand::seq::SliceRandom;
 use std::collections::HashMap;
 
@@ -12,17 +13,19 @@ use std::collections::HashMap;
 /// Takes a random move at each step.
 pub struct RandomPolicy {}
 
+#[async_trait]
 impl<G: Game> MultiplayerPolicy<G> for RandomPolicy {
-    fn play(self: &mut RandomPolicy, board: &G) -> G::Move {
+    async fn play(self: &mut RandomPolicy, board: &G) -> G::Move {
         let moves = board.possible_moves();
         moves.choose(&mut rand::thread_rng()).copied().unwrap()
     }
 }
 
+#[async_trait]
 impl<G: Singleplayer + Clone> SingleplayerPolicy<G> for RandomPolicy {
-    fn solve(self: &mut RandomPolicy, board: &G) -> Vec<G::Move> {
+    async fn solve(self: &mut RandomPolicy, board: &G) -> Vec<G::Move> {
         let b = board.clone();
-        let (_, h, _) = b.playout_history(0);
+        let (_, h, _) = b.playout_history(0).await;
         h.iter().map(|(_, b)| *b).collect()
     }
 }
@@ -60,8 +63,9 @@ pub struct FlatMonteCarloPolicy<G: Game> {
     N_PLAYOUTS: usize,
 }
 
+#[async_trait]
 impl<G: Game + SingleWinner + Clone> MultiplayerPolicy<G> for FlatMonteCarloPolicy<G> {
-    fn play(self: &mut FlatMonteCarloPolicy<G>, board: &G) -> G::Move {
+    async fn play(self: &mut FlatMonteCarloPolicy<G>, board: &G) -> G::Move {
         let moves = board.possible_moves();
 
         let n_playouts_per_move = self.N_PLAYOUTS / moves.len();
@@ -71,10 +75,10 @@ impl<G: Game + SingleWinner + Clone> MultiplayerPolicy<G> for FlatMonteCarloPoli
 
         for m in moves.into_iter() {
             let mut b_after_move = board.clone();
-            b_after_move.play(&m);
+            b_after_move.play(&m).await;
             let mut success = 0;
             for _ in 0..n_playouts_per_move {
-                if b_after_move.playout_board(self.color).0.winner() == Some(self.color) {
+                if b_after_move.playout_board(self.color).await.0.winner() == Some(self.color) {
                     success += 1;
                 }
             }
@@ -126,8 +130,9 @@ pub struct FlatUCBMonteCarloPolicy<G: Game> {
     UCB_WEIGHT: f32,
 }
 
+#[async_trait]
 impl<G: Game + SingleWinner + Clone> MultiplayerPolicy<G> for FlatUCBMonteCarloPolicy<G> {
-    fn play(self: &mut FlatUCBMonteCarloPolicy<G>, board: &G) -> G::Move {
+    async fn play(self: &mut FlatUCBMonteCarloPolicy<G>, board: &G) -> G::Move {
         let moves = board.possible_moves();
         let n_moves = moves.len();
 
@@ -137,8 +142,8 @@ impl<G: Game + SingleWinner + Clone> MultiplayerPolicy<G> for FlatUCBMonteCarloP
 
         for m in moves.iter() {
             let mut b_after_move = board.clone();
-            b_after_move.play(&m);
-            if b_after_move.playout_board(self.color).0.winner() == Some(self.color) {
+            b_after_move.play(&m).await;
+            if b_after_move.playout_board(self.color).await.0.winner() == Some(self.color) {
                 move_success.insert(m, 1);
             } else {
                 move_success.insert(m, 0);
@@ -169,6 +174,7 @@ impl<G: Game + SingleWinner + Clone> MultiplayerPolicy<G> for FlatUCBMonteCarloP
                     .get(&max_move)
                     .unwrap()
                     .playout_board(self.color)
+                    .await
                     .0
                     .winner()
                     == Some(self.color)

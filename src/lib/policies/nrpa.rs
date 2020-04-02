@@ -1,6 +1,7 @@
 use super::super::game::{MoveCode, Singleplayer};
 use super::{SingleplayerPolicy, SingleplayerPolicyBuilder};
 
+use futures::future::{BoxFuture, FutureExt};
 use rand::seq::SliceRandom;
 use std::collections::HashMap;
 use std::f32;
@@ -46,39 +47,43 @@ impl<G: Singleplayer + Clone, M: MoveCode<G>> NRPAPolicy<G, M> {
     19    RETURN (best_score,seq)
     */
     //http://ieee-cog.org/2019/papers/paper_77.pdf
-    fn nested(
-        self: &mut NRPAPolicy<G, M>,
-        board: &G,
+    fn nested<'a>(
+        self: &'a mut NRPAPolicy<G, M>,
+        board: &'a G,
         level: usize,
         mut playout_policy: HashMap<usize, f32>,
-    ) -> (f32, Vec<G::Move>) {
-        if level == 0 {
-            let mut board = board.clone();
-            let mut score = 0.;
+    ) -> BoxFuture<'a, (f32, Vec<G::Move>)> {
+        async move {
+            if level == 0 {
+                let mut board = board.clone();
+                let mut score = 0.;
 
-            let mut history = vec![];
-            while { !board.is_finished() } {
-                let chosen_move = Self::next_move(&playout_policy, &board);
+                let mut history = vec![];
+                while { !board.is_finished() } {
+                    let chosen_move = Self::next_move(&playout_policy, &board);
 
-                score += board.play(&chosen_move);
-                history.push(chosen_move);
-            }
-            //println!("{:?}", history);
-            (score, history)
-        } else {
-            let mut best_score = 0.;
-            let mut best_hist = vec![];
-
-            for _ in 0..self.s.N {
-                let (result, history) = self.nested(board, level - 1, playout_policy.clone());
-                if result >= best_score {
-                    best_score = result;
-                    best_hist = history;
+                    score += board.play(&chosen_move).await;
+                    history.push(chosen_move);
                 }
-                self.adapt(board, &best_hist, &mut playout_policy);
+                //println!("{:?}", history);
+                (score, history)
+            } else {
+                let mut best_score = 0.;
+                let mut best_hist = vec![];
+
+                for _ in 0..self.s.N {
+                    let (result, history) =
+                        self.nested(board, level - 1, playout_policy.clone()).await;
+                    if result >= best_score {
+                        best_score = result;
+                        best_hist = history;
+                    }
+                    self.adapt(board, &best_hist, &mut playout_policy).await;
+                }
+                (best_score, best_hist)
             }
-            (best_score, best_hist)
         }
+        .boxed()
     }
     /*
     21 Adapt(pol,seq):   // a gradient ascent step towards seq
@@ -91,7 +96,7 @@ impl<G: Singleplayer + Clone, M: MoveCode<G>> NRPAPolicy<G, M> {
     28   node = child(node,seq[ply])
     29  RETURN pol’
     */
-    fn adapt(
+    async fn adapt(
         self: &mut NRPAPolicy<G, M>,
         board: &G,
         history: &[G::Move],
@@ -119,14 +124,16 @@ impl<G: Singleplayer + Clone, M: MoveCode<G>> NRPAPolicy<G, M> {
                 *move_node -= self.s.alpha * v / z;
             }
 
-            board.play(action);
+            board.play(action).await;
         }
     }
 }
 
+use async_trait::async_trait;
+#[async_trait]
 impl<G: Singleplayer + Clone, M: MoveCode<G> + Send> SingleplayerPolicy<G> for NRPAPolicy<G, M> {
-    fn solve(self: &mut NRPAPolicy<G, M>, board: &G) -> Vec<G::Move> {
-        let (_, policy) = self.nested(board, self.s.level, HashMap::new());
+    async fn solve(self: &mut NRPAPolicy<G, M>, board: &G) -> Vec<G::Move> {
+        let (_, policy) = self.nested(board, self.s.level, HashMap::new()).await;
         policy
     }
 }

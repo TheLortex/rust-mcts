@@ -1,50 +1,42 @@
 #![allow(non_snake_case)]
 
-use ggpf::deep::evaluator::prediction_evaluator_single;
 use ggpf::game::breakthrough::*;
-use ggpf::game::meta::with_history::{IWithHistory, WithHistory};
-use ggpf::game::{Base, Game, InteractiveGame, MoveTrait, NoFeatures, SingleWinner};
+use ggpf::game::meta::with_history::{WithHistory, WithHistoryGB};
+use ggpf::game::*;
 use ggpf::policies::mcts::MCTSTreeNode;
-use ggpf::policies::{
-    mcts::puct::{PUCTPolicy_, PUCTSettings, PUCT},
-    ppa::*,
-    MultiplayerPolicy, MultiplayerPolicyBuilder,
-};
+use ggpf::policies::{mcts::puct::*, ppa::*, MultiplayerPolicy, MultiplayerPolicyBuilder};
 use ggpf::settings;
 
 use cursive::traits::*;
 use cursive::view::SizeConstraint;
 use cursive::views::{Button, Dialog, LinearLayout, NamedView, Panel, ResizedView};
 use cursive::Cursive;
+use cursive::views::ViewRef;
 use cursive_flexi_logger_view::FlexiLoggerView;
 use cursive_tree_view::{Placement, TreeView};
 use flexi_logger::{LogTarget, Logger};
-use std::sync::Arc;
-use std::cell::RefCell;
 use std::fmt;
-use std::marker::PhantomData;
-use std::rc::Rc;
-use tensorflow::{Graph, Session, SessionOptions};
+use std::sync::mpsc;
+use std::sync::Arc;
+use std::sync::RwLock;
 use typenum::U2;
 
 const MODEL_PATH: &str = "models/alpha-breakthrough";
 
 type G = WithHistory<Breakthrough, U2>;
-type IG = IWithHistory<ui::IBreakthrough, U2>;
+type GV = ui::IBreakthrough;
 
 #[derive(Clone)]
-struct TreeEntry
-{
+struct TreeEntry {
     name: String,
-    state: Rc<RefCell<MCTSTreeNode<G, PUCTPolicy_<G>>>>,
+    state: Arc<RwLock<MCTSTreeNode<G, PUCTPolicy_<G>>>>,
     probability: f32,
     value: f32,
     N_visits: f32,
     reward: f32,
 }
 
-impl fmt::Display for TreeEntry
-{
+impl fmt::Display for TreeEntry {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(
             f,
@@ -54,8 +46,7 @@ impl fmt::Display for TreeEntry
     }
 }
 
-impl fmt::Debug for TreeEntry
-{
+impl fmt::Debug for TreeEntry {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(
             f,
@@ -65,11 +56,11 @@ impl fmt::Debug for TreeEntry
     }
 }
 
-fn expand_tree(treeview: &mut TreeView<TreeEntry>, parent_row: usize)
-{
+
+fn expand_tree(treeview: &mut TreeView<TreeEntry>, parent_row: usize) {
     let content: TreeEntry = treeview.borrow_item(parent_row).unwrap().clone();
 
-    let tree_node = content.state.borrow();
+    let tree_node = content.state.read().unwrap();
 
     let mut moves: Vec<&Move> = tree_node.moves.iter().map(|(a, _)| a).collect();
     moves.sort_by_key(|a| (a.x, a.y));
@@ -94,22 +85,67 @@ fn expand_tree(treeview: &mut TreeView<TreeEntry>, parent_row: usize)
     }
 }
 
-struct GameDuelUI {}
+#[derive(Clone)]
+enum GuiToSimChannel {
+    Next,
+}
 
-impl GameDuelUI {
-    fn render<P2>(
-        start: <G as Game>::Player,
-        pb1: PUCT<G>,
-        pb2: P2,
-    ) -> impl cursive::view::View
+struct GuiEventSender {
+    f: crossbeam_channel::Sender<Box<dyn FnOnce(&mut Cursive) + Send>>,
+}
+impl GuiEventSender {
+    fn send<F>(&self, f: F)
     where
-        P2: MultiplayerPolicyBuilder<G>,
-        P2::P: 'static,
+        F: FnOnce(&mut GameDuelUI) + Send + 'static,
     {
-        let p1 = RefCell::new(pb1.create(G::players()[0]));
-        let p2 = RefCell::new(pb2.create(G::players()[1]));
+        self.f
+            .send(Box::new(move |cursive| f(&mut GameDuelUI::new(cursive))))
+            .expect("gui is gone?");
+    }
+}
 
-        let state = IG::new(start);
+struct GameDuelUI<'a> {
+    siv: &'a mut Cursive,
+}
+
+impl<'a> GameDuelUI<'a> {
+    fn new(siv: &'a mut Cursive) -> Self {
+        Self { siv }
+    }
+
+    fn new_state(&mut self, state: G) {
+        let mut view: ViewRef<GV> = self.siv.find_name("game").unwrap();
+        view.set_state(state.state);
+    }
+
+    fn new_policy_tree(
+        &mut self,
+        root_node: Arc<RwLock<MCTSTreeNode<G, PUCTPolicy_<G>>>>,
+        count: f32,
+    ) {
+        let mut treeview: ViewRef<TreeView<TreeEntry>> = self.siv.find_name("tree").unwrap();
+
+        treeview.clear();
+        treeview.insert_container_item(
+            TreeEntry {
+                name: "root".to_string(),
+                state: root_node,
+                reward: 0.,
+                probability: 1.,
+                value: 1.,
+                N_visits: count,
+            },
+            Placement::After,
+            0,
+        );
+    }
+
+    fn render(
+        &mut self,
+        initial_state: G,
+        game_simulator_sender: mpsc::Sender<GuiToSimChannel>,
+    ) -> GuiEventSender {
+        let state = GV::new(initial_state.state);
 
         let left = LinearLayout::vertical().child(ResizedView::new(
             SizeConstraint::AtMost(100),
@@ -119,48 +155,8 @@ impl GameDuelUI {
 
         let middle = LinearLayout::vertical()
             .child(NamedView::new("game", state))
-            .child(Button::new_raw("Next", move |s| {
-                let state: &mut IG = &mut s.find_name("game").unwrap();
-                if !state.get().is_finished() {
-                    let mut p1 = p1.borrow_mut();
-                    let mut p2 = p2.borrow_mut();
-                    let p1_to_play = state.get().turn() == <G as Game>::players()[0];
-
-                    let action = if p1_to_play {
-                        let action = p1.play(&state.get());
-                        /* UPDATE TREE VIEW*/
-                        let root_node = p1.root.take().unwrap();
-                        let count = root_node.borrow().info.node.count;
-
-                        let treeview: &mut TreeView<TreeEntry> =
-                            &mut s.find_name("tree").unwrap();
-                        treeview.clear();
-                        treeview.insert_container_item(
-                            TreeEntry {
-                                name: "root".to_string(),
-                                state: root_node,
-                                reward: 0.,
-                                probability: 1.,
-                                value: 1.,
-                                N_visits: count,
-                            },
-                            Placement::After,
-                            0,
-                        );
-                        /* UPDATE STATE*/
-                        action
-                    } else {
-                        p2.play(&state.get())
-                    };
-                    log::info!("{}", action);
-                    state.play(&action);
-                };
-
-                if state.get().is_finished() {
-                    log::info!("Game is finished! {:?} won.", state.get().winner());
-                } else {
-                    log::info!("Turn to {:?}.", state.get().turn());
-                }
+            .child(Button::new_raw("Next", move |_s| {
+                game_simulator_sender.send(GuiToSimChannel::Next).unwrap()
             }));
 
         let mut treeview = TreeView::<TreeEntry>::new();
@@ -177,16 +173,72 @@ impl GameDuelUI {
 
         log::info!("Welcome to breakthrough!");
 
-        LinearLayout::horizontal()
+        let bt = LinearLayout::horizontal()
             .child(left)
             .weight(1)
             .child(middle)
             .weight(2)
             .child(ResizedView::with_min_width(60, right))
-            .weight(1)
+            .weight(1);
+
+        self.siv
+            .add_layer(Dialog::new().title("Breakthrough").content(bt));
+        GuiEventSender {
+            f: self.siv.cb_sink().clone(),
+        }
     }
 }
 
+/*
+start: <G as Game>::Player,
+pb1: PUCT<G>,
+pb2: P2,
+*/
+async fn event_loop<PB2>(
+    initial_state: G,
+    pb1: PUCT,
+    pb2: PB2,
+    rx: mpsc::Receiver<GuiToSimChannel>,
+    tx: GuiEventSender,
+) where
+    PB2: MultiplayerPolicyBuilder<G>,
+{
+    let mut state = initial_state;
+
+    let mut p1 = pb1.create(G::players()[0]);
+    let mut p2 = pb2.create(G::players()[1]);
+
+    while rx.recv().ok().is_some() {
+        if !state.is_finished() {
+            let p1_to_play = state.turn() == <G as Game>::players()[0];
+
+            let action = if p1_to_play {
+                let action = p1.play(&state).await;
+                /* UPDATE TREE VIEW*/
+                let root_node = p1.root.take().unwrap();
+                let count = root_node.read().unwrap().info.node.count;
+
+                tx.send(move |ui: &mut GameDuelUI| ui.new_policy_tree(root_node, count));
+
+                /* UPDATE STATE*/
+                action
+            } else {
+                p2.play(&state).await
+            };
+            log::info!("{}", action);
+            state.play(&action).await;
+
+            let state = state.clone();
+            tx.send(move |ui| ui.new_state(state));
+        };
+
+        if state.is_finished() {
+            log::info!("Game is finished! {:?} won.", state.winner());
+        } else {
+            log::info!("Turn to {:?}.", state.turn());
+        }
+    }
+}
 fn main() {
     let mut siv = Cursive::default();
     siv.set_fps(0);
@@ -200,29 +252,49 @@ fn main() {
         .start()
         .expect("failed to initialize logger!");
 
-    let mut graph = Graph::new();
-    let session =
-        Session::from_saved_model(&SessionOptions::new(), &["serve"], &mut graph, MODEL_PATH)
+    let initial_state: G = (WithHistoryGB::new(&BreakthroughBuilder {})).create(Color::Black);
+
+    let (tx, rx) = mpsc::channel();
+
+    let gui_events = GameDuelUI::new(&mut siv).render(initial_state.clone(), tx);
+
+    std::thread::spawn(move || {
+        let mut threaded_rt = tokio::runtime::Builder::new()
+            .threaded_scheduler()
+            .enable_all()
+            .core_threads(2)
+            .build()
             .unwrap();
-/*
-    let session = Arc::new(Box::new(session));
-    let graph = Arc::new(Box::new(graph));
-*/
-    let puct = PUCT {
-        _g: PhantomData,
-        config: PUCTSettings::default(),
-        N_PLAYOUTS: settings::DEFAULT_N_PLAYOUTS,
-        evaluate: Arc::new(move |pov, board: &G| {
-            prediction_evaluator_single(&session, &graph, pov, board, false)
-        }),
-    };
 
-    let pb2 = PPA::<_, NoFeatures>::default();
+        threaded_rt
+            .block_on(async {
+                let alpha_config = AlphaZeroConfig {
+                    action_shape: G::action_dimension(),
+                    board_shape: initial_state.state_dimension(),
+                    batch_size: 1,
+                    network_path: MODEL_PATH.into(),
+                    puct: PUCTSettings {
+                        DECODE_VALUE: false,
+                        ..PUCTSettings::default()
+                    },
+                    watch_models: false,
+                };
 
-    siv.add_layer(
-        Dialog::new()
-            .title("Breakthrough")
-            .content(GameDuelUI::render(G::players()[1], puct, pb2)),
-    );
+                let alpha_evals = AlphaZeroEvaluators::new(alpha_config.clone(), true);
+
+                let puct = PUCT {
+                    config: alpha_config.puct,
+                    N_PLAYOUTS: settings::DEFAULT_N_PLAYOUTS,
+                    prediction_channel: alpha_evals.get_channel(),
+                };
+
+                let pb2 = PPA::<_, NoFeatures>::default();
+
+                let b = tokio::spawn(event_loop(initial_state, puct, pb2, rx, gui_events));
+                b.await
+            })
+            .unwrap();
+    });
+
     siv.run();
 }

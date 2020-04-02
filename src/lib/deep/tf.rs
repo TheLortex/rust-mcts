@@ -1,5 +1,13 @@
+use crate::settings::{SUPPORT_SHAPE, SUPPORT_SIZE};
+
+use std::sync::{atomic::AtomicBool, Arc, RwLock};
 use tensorflow::{Graph, Session, SessionOptions, SessionRunArgs, Tensor};
-use crate::settings::{SUPPORT_SIZE, SUPPORT_SHAPE};
+
+/// Access to a TF model behind Arc and RwLock
+/// the AtomicBool is here to indicate the file loader's intention
+/// to access the lock.
+pub type ThreadSafeModel = Arc<(AtomicBool, RwLock<(Graph, Session)>)>;
+
 fn sign(x: f32) -> f32 {
     if x > 0. {
         1.
@@ -100,8 +108,16 @@ pub fn call_representation(session: &Session, graph: &Graph, board: &Tensor<f32>
     repr_board_tensor
 }
 
+use std::path::Path;
+
 /// Load a tensorflow model into a session.
 pub fn load_model(path: &str) -> (Graph, Session) {
+    /* check that model exists. */
+    if !Path::new(path).exists() {
+        log::error!("Couldn't find model at {}", path);
+        panic!("");
+    };
+
     let mut graph = Graph::new();
     let mut options = SessionOptions::new();
     /* To get configuration, use python:

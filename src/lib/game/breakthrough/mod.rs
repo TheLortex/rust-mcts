@@ -1,8 +1,12 @@
-use crate::game::{Base, Feature, Game, GameBuilder, InteractiveGame, Playable, SingleWinner};
+use crate::game::{Base, Feature, Game, GameBuilder, Playable, SingleWinner};
 use crate::settings::BREAKTHROUGH_K as K;
 
+use ndarray::Array;
+use std::collections::HashMap;
+use std::iter::FromIterator;
 use ansi_term::Colour::Fixed;
 use ansi_term::Style;
+use async_trait::async_trait;
 use rand::Rng;
 use std::fmt;
 use std::hash::*;
@@ -409,8 +413,9 @@ impl Base for Breakthrough {
     }
 }
 
+#[async_trait]
 impl Playable for Breakthrough {
-    fn play(&mut self, m: &Move) -> f32 {
+    async fn play(&mut self, m: &Move) -> f32 {
         if m.color != self.turn() {
             panic!("Wait. Not your turn. {:?}\n => {:?}", self, m);
         }
@@ -460,9 +465,6 @@ impl Breakthrough {
     }
 }
 
-use ndarray::Array;
-use std::collections::HashMap;
-use std::iter::FromIterator;
 
 impl Feature for Breakthrough {
     type StateDim = ndarray::Ix3;
@@ -477,7 +479,7 @@ impl Feature for Breakthrough {
     }
 
     fn state_to_feature(&self, pov: Self::Player) -> Array<f32, Self::StateDim> {
-        let mut features = ndarray::Array::zeros(self.state_dimension());
+        let mut features = ndarray::Array::zeros(Self::state_dimension(&self));
 
         for ((x, y, z), row) in features.indexed_iter_mut() {
             if (z == 0 && self.content[x][y] == Cell::C(pov))

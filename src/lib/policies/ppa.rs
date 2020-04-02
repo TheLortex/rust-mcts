@@ -2,6 +2,7 @@ use crate::game::{Game, MoveCode, SingleWinner};
 use crate::policies::{MultiplayerPolicy, MultiplayerPolicyBuilder};
 use crate::settings;
 
+use async_trait::async_trait;
 use rand::seq::SliceRandom;
 use std::collections::HashMap;
 use std::f32;
@@ -55,25 +56,26 @@ where
         *chosen_move
     }
 
-    fn simulate(self: &mut PPAPolicy<G, M>, root_board: &G) {
+    async fn simulate(self: &mut PPAPolicy<G, M>, root_board: &G) {
         let mut board = root_board.clone(); // COPY BOARD
-        let history_uct = self.sim_tree(&mut board);
+        let history_uct = self.sim_tree(&mut board).await;
 
         let mut history_playout = vec![];
 
         while { !board.is_finished() } {
             let chosen_move = self.next_move(&board);
-            board.play(&chosen_move);
+            board.play(&chosen_move).await;
             history_playout.push(chosen_move);
         }
 
         let z = board.winner() == Some(self.color);
 
         self.update(&history_uct, z);
-        self.adapt(root_board, &history_uct, &history_playout, z);
+        self.adapt(root_board, &history_uct, &history_playout, z)
+            .await;
     }
 
-    fn adapt(
+    async fn adapt(
         self: &mut PPAPolicy<G, M>,
         board: &G,
         history_uct: &[(G, G::Move)],
@@ -85,14 +87,14 @@ where
             if (board.turn() == self.color) ^ (!has_won) {
                 self.policy_update(&board, &action);
             }
-            board.play(&action);
+            board.play(&action).await;
         }
 
         for action in history_playout {
             if (board.turn() == self.color) ^ (!has_won) {
                 self.policy_update(&board, &action);
             }
-            board.play(&action);
+            board.play(&action).await;
         }
     }
 
@@ -132,7 +134,7 @@ where
         }
     }
 
-    fn sim_tree(self: &mut PPAPolicy<G, M>, b: &mut G) -> Vec<(G, G::Move)> {
+    async fn sim_tree(self: &mut PPAPolicy<G, M>, b: &mut G) -> Vec<(G, G::Move)> {
         let mut history: Vec<(G, G::Move)> = Vec::new();
 
         while !b.is_finished() {
@@ -145,7 +147,7 @@ where
                 Some(_node) => {
                     if let Some(a) = self.select_move(&b) {
                         history.push((b.clone(), a));
-                        b.play(&a)
+                        b.play(&a).await
                     } else {
                         // surely there was an available move
                         panic!("? {} {:?}", b.possible_moves().len(), b);
@@ -212,14 +214,15 @@ where
     }
 }
 
+#[async_trait]
 impl<G, M> MultiplayerPolicy<G> for PPAPolicy<G, M>
 where
     G: Game + SingleWinner + Clone + Eq + Hash,
     M: MoveCode<G>,
 {
-    fn play(self: &mut PPAPolicy<G, M>, board: &G) -> G::Move {
+    async fn play(self: &mut PPAPolicy<G, M>, board: &G) -> G::Move {
         for _ in 0..self.s.N_PLAYOUTS {
-            self.simulate(board)
+            self.simulate(board).await
         }
 
         let info: &PPANodeInfo<G> = self.tree.get(&board).unwrap();

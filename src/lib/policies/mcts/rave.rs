@@ -5,11 +5,11 @@ use crate::policies::{
 };
 use crate::settings;
 
-use std::cell::RefCell;
+use async_trait::async_trait;
 use std::f32;
 use std::fmt;
 use std::iter::*;
-use std::rc::Rc;
+use std::sync::{Arc, RwLock};
 
 /* RAVE */
 /// RAVE move statistics.
@@ -31,6 +31,7 @@ pub struct RAVEPolicy_<G: Game> {
     UCT_WEIGHT: f32,
 }
 
+#[async_trait]
 impl<G: super::MCTSGame + SingleWinner> BaseMCTSPolicy<G> for RAVEPolicy_<G> {
     type NodeInfo = RAVENodeInfo;
     type MoveInfo = RAVEMoveInfo;
@@ -65,7 +66,7 @@ impl<G: super::MCTSGame + SingleWinner> BaseMCTSPolicy<G> for RAVEPolicy_<G> {
 
     fn backpropagate(
         &mut self,
-        leaf: Rc<RefCell<MCTSTreeNode<G, Self>>>,
+        leaf: Arc<RwLock<MCTSTreeNode<G, Self>>>,
         history: &[G::Move],
         (has_won, history_default): Self::PlayoutInfo,
     ) {
@@ -75,10 +76,11 @@ impl<G: super::MCTSGame + SingleWinner> BaseMCTSPolicy<G> for RAVEPolicy_<G> {
         let whole_history = [history, &history_default].concat();
 
         let mut current_node = leaf;
-        while current_node.borrow().parent.is_some() {
+        while current_node.read().unwrap().parent.is_some() {
             // extract child
             let (tree_pointer, action) = current_node
-                .borrow()
+                .read()
+                .unwrap()
                 .parent
                 .as_ref()
                 .map(|(t, a)| (t.upgrade().unwrap(), *a))
@@ -87,7 +89,7 @@ impl<G: super::MCTSGame + SingleWinner> BaseMCTSPolicy<G> for RAVEPolicy_<G> {
             current_node = tree_pointer;
 
             /* Store standard statistics */
-            let mut node = current_node.borrow_mut();
+            let mut node = current_node.write().unwrap();
             node.info.node.count += 1.;
 
             let move_info = node.info.moves.get_mut(&action).unwrap();
@@ -138,8 +140,8 @@ impl<G: super::MCTSGame + SingleWinner> BaseMCTSPolicy<G> for RAVEPolicy_<G> {
         }
     }*/
 
-    fn simulate(&self, board: &G) -> <Self as BaseMCTSPolicy<G>>::PlayoutInfo {
-        let (s, default, _) = board.playout_history(self.color);
+    async fn simulate(&self, board: &G) -> <Self as BaseMCTSPolicy<G>>::PlayoutInfo {
+        let (s, default, _) = board.playout_history(self.color).await;
         let default: Vec<G::Move> = default.iter().map(|(_, m)| *m).collect();
         (s.winner() == Some(self.color), default)
     }

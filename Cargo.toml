@@ -32,6 +32,11 @@ ndarray = "0.13.0"
 float-ord = "0.2.0"
 typenum = "1.11.2"
 arrayvec = "0.5.1"
+async-trait = "0.1.27"
+futures = "0.3.4"
+tokio = { version = "0.2", features = ["full"] }
+crossbeam-channel = "0.4"
+sloth = "0.2.0"
 
 # for gym
 #cpython = "0.4.1"

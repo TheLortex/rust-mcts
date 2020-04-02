@@ -1,4 +1,12 @@
 use super::*;
+use crate::game::GameView;
+
+use cursive::direction::Direction;
+use cursive::event::{Event, EventResult, Key};
+use cursive::theme;
+use cursive::theme::ColorStyle;
+use cursive::Printer;
+use cursive::Vec2;
 
 #[derive(Hash, Eq, PartialEq, Copy, Clone, Debug)]
 enum PendingMove {
@@ -10,17 +18,19 @@ enum PendingMove {
 pub struct IBreakthrough {
     game: Breakthrough,
     choosing_move: Option<PendingMove>,
-    choosing_move_cb: Option<Box<dyn FnOnce(Move, &mut IBreakthrough)>>,
+    choosing_move_cb: Option<Box<dyn FnOnce(Move, &mut IBreakthrough) + Send + Sync>>,
 }
 
-use cursive::direction::Direction;
-use cursive::event::{Event, EventResult, Key};
-use cursive::theme;
-use cursive::theme::ColorStyle;
-use cursive::Printer;
-use cursive::Vec2;
-
 impl IBreakthrough {
+    /// Instanciates a view with given state.
+    pub fn new(initial_state: Breakthrough) -> Self {
+        IBreakthrough {
+            game: initial_state,
+            choosing_move: None,
+            choosing_move_cb: None,
+        }
+    }
+
     fn handle_move(&mut self, dx: isize, dy: isize) -> EventResult {
         if let Some(m) = &self.choosing_move {
             match m {
@@ -238,25 +248,13 @@ impl cursive::view::View for IBreakthrough {
     }
 }
 
-impl InteractiveGame for IBreakthrough {
+impl GameView for IBreakthrough {
     type G = Breakthrough;
 
-    fn new(turn: <Breakthrough as Game>::Player) -> Self {
-        IBreakthrough {
-            game: (BreakthroughBuilder {}).create(turn),
-            choosing_move: None,
-            choosing_move_cb: None,
-        }
+    fn set_state(&mut self, state: Self::G) {
+        self.game = state;
     }
 
-    fn get(&self) -> &Self::G {
-        &self.game
-    }
-
-    fn play(&mut self, action: &<Self::G as Base>::Move) {
-        let reward = self.game.play(action);
-        log::info!("Reward: {}", reward);
-    }
     /*
     fn choose_move(&mut self, cb: Box<dyn FnOnce(<Self::G as Base>::Move, &mut Self)>) {
         let possible_moves = self.game.possible_moves();

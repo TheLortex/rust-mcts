@@ -1,6 +1,9 @@
 use crate::game::*;
+use async_trait::async_trait;
 use std::marker::PhantomData;
 use std::sync::Arc;
+use typenum::Unsigned;
+
 
 /// A game with its history.
 pub struct WithHistory<G: Base, H> {
@@ -35,8 +38,9 @@ impl<G: Base + Clone, H> Base for WithHistory<G, H> {
     }
 }
 
-impl<G: Playable + Clone, H> Playable for WithHistory<G, H> {
-    fn play(&mut self, action: &<Self as Base>::Move) -> f32 {
+#[async_trait]
+impl<G: Playable + Clone + Sync + Send, H> Playable for WithHistory<G, H> {
+    async fn play(&mut self, action: &<Self as Base>::Move) -> f32 {
         let prec = self.prec.take();
         let new_node = WithHistory {
             prec,
@@ -44,11 +48,11 @@ impl<G: Playable + Clone, H> Playable for WithHistory<G, H> {
             _h: PhantomData,
         };
         self.prec = Some(Arc::new(new_node));
-        self.state.play(action)
+        self.state.play(action).await
     }
 }
 
-impl<G: Game + Clone, H> Game for WithHistory<G, H> {
+impl<G: Game + Clone + Sync + Send, H> Game for WithHistory<G, H> {
     type Player = G::Player;
 
     fn players() -> Vec<Self::Player> {
@@ -64,7 +68,7 @@ impl<G: Game + Clone, H> Game for WithHistory<G, H> {
     }
 }
 
-impl<G: SingleWinner + Clone, H> SingleWinner for WithHistory<G, H> {
+impl<G: SingleWinner + Clone + Sync + Send, H> SingleWinner for WithHistory<G, H> {
     fn winner(&self) -> Option<G::Player> {
         self.state.winner()
     }
@@ -82,79 +86,6 @@ impl<G: Base + Hash, H_> Hash for WithHistory<G, H_> {
         self.state.hash(state)
     }
 }
-/* GUI */
-
-/// Interactive UI wrapping a game with history.
-pub struct IWithHistory<IG: InteractiveGame, H> {
-    ig: IG,
-    state: WithHistory<IG::G, H>,
-}
-
-use cursive::direction::Direction;
-use cursive::event::{Event, EventResult};
-use cursive::Printer;
-use cursive::Vec2;
-
-impl<IG: InteractiveGame + cursive::view::View, H: 'static> cursive::view::View
-    for IWithHistory<IG, H>
-where
-    IG::G: Clone,
-{
-    fn draw(&self, printer: &Printer<'_, '_>) {
-        self.ig.draw(printer)
-    }
-
-    fn take_focus(&mut self, _source: Direction) -> bool {
-        true
-    }
-
-    fn on_event(&mut self, evt: Event) -> EventResult {
-        self.ig.on_event(evt)
-    }
-
-    fn required_size(&mut self, constraint: Vec2) -> Vec2 {
-        self.ig.required_size(constraint)
-    }
-}
-
-impl<IG: InteractiveGame, H: 'static> InteractiveGame for IWithHistory<IG, H>
-where
-    IG::G: Game + Clone,
-{
-    type G = WithHistory<IG::G, H>;
-
-    fn new(turn: <Self::G as Game>::Player) -> Self {
-        let ig = IG::new(turn);
-        let state = WithHistory {
-            prec: None,
-            state: ig.get().clone(),
-            _h: PhantomData,
-        };
-        Self { ig, state }
-    }
-
-    fn get(&self) -> &Self::G {
-        &self.state
-    }
-
-    fn play(&mut self, action: &<Self::G as Base>::Move) {
-        self.ig.play(action);
-
-        let prec = self.state.prec.take();
-        let new_node = WithHistory {
-            prec,
-            state: self.state.state.clone(),
-            _h: PhantomData,
-        };
-        self.state.prec = Some(Arc::new(new_node));
-        self.state.state = self.ig.get().clone();
-    }
-    /*
-    fn choose_move<'a>(&'a mut self, cb: Box<dyn 'a + FnOnce(<Self::G as Base>::Move, &mut Self)>) {
-        self.ig.choose_move(Box::new(move |action, ig| cb(action, &mut self)))
-    }*/
-}
-
 /* GAME BUILDER */
 /// Builder for a game with history.
 #[derive(Copy, Clone)]
@@ -167,7 +98,7 @@ impl<'a, GB, H> WithHistoryGB<'a, GB, H> {
     }
 }
 
-impl<'a, G: Game + Clone, GB: GameBuilder<G>, H> GameBuilder<WithHistory<G, H>>
+impl<'a, G: Game + Clone + Sync + Send, GB: GameBuilder<G>, H> GameBuilder<WithHistory<G, H>>
     for WithHistoryGB<'a, GB, H>
 {
     fn create(&self, starting: G::Player) -> WithHistory<G, H> {
@@ -179,9 +110,7 @@ impl<'a, G: Game + Clone, GB: GameBuilder<G>, H> GameBuilder<WithHistory<G, H>>
     }
 }
 
-use typenum::Unsigned;
-
-impl<G: Feature + Clone, H: Unsigned> Feature for WithHistory<G, H> {
+impl<G: Feature + Clone + Sync + Send, H: Unsigned> Feature for WithHistory<G, H> {
     // one dimension larger to store history
     type StateDim = <G::StateDim as Dimension>::Larger;
     type ActionDim = G::ActionDim;

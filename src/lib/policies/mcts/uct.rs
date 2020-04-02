@@ -5,10 +5,10 @@ use crate::policies::{
 };
 use crate::settings;
 
-use std::cell::RefCell;
+use async_trait::async_trait;
 use std::f32;
 use std::fmt;
-use std::rc::Rc;
+use std::sync::{Arc, RwLock};
 
 /* UCT */
 
@@ -34,6 +34,7 @@ pub struct UCTPolicy_<G: Game> {
     UCT_WEIGHT: f32,
 }
 
+#[async_trait]
 impl<G> BaseMCTSPolicy<G> for UCTPolicy_<G>
 where
     G::Move: Send,
@@ -74,17 +75,18 @@ where
 
     fn backpropagate(
         &mut self,
-        leaf: Rc<RefCell<MCTSTreeNode<G, Self>>>,
+        leaf: Arc<RwLock<MCTSTreeNode<G, Self>>>,
         _history: &[G::Move],
         playout: Self::PlayoutInfo,
     ) {
         let z = if playout { 1. } else { 0. };
 
         let mut current_node = leaf;
-        while current_node.borrow().parent.is_some() {
+        while current_node.read().unwrap().parent.is_some() {
             // extract child
             let (tree_pointer, action) = current_node
-                .borrow()
+                .read()
+                .unwrap()
                 .parent
                 .as_ref()
                 .map(|(t, a)| (t.upgrade().unwrap(), *a))
@@ -93,7 +95,7 @@ where
             current_node = tree_pointer;
 
             /* Store standard statistics */
-            let mut node = current_node.borrow_mut();
+            let mut node = current_node.write().unwrap();
             node.info.node.count += 1.;
 
             let move_info = node.info.moves.get_mut(&action).unwrap();
@@ -125,8 +127,8 @@ where
     ) {
     }*/
 
-    fn simulate(&self, board: &G) -> <Self as BaseMCTSPolicy<G>>::PlayoutInfo {
-        board.playout_board(self.color).0.winner() == Some(self.color)
+    async fn simulate(&self, board: &G) -> <Self as BaseMCTSPolicy<G>>::PlayoutInfo {
+        board.playout_board(self.color).await.0.winner() == Some(self.color)
     }
 }
 

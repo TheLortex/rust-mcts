@@ -1,6 +1,7 @@
-use crate::game::{Base,Game,GameBuilder,Playable};
 use crate::game::breakthrough::{Breakthrough, BreakthroughBuilder, Color, Move};
+use crate::game::{Base, Game, GameBuilder, Playable};
 
+use async_trait::async_trait;
 use std::fmt;
 
 /// Misère breakthrough
@@ -18,7 +19,7 @@ impl fmt::Debug for MisereBreakthrough {
 impl GameBuilder<MisereBreakthrough> for BreakthroughBuilder {
     fn create(&self, turn: Color) -> MisereBreakthrough {
         MisereBreakthrough {
-            game: self.create(turn)
+            game: self.create(turn),
         }
     }
 }
@@ -29,12 +30,12 @@ impl Base for MisereBreakthrough {
     fn possible_moves(&self) -> Vec<Move> {
         self.game.possible_moves()
     }
-
 }
 
+#[async_trait]
 impl Playable for MisereBreakthrough {
-    fn play(&mut self, m: &Move) -> f32{
-        -self.game.play(m)
+    async fn play(&mut self, m: &Move) -> f32 {
+        -self.game.play(m).await
     }
 }
 
