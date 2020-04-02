@@ -31,13 +31,14 @@ def residual_block(input, name, size=32, activation='relu', convert=False):
 
 def policy_value_network_alpha():
     input   = keras.Input(shape=BOARD_SHAPE, name='board')
-    x       = layers.Reshape((BT_K, BT_K, HISTORY_LENGTH*3))(input)
+    x       = layers.Permute((2,3,1,4))(input)
+    x       = layers.Reshape((BT_K, BT_K, HISTORY_LENGTH*3))(x)
 
     x       = residual_block(x, "pv_a", convert=True)
     x       = residual_block(x, "pv_b")
     x       = residual_block(x, "pv_c")
     
-    policy  = residual_block(x, "pv_d")
+    policy  = residual_block(x, "pv_d", size=ACTION_PLANES, convert=True)
     policy  = layers.Flatten()(policy)
     policy  = layers.Activation(activation='softmax')(policy)
     policy  = layers.Reshape(ACTION_SHAPE, name='policy')(policy)
@@ -69,7 +70,9 @@ def prediction_network_mu():
 
 def representation_network():
     input   = keras.Input(shape=BOARD_SHAPE, name='board')
-    x       = layers.Reshape((BT_K, BT_K, HISTORY_LENGTH*3), name='RepresentationNetworkBoard')(input)
+    x       = layers.Permute((2,3,1,4))(input)
+    print("==>", x.shape)
+    x       = layers.Reshape((BT_K, BT_K, HISTORY_LENGTH*3), name='RepresentationNetworkBoard')(x)
 
     x       = residual_block(x, "repr_a", convert=True)
     x       = residual_block(x, "repr_b")

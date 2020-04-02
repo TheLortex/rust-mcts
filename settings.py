@@ -24,7 +24,7 @@ BATCH_SIZE                = 512
 N_EPOCH                   = 50000
 
 SAVE_REPLAY_BUFFER_FREQ   = 64            # backup replay buffer every _ games
-CHECKPOINT_FREQ           = 10*EPOCH_SIZE   # save model
+CHECKPOINT_FREQ           = 50*EPOCH_SIZE   # save model
 EVALUATION_FREQ           = 5*EPOCH_SIZE    # evaluate model
 
 class GameEntry:

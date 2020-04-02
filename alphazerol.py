@@ -23,6 +23,13 @@ tf.config.experimental.set_memory_growth(physical_devices[0], True)
 ## GAME SETTINGS, make sure this is coherent with the generator and evaluator
 game = "alpha-breakthrough"
 
+## Argument parsing
+
+import argparse
+parser = argparse.ArgumentParser()
+parser.add_argument("--new", help="create new network", action="store_true")
+args = parser.parse_args()
+
 # BREAKTHROUGH SETTINGS
 
 training_data_path = "./training_data/{}/".format(game)
@@ -79,7 +86,7 @@ class AlphaZeroGenerator(Sequence):
 
 
 model_path = "models/{}/".format(game)
-if os.path.exists(model_path):
+if os.path.exists(model_path) and not(args.new):
     print("| Loaded previous instance of the model.")
     network = models.load_model(model_path)
     print(network.summary())
