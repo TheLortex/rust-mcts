@@ -38,3 +38,4 @@ sloth = "0.2.0"
 tarpc = { version = "0.20.0", features = ["serde1", "tcp", "serde-transport", "tokio1"] }
 tokio-serde = { version = "0.6", features = ["json"] }
 failure = "0.1.6"
+bincode = "1.2.1"

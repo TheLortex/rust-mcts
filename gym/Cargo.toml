@@ -17,3 +17,5 @@ tokio-serde = { version = "0.6", features = ["json"] }
 failure = "0.1.6"
 pyo3 = "0.9.1"
 rand = "0.7.3"
+bincode = "1.2.1"
+bytes = "0.5.4"

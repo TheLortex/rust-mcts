@@ -141,6 +141,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "bincode"
+version = "1.2.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5753e2a71534719bf3f4e57006c3a4f0d2c672a4b676eec84161f763eca87dbf"
+dependencies = [
+ "byteorder",
+ "serde",
+]
+
+[[package]]
 name = "bitflags"
 version = "1.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -757,6 +767,7 @@ dependencies = [
  "assert-impl",
  "async-trait",
  "atomic-counter",
+ "bincode",
  "clap",
  "crossbeam-channel",
  "cursive",
@@ -766,6 +777,7 @@ dependencies = [
  "flexi_logger",
  "float-ord",
  "futures",
+ "ggpf-gym",
  "gstuff",
  "indicatif",
  "log",
@@ -790,6 +802,8 @@ dependencies = [
 name = "ggpf-gym"
 version = "0.0.1"
 dependencies = [
+ "bincode",
+ "bytes",
  "failure",
  "log",
  "ndarray",
@@ -810,6 +824,7 @@ dependencies = [
  "assert-impl",
  "async-trait",
  "atomic-counter",
+ "bincode",
  "clap",
  "crossbeam-channel",
  "cursive",

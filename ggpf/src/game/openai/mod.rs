@@ -4,15 +4,17 @@ use std::fmt;
 use std::iter::FromIterator;
 use std::sync::Arc;
 use std::sync::Mutex;
-//pub mod gym;
 
-/*
+use ggpf_gym::*;
+
+
 #[derive(Clone)]
 pub struct Gym {
-    pub env: Arc<Mutex<gym::Environment>>,
+    pub env: GymRunnerClient,
     possible_moves: Vec<usize>,
     is_done: bool,
     current_state: Array<f32, Ix3>,
+    features: (Vec<usize>, Ix3, Ix1),
 }
 
 unsafe impl Send for Gym {}
@@ -35,20 +37,20 @@ fn convert_to_3D(shape: &Vec<usize>) -> Ix3 {
     dim
 }
 
-impl Gym {
-    pub fn new(gym: &gym::GymClient) -> Self {
-        //let gym = gym::GymClient::default();
-        let env = gym.make("CartPole-v1");
+use tarpc::context;
 
-        let possible_moves = match env.action_space() {
-            gym::SpaceTemplate::DISCRETE { n } => (0..*n).collect::<Vec<_>>(),
+impl Gym {
+    pub async fn new(mut env: GymRunnerClient) -> Self {
+
+        let possible_moves = match env.action_space(context::current()).await.unwrap() {
+            gym::SpaceTemplate::DISCRETE { n } => (0..n).collect::<Vec<_>>(),
             x => panic!("Unsupported action space. {:?}", x),
         };
 
-        let init_state = env.reset().unwrap();
+        let init_state = env.reset(context::current()).await.unwrap();
 
-        let state_dimension = match env.observation_space() {
-            gym::SpaceTemplate::BOX { high, low, shape } => convert_to_3D(shape),
+        let state_dimension = match env.observation_space(context::current()).await.unwrap() {
+            gym::SpaceTemplate::BOX { high, low, shape } => convert_to_3D(&shape),
             _ => panic!("..."),
         };
 
@@ -59,11 +61,14 @@ impl Gym {
             .into_shape(state_dimension)
             .expect("Unable to reshape observation.");
 
+        let action_dimension = Ix1(possible_moves.len());
+
         Self {
-            env: Arc::new(Mutex::new(env)),
-            possible_moves,
+            env,
+            possible_moves: possible_moves.clone(),
             is_done: false,
             current_state: obs_state,
+            features: (possible_moves, state_dimension, action_dimension)
         }
     }
 }
@@ -86,8 +91,8 @@ use async_trait::async_trait;
 impl Playable for Gym {
     #[allow(clippy::trivially_copy_pass_by_ref)]
     async fn play(&mut self, action: &usize) -> f32 {
-        let env = self.env.lock().unwrap();
-        let next_state = env.step(&gym::SpaceData::DISCRETE(*action)).unwrap();
+        //let env = self.env.lock().unwrap();
+        let next_state = self.env.play(context::current(), *action).await.unwrap();
         self.is_done = next_state.is_done;
         next_state.reward as f32
     }
@@ -104,15 +109,7 @@ impl Features for Gym {
     type Descriptor = (Vec<usize>, Ix3, Ix1);
 
     fn get_features(&self) -> Self::Descriptor {
-        let possible_moves = self.possible_moves.clone();
-        let action_dimension = Ix1(possible_moves.len());
-
-        let env = self.env.lock().unwrap();
-        let state_dimension = match env.observation_space() {
-            gym::SpaceTemplate::BOX { high, low, shape } => convert_to_3D(shape),
-            _ => panic!("..."),
-        };
-        (possible_moves, state_dimension, action_dimension)
+        self.features.clone()
     }
 
     fn state_dimension(descr: &Self::Descriptor) -> Self::StateDim {
@@ -155,6 +152,12 @@ impl Features for Gym {
     }
 }
 /*
+struct GymBuilder {}
+
+impl GameBuilder<Gym> for GymBuilder {
+    fn create()
+}*/
+/*
 impl Game for Gym {
     type Player = ();
     type Move = ();
@@ -185,5 +188,5 @@ impl Game for Gym {
     fn winner(&self) -> Option<Self::Player> {panic!("")}
 
     fn pass(&mut self) {panic!("")}
-}*/
+}
 */

@@ -35,7 +35,7 @@ pub struct State {
     pub is_done: bool,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 pub enum SpaceTemplate {
     DISCRETE {
         n: DiscreteType,

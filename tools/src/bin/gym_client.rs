@@ -1,29 +1,22 @@
 #![allow(non_snake_case)]
 #![feature(type_alias_impl_trait)]
 
-use ggpf_gym::{gym::*, GymRunnerClient};
+use ggpf_gym::{GymRunnerClient, BinCodec};
 
-use std::future::Future;
 use tarpc::{
     client, context,
-    server::{BaseChannel, Channel},
 };
-use tokio::stream::StreamExt;
 
-
-use std::sync::{Arc, Mutex};
-use std::net::{IpAddr, SocketAddr};
-use tokio_serde::formats::Json;
-
-use std::time;
 use std::thread;
+use std::time;
+
 
 #[tokio::main]
 async fn main() {
     flexi_logger::Logger::with_env().start().unwrap();
     log::info!("GYM client!");
     
-    let publisher_conn = tarpc::serde_transport::tcp::connect("localhost:1337", Json::default());
+    let publisher_conn = tarpc::serde_transport::tcp::connect("localhost:1337", BinCodec::default());
     let publisher_conn = publisher_conn.await.unwrap();
     let mut runner =
         GymRunnerClient::new(client::Config::default(), publisher_conn).spawn().unwrap();
@@ -45,5 +38,5 @@ async fn main() {
 
     let t1 = time::Instant::now();
     println!("T: {:?}, {}", t1 - t0, i);
-
+    
 }

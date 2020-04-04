@@ -1,52 +1,66 @@
 #![allow(non_snake_case)]
 #![feature(type_alias_impl_trait)]
 
-use ggpf_gym::gym::*;
+use ggpf_gym::*;
 
 use std::future::Future;
 use tarpc::{
-    client, context,
+    context,
     server::{BaseChannel, Channel},
 };
 use tokio::stream::StreamExt;
 
-#[tarpc::service]
-trait GymRunner {
-    async fn reset();
-    async fn play(action: usize) -> State;
-}
 
 use std::sync::{Arc, Mutex};
 
 #[derive(Clone)]
 struct GymServer {
-    game: Arc<Mutex<Environment>>,
+    game: Arc<Mutex<gym::Environment>>,
 }
 
 impl GymRunner for GymServer {
-    type ResetFut = impl Future<Output = ()>;
+    type ResetFut = impl Future<Output = gym::SpaceData>;
 
     fn reset(self, _: context::Context) -> Self::ResetFut {
         log::debug!("Reset.");
     
         async move {
             let game = self.game.lock().unwrap();
-            game.reset().unwrap();
+            let res = game.reset().unwrap();
             game.render();
+            res
         }
     }
 
-    type PlayFut = impl Future<Output = State>;
+    type PlayFut = impl Future<Output = gym::State>;
 
     fn play(self, _: context::Context, action: usize) -> Self::PlayFut {
         log::debug!("Play {}.", action);
 
         async move { 
             let game = self.game.lock().unwrap();
-            let res = game.step(&SpaceData::DISCRETE(action)).unwrap();
+            let res = game.step(&gym::SpaceData::DISCRETE(action)).unwrap();
             game.render();
             res
          }
+    }
+
+    type ActionSpaceFut = impl Future<Output = gym::SpaceTemplate>;
+
+    fn action_space(self, _: context::Context) -> Self::ActionSpaceFut {
+        async move {
+            let game = self.game.lock().unwrap();
+            game.action_space().clone()
+        }
+    }
+
+    type ObservationSpaceFut = impl Future<Output = gym::SpaceTemplate>;
+
+    fn observation_space(self, _: context::Context) -> Self::ObservationSpaceFut {
+        async move {
+            let game = self.game.lock().unwrap();
+            game.observation_space().clone()
+        }
     }
 }
 
@@ -57,7 +71,7 @@ use tokio_serde::formats::Json;
 async fn main() {
     flexi_logger::Logger::with_env().start().unwrap();
     log::info!("GYM!");
-    let mut transport = tarpc::serde_transport::tcp::listen("localhost:1337", Json::default)
+    let mut transport = tarpc::serde_transport::tcp::listen("localhost:1337", BinCodec::default)
         .await
         .unwrap();
     let addr = transport.local_addr();
@@ -66,8 +80,8 @@ async fn main() {
     // For this example, we're just going to wait for one connection.
     let client = transport.next().await.unwrap().unwrap();
 
-    let gym = GymClient::default();
-    let game = gym.make("CarRacing-v0");
+    let gym = gym::GymClient::default();
+    let game = gym.make("MsPacman-v0");
 
     let gym_server = GymServer {
         game: Arc::new(Mutex::new(game))
