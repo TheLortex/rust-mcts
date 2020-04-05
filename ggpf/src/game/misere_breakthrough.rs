@@ -16,10 +16,11 @@ impl fmt::Debug for MisereBreakthrough {
     }
 }
 
+#[async_trait]
 impl GameBuilder<MisereBreakthrough> for BreakthroughBuilder {
-    fn create(&self, turn: Color) -> MisereBreakthrough {
+    async fn create(&self, turn: Color) -> MisereBreakthrough {
         MisereBreakthrough {
-            game: self.create(turn),
+            game: self.create(turn).await,
         }
     }
 }

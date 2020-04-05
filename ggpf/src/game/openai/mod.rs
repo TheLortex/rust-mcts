@@ -10,7 +10,7 @@ use ggpf_gym::*;
 
 #[derive(Clone)]
 pub struct Gym {
-    pub env: GymRunnerClient,
+    env: GymRunnerClient,
     possible_moves: Vec<usize>,
     is_done: bool,
     current_state: Array<f32, Ix3>,
@@ -151,42 +151,31 @@ impl Features for Gym {
         HashMap::from_iter(features.iter().cloned().enumerate())
     }
 }
-/*
-struct GymBuilder {}
 
-impl GameBuilder<Gym> for GymBuilder {
-    fn create()
-}*/
-/*
-impl Game for Gym {
-    type Player = ();
-    type Move = ();
-    type GameHash = ();
-
-    fn new(_: Self::Player) -> Gym {
-        let gym = gym::GymClient::default();
-        let env = gym.make("CartPole-v1");
-        Gym {
-            env
-        }
-    }
-
-    fn players() -> Vec<()> {
-        vec![()]
-    }
-
-    fn score(&self, _: Self::Player) -> f32 {panic!("")}
-
-    fn play(&mut self, m: &Self::Move) {panic!("")}
-
-    fn turn(&self) -> Self::Player {panic!("")}
-
-    fn hash(&self) -> Self::GameHash {panic!("")}
-
-    fn possible_moves(&self) -> &Vec<Self::Move> {panic!("")}
-
-    fn winner(&self) -> Option<Self::Player> {panic!("")}
-
-    fn pass(&mut self) {panic!("")}
+#[derive(Clone, Debug)]
+pub struct GymBuilder {
+    pub address: String,
+    pub game_name: String,
+    pub render: bool,
 }
-*/
+
+use tarpc::{
+    client,
+};
+
+
+#[async_trait]
+impl SingleplayerGameBuilder<Gym> for GymBuilder {
+    async fn create(&self) -> Gym {
+
+        let conn = tarpc::serde_transport::tcp::connect(&self.address, BinCodec::default());
+        let conn = conn.await.unwrap();
+
+        let mut runner =
+        GymRunnerClient::new(client::Config::default(), conn).spawn().unwrap();
+        runner.init(context::current(), self.game_name.clone(), self.render).await.unwrap();
+        runner.reset(context::current()).await.unwrap();
+
+        Gym::new(runner).await
+    }
+}

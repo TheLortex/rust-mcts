@@ -132,7 +132,7 @@ where
     G: MCTSGame,
     MCTS: BaseMCTSPolicy<G>,
 {
-    base_mcts: MCTS,
+    pub base_mcts: MCTS,
     N_PLAYOUTS: usize,
     /// Root node from the last exploration. Can be taken to gather exploration statistics.
     pub root: Option<MCTSNodeChild<G, MCTS>>,

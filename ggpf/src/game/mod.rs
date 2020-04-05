@@ -89,7 +89,7 @@ pub trait Game: Playable {
     /**
      *  The type representing each player.
      */
-    type Player: PartialEq + Eq + Copy + Clone + Debug + Sync + Send + Into<u8>;
+    type Player: Hash + PartialEq + Eq + Copy + Clone + Debug + Sync + Send + Into<u8>;
 
     /**
      *  Assuming a static player order, returns who should play after given player.
@@ -182,28 +182,35 @@ impl<G: Singleplayer> Game for G {
 /**
  *  Game builders.
  */
+ #[async_trait]
 pub trait GameBuilder<G: Game> {
     /**
      *  Create a new game starting for player `starting`.
      */
-    fn create(&self, starting: G::Player) -> G;
+    async fn create(&self, starting: G::Player) -> G;
 }
 
 /**
  *  Builders for single-player games.
  */
+ #[async_trait]
 pub trait SingleplayerGameBuilder<G: Singleplayer> {
     /**
      *  Create a new single-player game instance.
      */
-    fn create(&self) -> G;
+    async fn create(&self) -> G;
 }
 /**
  *  Single-player game builder is an instance of GameBuilder
  */
-impl<G: Singleplayer, GB: SingleplayerGameBuilder<G>> GameBuilder<G> for GB {
-    fn create(&self, _starting: <G as Game>::Player) -> G {
-        self.create()
+#[async_trait]
+impl<G, GB> GameBuilder<G> for GB 
+where 
+    G: Singleplayer + 'static,
+    GB: SingleplayerGameBuilder<G> + Send + Sync,
+{
+    async fn create(&self, _starting: <G as Game>::Player) -> G {
+        self.create().await
     }
 }
 

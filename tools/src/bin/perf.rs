@@ -51,7 +51,7 @@ async fn run() {
     // Game builder.
     let game_builder = WithHistoryGB::<_, U2>::new(&BreakthroughBuilder {});
 
-    let breakthrough: G = game_builder.create(Breakthrough::players()[0]);
+    let breakthrough: G = game_builder.create(Breakthrough::players()[0]).await;
 
     let ft = breakthrough.get_features();
     let board_size = G::state_dimension(&ft).size();

@@ -29,12 +29,12 @@ pub async fn game_match<
     'b,
     'd,
     G: game::Game + game::SingleWinner + Clone + 'static,
-    GB: game::GameBuilder<G> + Sync,
+    GB: game::GameBuilder<G> + Clone + Sync + Send + 'static,
 >(
     n: usize,
     pb1: Box<dyn DynMultiplayerPolicyBuilder<'static, G> + Sync + 'c>,
     pb2: Box<dyn DynMultiplayerPolicyBuilder<'static, G> + Sync + 'd>,
-    game_factory: &GB,
+    game_factory: GB,
     silent: bool,
 ) -> usize {
     let pb = if silent {
@@ -57,13 +57,15 @@ pub async fn game_match<
             let p1 = pb1.create(G::players()[0]);
             let p2 = pb2.create(G::players()[1]);
             let starting_player = *G::players().choose(&mut rand::thread_rng()).unwrap();
-            let game = game_factory.create(starting_player);
 
             let c1 = c1.clone();
             let c2 = c2.clone();
             let pb = pb.clone();
+            let game_factory = game_factory.clone();
 
             tokio::spawn(async move {
+                let game = game_factory.create(starting_player).await;
+
                 let result = if game::simulate(p1, p2, &game).await.last().unwrap().winner()
                     == Some(G::players()[0])
                 {
@@ -138,7 +140,7 @@ async fn run() {
 
     /* Build game to gathe settings*/
     let gb = WithHistoryGB::<_, U2>::new(&BreakthroughBuilder {});
-    let g: G = gb.create(G::players()[0]);
+    let g: G = gb.create(G::players()[0]).await;
     let ft = g.get_features();
 
     let muz_config = MuZeroConfig {
@@ -218,5 +220,5 @@ async fn run() {
 
     let n_games = value_t!(args.value_of("n"), usize).unwrap_or(100);
 
-    println!("{}", game_match::<G, _>(n_games, p1, p2, &gb, silent).await);
+    println!("{}", game_match::<G, _>(n_games, p1, p2, gb, silent).await);
 }

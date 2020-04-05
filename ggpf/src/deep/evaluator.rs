@@ -127,7 +127,7 @@ pub async fn prediction_task(
     bb: Option<Arc<Box<ProgressBar>>>,
 ) {
     let (writer_lock, g_and_s) = tensorflow.as_ref();
-    println!("Starting prediction evaluator..");
+    log::info!("Starting prediction evaluator..");
 
     let mut repr_tensor: Tensor<f32> = Tensor::new(&[batch_size as u64, repr_size as u64]);
     let mut tx_buf = vec![];
@@ -216,7 +216,7 @@ pub async fn dynamics_task(
     mut receiver: mpsc::Receiver<DynamicsEvaluatorChannel>,
 ) {
     let (writer_lock, g_and_s) = tensorflow.as_ref();
-    println!("Starting dynamics evaluator..");
+    log::info!("Starting dynamics evaluator..");
 
     let mut repr_tensor: Tensor<f32> = Tensor::new(&[batch_size as u64, repr_size as u64]);
 
@@ -304,7 +304,7 @@ pub async fn representation_task(
     mut receiver: mpsc::Receiver<RepresentationEvaluatorChannel>,
 ) {
     let (writer_lock, g_and_s) = tensorflow.as_ref();
-    println!("Starting representation evaluator..");
+    log::info!("Starting representation evaluator..");
 
     let mut board_tensor: Tensor<f32> = Tensor::new(&[batch_size as u64, board_size as u64]);
     let mut tx_buf = vec![];

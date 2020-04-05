@@ -10,25 +10,41 @@ use tarpc::{
 };
 use tokio::stream::StreamExt;
 
-
 use std::sync::{Arc, Mutex};
 
 #[derive(Clone)]
 struct GymServer {
-    game: Arc<Mutex<gym::Environment>>,
+    game: Arc<Mutex<Option<(gym::Environment, bool)>>>,
 }
 
 impl GymRunner for GymServer {
+    type InitFut = impl Future<Output = ()>;
+
+    fn init(self, _: context::Context, game: String, render: bool) -> Self::InitFut {
+        log::debug!("Init.");
+        async move {
+            let gym = gym::GymClient::default();
+            let game = gym.make(&game);
+
+            *self.game.lock().unwrap() = Some((game, render));
+        }
+    }
+
     type ResetFut = impl Future<Output = gym::SpaceData>;
 
     fn reset(self, _: context::Context) -> Self::ResetFut {
         log::debug!("Reset.");
-    
+
         async move {
-            let game = self.game.lock().unwrap();
-            let res = game.reset().unwrap();
-            game.render();
-            res
+            if let Some((ref game, render)) = *self.game.lock().unwrap() {
+                let res = game.reset().unwrap();
+                if render {
+                    game.render();
+                }
+                res
+            } else {
+                panic!("The game hasn't been initialized.");
+            }
         }
     }
 
@@ -37,35 +53,49 @@ impl GymRunner for GymServer {
     fn play(self, _: context::Context, action: usize) -> Self::PlayFut {
         log::debug!("Play {}.", action);
 
-        async move { 
-            let game = self.game.lock().unwrap();
-            let res = game.step(&gym::SpaceData::DISCRETE(action)).unwrap();
-            game.render();
-            res
-         }
+        async move {
+            if let Some((ref game, render)) = *self.game.lock().unwrap() {
+                let res = game.step(&gym::SpaceData::DISCRETE(action)).unwrap();
+                if render {
+                    game.render();
+                }
+                res
+            } else {
+                panic!("The game hasn't been initialized.");
+            }
+        }
     }
 
     type ActionSpaceFut = impl Future<Output = gym::SpaceTemplate>;
 
     fn action_space(self, _: context::Context) -> Self::ActionSpaceFut {
+        log::debug!("Action space");
         async move {
-            let game = self.game.lock().unwrap();
-            game.action_space().clone()
+            if let Some((ref game,_)) = *self.game.lock().unwrap() {
+                game.action_space().clone()
+            } else {
+                panic!("The game hasn't been initialized.");
+            }
         }
     }
 
     type ObservationSpaceFut = impl Future<Output = gym::SpaceTemplate>;
 
     fn observation_space(self, _: context::Context) -> Self::ObservationSpaceFut {
+        log::debug!("Observation space");
         async move {
-            let game = self.game.lock().unwrap();
-            game.observation_space().clone()
+            if let Some((ref game,_)) = *self.game.lock().unwrap() {
+                game.observation_space().clone()
+            } else {
+                panic!("The game hasn't been initialized.");
+            }
         }
     }
 }
 
 use std::net::{IpAddr, SocketAddr};
 use tokio_serde::formats::Json;
+use tokio::prelude::*;
 
 #[tokio::main]
 async fn main() {
@@ -78,14 +108,20 @@ async fn main() {
     log::info!("Listening on {}", addr);
 
     // For this example, we're just going to wait for one connection.
-    let client = transport.next().await.unwrap().unwrap();
+    let mut stream = transport
+        .filter_map(|r| r.ok())
+        .map(BaseChannel::with_defaults);
 
-    let gym = gym::GymClient::default();
-    let game = gym.make("MsPacman-v0");
-
-    let gym_server = GymServer {
-        game: Arc::new(Mutex::new(game))
-    };
+    while let Some(client) = stream.next().await {
+        tokio::spawn({
+            log::info!("New client.");
+            let gym_server = GymServer {
+                game: Arc::new(Mutex::new(None)),
+            };
+            client.respond_with(gym_server.serve()).execute()
+        });
+    }
+    /*
 
     // `Channel` is a trait representing a server-side connection. It is a trait to allow
     // for some channels to be instrumented: for example, to track the number of open connections.
@@ -96,7 +132,8 @@ async fn main() {
         // implementing the generated World trait.
         .respond_with(gym_server.serve())
         .execute()
-        .await;
+        .await;*/
+    
 
     /*
     let gym = GymClient::default();

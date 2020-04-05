@@ -54,6 +54,7 @@ impl Default for BinCodec {
 
 #[tarpc::service]
 pub trait GymRunner {
+    async fn init(name: String, render: bool);
     async fn reset() -> SpaceData;
     async fn play(action: usize) -> State;
     async fn action_space() -> SpaceTemplate;

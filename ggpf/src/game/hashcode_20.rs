@@ -147,8 +147,9 @@ impl Hashcode20 {
     }
 }
 
+#[async_trait]
 impl SingleplayerGameBuilder<Hashcode20> for Hashcode20Settings {
-    fn create(&self) -> Hashcode20 {
+    async fn create(&self) -> Hashcode20 {
         let scanned_books = BTreeSet::new();
         let signedup_libraries = BTreeSet::new();
         let unscanned_books = BTreeSet::from_iter(0..self.B);

@@ -41,8 +41,6 @@ tokio-serde = { version = "0.6", features = ["json"] }
 failure = "0.1.6"
 bincode = "1.2.1"
 
-[dependencies.pyo3]
-version = "0.9.1"
 
 [dependencies.tensorflow]
 version = "0.15.0"

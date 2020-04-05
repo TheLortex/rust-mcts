@@ -88,15 +88,15 @@ where
     color: G::Player,
     config: PUCTSettings,
     prediction_channel: mpsc::Sender<PredictionEvaluatorChannel>,
-    min_tree: f32,
-    max_tree: f32,
+    pub min_tree: f32,
+    pub max_tree: f32,
 }
 
 impl<G> PUCTPolicy_<G>
 where
     G: game::Features + super::MCTSGame,
 {
-    fn normalize(&self, x: f32) -> f32 {
+    pub fn normalize(&self, x: f32) -> f32 {
         if self.min_tree < self.max_tree {
             (x - self.min_tree) / (self.max_tree - self.min_tree)
         } else {
@@ -161,6 +161,7 @@ where
         _history: &[G::Move],
         (policy, mut value, pov): Self::PlayoutInfo,
     ) {
+        // value is computed relative to leaf point of view.
         // todo: assert leaf.turn == pov
         // assert_eq!(leaf.borrow().info.state.turn(), *pov);
 
@@ -189,8 +190,11 @@ where
             }
         }
 
-        value = -leaf.read().unwrap().info.reward + self.config.DISCOUNT * value;
+        // subtract reward for player arriving in leaf.
 
+        value = -leaf.read().unwrap().info.reward + self.config.DISCOUNT * value;
+        // reward when playing action from tree_position.
+        let mut position_reward = leaf.read().unwrap().info.reward;
         let mut tree_position = leaf;
         while tree_position.read().unwrap().parent.is_some() {
             // extract child
@@ -206,11 +210,19 @@ where
 
             let mut tree_node = tree_position.write().unwrap();
 
+            value = if tree_node.info.state.turn() == pov {
+                position_reward
+            } else {
+                -position_reward
+            } + self.config.DISCOUNT * value;
+
             let relative_value = if tree_node.info.state.turn() == pov {
                 value
             } else {
                 -value
             };
+
+            position_reward = tree_node.info.reward;
 
             tree_node.info.node.count += 1.;
 
@@ -235,12 +247,6 @@ where
             if (*v).Q > self.max_tree {
                 self.max_tree = (*v).Q
             }
-
-            value = if tree_node.info.state.turn() == pov {
-                tree_node.info.reward
-            } else {
-                -tree_node.info.reward
-            } + self.config.DISCOUNT * value;
         }
     }
     /*

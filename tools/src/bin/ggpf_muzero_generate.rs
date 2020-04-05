@@ -2,6 +2,7 @@
 
 use ggpf::deep::self_play::GameHistoryEntry;
 use ggpf::game::meta::with_history::*;
+use ggpf::game::openai::{Gym, GymBuilder};
 use ggpf::game::{
     breakthrough::{Breakthrough, BreakthroughBuilder},
     *,
@@ -15,9 +16,14 @@ use tokio::runtime;
 use tokio::sync::mpsc;
 use typenum::U2;
 
-const MODEL_PATH: &str = "models/mu-breakthrough/";
 
+const MODEL_PATH: &str = "models/mu-breakthrough/";
 type G = WithHistory<Breakthrough, U2>;
+
+
+//const MODEL_PATH: &str = "models/mu-atari/";
+//type G = Gym;
+
 fn main() {
     let mut threaded_rt = runtime::Builder::new()
         .threaded_scheduler()
@@ -40,8 +46,15 @@ async fn run() {
     };
 
     // Game builder.
-    let game_builder = WithHistoryGB::<_, U2>::new(&BreakthroughBuilder {});
-    let state: G = game_builder.create(G::players()[0]);
+    //let game_builder = GymBuilder {
+    //    address: "localhost:1337".into(),
+    //    game_name: "Breakout-v0".into(),
+    //    render: false,
+    //};
+    //let state: G = SingleplayerGameBuilder::create(&game_builder).await;
+    let game_builder = WithHistoryGB::<BreakthroughBuilder, U2>::new(&BreakthroughBuilder {});
+    let state: G = game_builder.create(G::players()[0]).await;
+
     let ft = state.get_features();
 
     let repr_dimension = Dim(settings::MUZ_BT_SHAPE);
@@ -63,7 +76,7 @@ async fn run() {
 
     // Game channel.
     let (tx_games, mut rx_games) =
-        mpsc::channel::<GameHistoryEntry<WithHistory<Breakthrough, U2>>>(1024);
+        mpsc::channel::<GameHistoryEntry<WithHistory<Breakthrough, U2>>>(128);
 
     // Game generator.
     let game_gen = tokio::spawn(ggpf::deep::self_play::muzero_game_generator(

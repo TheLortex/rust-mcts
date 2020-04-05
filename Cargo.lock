@@ -784,7 +784,6 @@ dependencies = [
  "ndarray",
  "nix",
  "notify",
- "pyo3",
  "rand",
  "rand_distr",
  "rayon",

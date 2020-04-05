@@ -36,9 +36,34 @@ pub fn support_to_value(support: &Tensor<f32>, batch_size: usize) -> Tensor<f32>
                 .powi(2)
                 - 1.);
 
+            
         res[i] = value;
     }
     res
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn test_support_to_value() {
+        let mut support = Tensor::new(&[1,3]);
+
+        support[0] = 1.0;
+        support[1] = 0.;
+        support[2] = 0.;
+        println!("=> {:?}", support_to_value(&support, 1).to_vec());
+        
+        support[0] = 0.;
+        support[1] = 1.;
+        support[2] = 0.;
+        println!("=> {:?}", support_to_value(&support, 1).to_vec());
+
+        support[0] = 0.;
+        support[1] = 0.;
+        support[2] = 1.;
+        println!("=> {:?}", support_to_value(&support, 1).to_vec());
+    }
 }
 
 /// Use prediction network inference.

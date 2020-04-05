@@ -87,7 +87,7 @@ impl<G: Base + Hash, H_> Hash for WithHistory<G, H_> {
 }
 /* GAME BUILDER */
 /// Builder for a game with history.
-#[derive(Copy, Clone)]
+#[derive(Clone, Copy)]
 pub struct WithHistoryGB<'a, GB, H>(&'a GB, PhantomData<H>);
 
 impl<'a, GB, H> WithHistoryGB<'a, GB, H> {
@@ -97,13 +97,19 @@ impl<'a, GB, H> WithHistoryGB<'a, GB, H> {
     }
 }
 
-impl<'a, G: Game + Clone + Sync + Send, GB: GameBuilder<G>, H> GameBuilder<WithHistory<G, H>>
-    for WithHistoryGB<'a, GB, H>
+#[async_trait]
+impl<G, GB, H> GameBuilder<WithHistory<G, H>>
+for WithHistoryGB<'_, GB, H>
+where 
+G : Game + Clone + Sync + Send + 'static,
+GB: GameBuilder<G> + Send + Sync,
+H: Send + Sync
 {
-    fn create(&self, starting: G::Player) -> WithHistory<G, H> {
+    async fn create(&self, starting: G::Player) -> WithHistory<G, H> {
+        let state = self.0.create(starting).await;
         WithHistory {
             prec: None,
-            state: self.0.create(starting),
+            state,
             _h: PhantomData,
         }
     }

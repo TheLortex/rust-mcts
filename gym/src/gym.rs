@@ -367,22 +367,6 @@ impl Default for GymClient {
             Result::Err(_) => {}
         };
 
-        match sys.get("modules") {
-            Result::Ok(argv) => {
-                println!("{:?}", argv);
-            }
-            Result::Err(_) => {}
-        };
-
-        match sys.get("path") {
-            Result::Ok(argv) => {
-                println!("{:?}", argv);
-            }
-            Result::Err(_) => {}
-        };
-
-        
-
         log::debug!("Importing Gym.");
         // Import gym
         let gym = py.import("gym").expect("Error: import gym");

@@ -75,8 +75,9 @@ impl Singleplayer for WeakSchurNumber {}
 /// Weak schur number game builder
 pub struct WeakSchurNumberBuilder {}
 
+#[async_trait]
 impl SingleplayerGameBuilder<WeakSchurNumber> for WeakSchurNumberBuilder {
-    fn create(&self) -> WeakSchurNumber {
+    async fn create(&self) -> WeakSchurNumber {
         let partitions = Default::default();
         let last_value = 0;
 

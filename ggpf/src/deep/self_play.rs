@@ -3,7 +3,7 @@ use crate::game;
 use crate::game::GameBuilder;
 use crate::policies::mcts::puct::PUCT;
 use crate::policies::mcts::{muz, puct};
-use crate::policies::{mcts::muz::Muz, MultiplayerPolicy, MultiplayerPolicyBuilder};
+use crate::policies::{mcts::muz::{Muz, MuzPolicy}, MultiplayerPolicy, MultiplayerPolicyBuilder};
 use crate::settings;
 
 use indicatif::{ProgressBar, ProgressStyle};
@@ -66,7 +66,7 @@ async fn muzero_game_generator_task<G, GB, B, A>(
     mut output_chan: mpsc::Sender<GameHistoryEntry<G>>,
     indicator_bar: Arc<Box<ProgressBar>>,
 ) where
-    G: game::Features + game::SingleWinner + Send + Sync + 'static,
+    G: game::Features + Send + Sync + 'static,
     G::Move: Send + Sync,
     G::Player: Send + Sync,
     GB: GameBuilder<G>,
@@ -81,11 +81,11 @@ async fn muzero_game_generator_task<G, GB, B, A>(
     };
 
     loop {
-        let mut p1 = muz.create(G::players()[0]);
-        let mut p2 = muz.create(G::players()[1]);
+        let mut policies: HashMap<G::Player, MuzPolicy<G>> = HashMap::from_iter(G::players().iter().map(|i| (*i, muz.create(*i))));
 
+        let random_player = *G::players().choose(&mut rand::thread_rng()).unwrap();
         let mut state: G =
-            game_builder.create(*G::players().choose(&mut rand::thread_rng()).unwrap());
+            game_builder.create(random_player).await;
 
         let ft = state.get_features();
 
@@ -97,11 +97,7 @@ async fn muzero_game_generator_task<G, GB, B, A>(
         let mut history_turn = vec![];
 
         while { !state.is_finished() } {
-            let policy = if state.turn() == G::players()[0] {
-                &mut p1
-            } else {
-                &mut p2
-            };
+            let policy = policies.get_mut(&state.turn()).unwrap();
             let action = policy.play(&state).await;
 
             /* Save search statistics */
@@ -125,7 +121,7 @@ async fn muzero_game_generator_task<G, GB, B, A>(
                 .info
                 .moves
                 .iter()
-                .map(|(_, v)| v.reward + (config.puct.DISCOUNT * v.Q * v.N_a / visit_count))
+                .map(|(_, v)| (v.reward + config.puct.DISCOUNT * v.Q * v.N_a / visit_count))
                 .sum();
 
             history_turn.push(state.turn().into() as f32);
@@ -187,10 +183,10 @@ pub async fn muzero_game_generator<G, GB, B, A>(
     game_builder: GB,
     output_chan: mpsc::Sender<GameHistoryEntry<G>>,
 ) where
-    G: game::Features + game::SingleWinner + Send + Sync + Clone + Hash + Eq + 'static,
+    G: game::Features + Send + Sync + 'static,
     G::Move: Send + Sync,
     G::Player: Send + Sync,
-    GB: GameBuilder<G> + Copy + Sync + Send + 'static,
+    GB: GameBuilder<G> + Clone + Sync + Send + 'static,
     A: Dimension + 'static,
     B: Dimension + 'static,
 {
@@ -210,7 +206,7 @@ pub async fn muzero_game_generator<G, GB, B, A>(
         for _ in 0..settings::GPU_N_GENERATORS {
             tokio::spawn(muzero_game_generator_task(
                 config.clone(),
-                game_builder,
+                game_builder.clone(),
                 muzero_evaluators.get_channels(),
                 output_chan.clone(),
                 bar_box.clone(),
@@ -256,9 +252,9 @@ async fn alphazero_game_generator_task<G, GB, A, B>(
     loop {
         let mut p1 = puct.create(G::players()[0]);
         let mut p2 = puct.create(G::players()[1]);
-
+        let random_player = *G::players().choose(&mut rand::thread_rng()).unwrap();
         let mut state: G =
-            game_builder.create(*G::players().choose(&mut rand::thread_rng()).unwrap());
+            game_builder.create(random_player).await;
 
         let ft = state.get_features();
 
@@ -297,7 +293,7 @@ async fn alphazero_game_generator_task<G, GB, A, B>(
                 .info
                 .moves
                 .iter()
-                .map(|(_, v)| v.reward + (config.puct.DISCOUNT * v.Q * v.N_a / visit_count))
+                .map(|(_, v)| ((v.reward + config.puct.DISCOUNT * v.Q) * v.N_a / visit_count))
                 .sum();
 
             history_turn.push(state.turn().into() as f32);
@@ -360,7 +356,7 @@ pub async fn alphazero_game_generator<G, GB, A, B>(
     G: game::Features + game::SingleWinner + Send + Sync + Clone + Hash + Eq + 'static,
     G::Move: Send + Sync,
     G::Player: Send + Sync,
-    GB: GameBuilder<G> + Copy + Sync + Send + 'static,
+    GB: GameBuilder<G> + Clone + Sync + Send + 'static,
     A: Dimension + 'static,
     B: Dimension + 'static,
 {
@@ -381,7 +377,7 @@ pub async fn alphazero_game_generator<G, GB, A, B>(
         for _ in 0..settings::GPU_N_GENERATORS {
             tokio::spawn(alphazero_game_generator_task(
                 config.clone(),
-                game_builder,
+                game_builder.clone(),
                 az.get_channel(),
                 output_chan.clone(),
                 bar_box.clone(),
