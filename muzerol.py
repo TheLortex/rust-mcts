@@ -33,6 +33,11 @@ physical_devices = tf.config.list_physical_devices('GPU')
 tf.config.experimental.set_memory_growth(physical_devices[0], True)
 
 
+import argparse
+parser = argparse.ArgumentParser()
+parser.add_argument("--new", help="create new network", action="store_true")
+args = parser.parse_args()
+
 training_data_path = "./training_data/{}/".format(game)
 if os.path.exists(training_data_path+"/replay_buffer.pkl"):
     print("| Loaded replay buffer")
@@ -54,13 +59,14 @@ def value_to_support(v):
     clamped = np.clip(scaled, -SUPPORT_SIZE, SUPPORT_SIZE)
 
     v1 = np.floor(clamped)
-    p1 = clamped - v1
+    p1 = 1 - (clamped - v1)
     v2 = v1 + 1
     p2 = 1 - p1
 
     result = np.zeros(shape=(SUPPORT_SHAPE,))
     result[int(v1) + SUPPORT_SIZE] = p1
-    result[int(v2) + SUPPORT_SIZE] = p2
+    if int(v2) + SUPPORT_SIZE < SUPPORT_SHAPE:
+        result[int(v2) + SUPPORT_SIZE] = p2
     return result
 
 
@@ -131,7 +137,6 @@ class ZerolGenerator(Sequence):
 
         for i in range(BATCH_SIZE):
             res = self.generate_target()
-            # policy[i], value[i], reward[i], state[i], actions[i] = res
             policy[i], value[i], reward[i], state[i], actions[i] = res
 
         X = {"actions": actions, "starting_board": state}
@@ -163,7 +168,7 @@ trainDataset = tf.data.Dataset.range(4).interleave(lambda x: trainDataset, num_p
 
 
 models_path = "models/{}/".format(game)
-if os.path.exists(models_path+"pv"):  # TODO
+if os.path.exists(models_path+"pv") and not(args.new):  # TODO
     print("| Loaded previous instance of the models.")
     pv = models.load_model(models_path+"pv", compile=False)
     state = models.load_model(models_path+"state", compile=False)
@@ -193,7 +198,7 @@ def custom_loss_policy(y_true, y_pred):
     policy_loss = 0.
 
     for i in range(N_UNROLL_STEPS):
-        policy_loss += losses.mean_squared_error(
+        policy_loss += losses.categorical_crossentropy(
             y_true[:, i], y_pred[:, i]) / N_UNROLL_STEPS
 
     return policy_loss
@@ -203,7 +208,7 @@ def custom_loss_value(y_true, y_pred):
     value_loss = 0.
 
     for i in range(N_UNROLL_STEPS):
-        value_loss += losses.mean_squared_error(
+        value_loss += losses.categorical_crossentropy(
             y_true[:, i], y_pred[:, i]) / N_UNROLL_STEPS
 
     return value_loss
@@ -213,7 +218,7 @@ def custom_loss_reward(y_true, y_pred):
     reward_loss = 0.
 
     for i in range(N_UNROLL_STEPS):
-        reward_loss += losses.mean_squared_error(
+        reward_loss += losses.categorical_crossentropy(
             y_true[:, i], y_pred[:, i]) / N_UNROLL_STEPS
 
     return reward_loss
@@ -250,7 +255,7 @@ class StatsLogger(tf.keras.callbacks.Callback):
         tf.summary.scalar('Generated games',
                           data=replay_buffer.states_count, step=epoch)
         tf.summary.scalar('Games length', data=sum(
-            [len(g.turn) for g in replay_buffer.games[:replay_buffer.index]])/replay_buffer.index, step=epoch)
+            [len(g.turn) for g in replay_buffer.games[:replay_buffer.max_index]])/replay_buffer.max_index, step=epoch)
 
         if self.n > CHECKPOINT_FREQ:
             self.n = 0
