@@ -31,7 +31,8 @@ def residual_block(input, name, size=32, activation='relu', convert=False):
 
 def policy_value_network_alpha():
     input   = keras.Input(shape=BOARD_SHAPE, name='board')
-    x       = layers.Permute((2,3,1,4))(input)
+    x       = layers.Reshape(BOARD_SHAPE)(input) # assert board shape
+    x       = layers.Permute((2,3,1,4))(x)
     x       = layers.Reshape((BT_K, BT_K, HISTORY_LENGTH*3))(x)
 
     x       = residual_block(x, "pv_a", convert=True)
@@ -45,7 +46,7 @@ def policy_value_network_alpha():
 
     value   = residual_block(x, "pv_e")
     value   = layers.Flatten()(value)
-    value   = layers.Dense((2*SUPPORT_SIZE+1), activation='softmax', name='value', kernel_regularizer=l2(WEIGHT_DECAY), bias_regularizer=l2(WEIGHT_DECAY))(value)
+    value   = layers.Dense((1), activation='sigmoid', name='value', kernel_regularizer=l2(WEIGHT_DECAY), bias_regularizer=l2(WEIGHT_DECAY))(value)
 
     return keras.Model(inputs=input, outputs={"policy": policy, "value": value})
 
@@ -64,14 +65,14 @@ def prediction_network_mu():
 
     value   = residual_block(x, "pred_e")
     value   = layers.Flatten()(value)
-    value   = layers.Dense((2*SUPPORT_SIZE+1), activation='sigmoid', name='value', kernel_regularizer=l2(WEIGHT_DECAY), bias_regularizer=l2(WEIGHT_DECAY))(value)
+    value   = layers.Dense((2*SUPPORT_SIZE+1), activation='softmax', name='value', kernel_regularizer=l2(WEIGHT_DECAY), bias_regularizer=l2(WEIGHT_DECAY))(value)
 
     return keras.Model(inputs=input, outputs={"policy": policy, "value": value}, name="Prediction")
 
 def representation_network():
     input   = keras.Input(shape=BOARD_SHAPE, name='board')
-    x       = layers.Permute((2,3,1,4))(input)
-    print("==>", x.shape)
+    x       = layers.Reshape(BOARD_SHAPE)(input) # assert board shape
+    x       = layers.Permute((2,3,1,4))(x)
     x       = layers.Reshape((BT_K, BT_K, HISTORY_LENGTH*3), name='RepresentationNetworkBoard')(x)
 
     x       = residual_block(x, "repr_a", convert=True)
@@ -82,11 +83,32 @@ def representation_network():
 
     return keras.Model(inputs=input, outputs=repr_board, name="Representation")
 
+def representation_network_atari():
+    input   = keras.Input(shape=BOARD_SHAPE, name='board')
+    x       = layers.Reshape(BOARD_SHAPE)(input) # assert board shape
+    x       = layers.Permute((2,3,1,4))(x)
+    x       = layers.Reshape((96,96,HISTORY_LENGTH*3))(x)
+    x       = layers.Conv2D(32, 3, padding='same', strides=2)(x)
+    x       = residual_block(x, "repr_a", size=32)
+    x       = layers.Conv2D(64, 3, padding='same', strides=2)(x)
+    x       = residual_block(x, "repr_b", size=64)
+    x       = layers.AveragePooling2D()(x)
+    x       = residual_block(x, "repr_c", size=64)
+    x       = layers.AveragePooling2D()(x)
+    x       = residual_block(x, "repr_d", size=64)
+    repr_board   = layers.Conv2D(HIDDEN_PLANES, (3, 3), padding='same', activation='relu', kernel_regularizer=l2(WEIGHT_DECAY), bias_regularizer=l2(WEIGHT_DECAY), name='repr_board')(x)
+
+    return keras.Model(inputs=input, outputs=repr_board, name="Representation")
+
+
 def dynamics_network():
     input_board  = keras.Input(shape=HIDDEN_SHAPE, name='board')
     input_board_  = layers.Reshape(HIDDEN_SHAPE, name='DynamicsNetworkState')(input_board)
     input_action = keras.Input(shape=ACTION_SHAPE, name='action')
     input_action_  = layers.Reshape(ACTION_SHAPE, name='DynamicsNetworkAction')(input_action)
+    if GAME == "atari":
+        input_action_ = layers.RepeatVector(HIDDEN_SHAPE[0]**2)(input_action_)
+        input_action_ = layers.Reshape((HIDDEN_SHAPE[0], HIDDEN_SHAPE[1])+ACTION_SHAPE)(input_action_)
     x            = layers.Concatenate(axis=-1)([input_board_, input_action_])#, (BT_K, BT_K, HIDDEN_PLANES + ACTION_PLANES))
 
     x       = residual_block(x, "dyn_a", convert=True)
@@ -100,7 +122,7 @@ def dynamics_network():
     #next_board   = layers.Lambda(lambda x: (x[0] - x[1])/x[2])([next_board, min_state, scale_state]) # renormalize
 
     reward = layers.Flatten()(x)
-    reward = layers.Dense((SUPPORT_SHAPE), activation='sigmoid', name='reward', kernel_regularizer=l2(WEIGHT_DECAY), bias_regularizer=l2(WEIGHT_DECAY))(reward)
+    reward = layers.Dense((SUPPORT_SHAPE), activation='softmax', name='reward', kernel_regularizer=l2(WEIGHT_DECAY), bias_regularizer=l2(WEIGHT_DECAY))(reward)
 
     return keras.Model([input_board, input_action], outputs={"next_board": next_board, "reward": reward}, name="Dynamics")
 

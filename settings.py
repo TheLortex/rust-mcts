@@ -1,19 +1,31 @@
 
 ## GAME SETTINGS, make sure this is coherent with the generator and evaluator
+GAME = "breakthrough"
 
-BT_K = 5
-HISTORY_LENGTH = 2
-BOARD_SHAPE    = (HISTORY_LENGTH, BT_K, BT_K, 3)
-ACTION_PLANES  = 3
-ACTION_SHAPE   = (BT_K, BT_K, ACTION_PLANES)
-HIDDEN_PLANES  = 16
-HIDDEN_SHAPE   = (BT_K, BT_K, HIDDEN_PLANES)
-SUPPORT_SIZE   =  1
+if GAME == "breakthrough":
+    BT_K = 5
+    HISTORY_LENGTH = 2
+    BOARD_SHAPE    = (HISTORY_LENGTH, BT_K, BT_K, 3)
+    ACTION_PLANES  = 3
+    ACTION_SHAPE   = (BT_K, BT_K, ACTION_PLANES)
+    HIDDEN_PLANES  = 16
+    HIDDEN_SHAPE   = (BT_K, BT_K, HIDDEN_PLANES)
+    SUPPORT_SIZE   =  1
+elif GAME == "atari":
+    HISTORY_LENGTH = 8
+    BOARD_SHAPE    = (HISTORY_LENGTH, 96, 96, 3)
+    ACTION_PLANES  = 4 # breakout
+    ACTION_SHAPE   = (ACTION_PLANES, )
+    HIDDEN_PLANES  = 16
+    HIDDEN_SHAPE   = (6, 6, HIDDEN_PLANES)
+    SUPPORT_SIZE   = 300
+
 SUPPORT_SHAPE  = 2*SUPPORT_SIZE+1
 
+
 # MUZERO SPECIFIC
-N_UNROLL_STEPS = 2
-N_TD_STEPS     = 50
+N_UNROLL_STEPS = 5
+N_TD_STEPS     = 300
 DISCOUNT       = 0.997
 
 WEIGHT_DECAY = 1e-4
@@ -24,7 +36,7 @@ BATCH_SIZE                = 512
 N_EPOCH                   = 50000
 
 SAVE_REPLAY_BUFFER_FREQ   = 64            # backup replay buffer every _ games
-CHECKPOINT_FREQ           = 50*EPOCH_SIZE   # save model
+CHECKPOINT_FREQ           = 5*EPOCH_SIZE   # save model
 EVALUATION_FREQ           = 5*EPOCH_SIZE    # evaluate model
 
 class GameEntry:

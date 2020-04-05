@@ -13,6 +13,7 @@ import pickle
 from threading import Thread, RLock
 import os
 import subprocess
+from datetime import datetime
 
 from settings import *
 from networks import policy_value_network_alpha
@@ -72,7 +73,7 @@ class AlphaZeroGenerator(Sequence):
         value  = np.zeros((BATCH_SIZE,SUPPORT_SHAPE))
 
         # only select games that have been generated (not zeros)
-        start_batch = index % (replay_buffer.index // BATCH_SIZE)
+        start_batch = index % (replay_buffer.max_index // BATCH_SIZE)
         begin_idx = start_batch*BATCH_SIZE
         end_idx = (start_batch+1)*BATCH_SIZE
 
@@ -115,7 +116,7 @@ trainGenerator = AlphaZeroGenerator(replay_buffer)
 checkpoint_callback = ModelCheckpoint(
     model_path, verbose=1, save_weights_only=False, save_freq=CHECKPOINT_FREQ)
 # LOGS
-logdir = "logs/{}".format(game)
+logdir = "logs/{}/{}/".format(game, datetime.now().strftime("%Y%m%d-%H%M%S"))
 file_writer = tf.summary.create_file_writer(logdir)
 file_writer.set_as_default()
 
