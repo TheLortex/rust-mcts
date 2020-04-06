@@ -6,8 +6,10 @@ use nix::sys::stat;
 use nix::unistd::mkfifo;
 use notify::{RecommendedWatcher, RecursiveMode, Watcher};
 use std::collections::HashMap;
+use std::fs::create_dir_all;
 use std::fs::{File, OpenOptions};
 use std::io::Write;
+use std::path::Path;
 use std::sync::atomic::AtomicBool;
 use std::sync::atomic::Ordering;
 use std::sync::mpsc::channel;
@@ -24,6 +26,8 @@ pub struct FileManager {
 impl FileManager {
     /// Instanciate file manager on given file.
     pub fn new(path: &str) -> Self {
+        Path::new(path).parent().map(create_dir_all);
+
         match mkfifo(path, stat::Mode::S_IRWXU) {
             Ok(_) => println!("Created FIFO {}.", path),
             Err(_) => println!("FIFO already exists."),
@@ -33,7 +37,7 @@ impl FileManager {
             .read(true)
             .write(true)
             .open(path)
-            .expect("Unable to open file.");
+            .unwrap_or_else(|_| panic!("Unable to open file: {}", path));
         FileManager { f }
     }
 

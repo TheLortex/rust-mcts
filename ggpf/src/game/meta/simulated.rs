@@ -25,6 +25,7 @@ where
     dynamics_evaluator: mpsc::Sender<DynamicsEvaluatorChannel>,
     repr_dimension: Ix3,
     game_descriptor: G::Descriptor,
+    support_size: usize,
 }
 
 impl<G> Clone for Simulated<G>
@@ -40,6 +41,7 @@ where
             total_reward: self.total_reward,
             repr_dimension: self.repr_dimension,
             game_descriptor: self.game_descriptor.clone(),
+            support_size: self.support_size,
         }
     }
 }
@@ -62,6 +64,7 @@ where
         game_descriptor: G::Descriptor,
         initial_possible_moves: Vec<G::Move>,
         dynamics_evaluator: mpsc::Sender<DynamicsEvaluatorChannel>,
+        support_size: usize,
     ) -> Self {
         let repr_dimension = repr_state.raw_dim();
         Simulated {
@@ -72,6 +75,7 @@ where
             dynamics_evaluator,
             repr_dimension,
             game_descriptor,
+            support_size,
         }
     }
 }
@@ -116,7 +120,7 @@ where
             self.dynamics_evaluator.clone(),
             &self.repr_state,
             &move_encoded,
-            true,
+            self.support_size,
         )
         .await;
         self.repr_state = network_output.repr_state;

@@ -1,35 +1,17 @@
 use crate::game::*;
 use async_trait::async_trait;
-use std::marker::PhantomData;
 use std::sync::Arc;
-use typenum::Unsigned;
 
 /// A game with its history.
-pub struct WithHistory<G: Base, H> {
+#[derive(Clone, Debug)]
+pub struct WithHistory<G: Base> {
     prec: Option<Arc<Self>>,
     /// Current game state.
     pub state: G, // TODO: create accessor
-    _h: PhantomData<fn() -> H>,
+    history_len: usize,
 }
 
-use std::fmt;
-impl<G: Base, H> fmt::Debug for WithHistory<G, H> {
-    fn fmt(&self, fmt: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(fmt, "{:?}", self.state)
-    }
-}
-
-impl<G: Base + Clone, H> Clone for WithHistory<G, H> {
-    fn clone(&self) -> Self {
-        WithHistory {
-            prec: self.prec.clone(),
-            state: self.state.clone(),
-            _h: PhantomData,
-        }
-    }
-}
-
-impl<G: Base + Clone, H> Base for WithHistory<G, H> {
+impl<G: Base + Clone> Base for WithHistory<G> {
     type Move = G::Move;
 
     fn possible_moves(&self) -> Vec<Self::Move> {
@@ -38,20 +20,20 @@ impl<G: Base + Clone, H> Base for WithHistory<G, H> {
 }
 
 #[async_trait]
-impl<G: Playable + Clone + Sync + Send, H> Playable for WithHistory<G, H> {
+impl<G: Playable + Clone + Sync + Send> Playable for WithHistory<G> {
     async fn play(&mut self, action: &<Self as Base>::Move) -> f32 {
         let prec = self.prec.take();
         let new_node = WithHistory {
             prec,
             state: self.state.clone(),
-            _h: PhantomData,
+            history_len: self.history_len,
         };
         self.prec = Some(Arc::new(new_node));
         self.state.play(action).await
     }
 }
 
-impl<G: Game + Clone + Sync + Send, H> Game for WithHistory<G, H> {
+impl<G: Game + Clone + Sync + Send> Game for WithHistory<G> {
     type Player = G::Player;
 
     fn players() -> Vec<Self::Player> {
@@ -67,20 +49,20 @@ impl<G: Game + Clone + Sync + Send, H> Game for WithHistory<G, H> {
     }
 }
 
-impl<G: SingleWinner + Clone + Sync + Send, H> SingleWinner for WithHistory<G, H> {
+impl<G: SingleWinner + Clone + Sync + Send> SingleWinner for WithHistory<G> {
     fn winner(&self) -> Option<G::Player> {
         self.state.winner()
     }
 }
 
-impl<G: Base + PartialEq, H> PartialEq for WithHistory<G, H> {
+impl<G: Base + PartialEq> PartialEq for WithHistory<G> {
     fn eq(&self, other: &Self) -> bool {
         self.state.eq(&other.state)
     }
 }
-impl<G: Base + Eq, H> Eq for WithHistory<G, H> {}
+impl<G: Base + Eq> Eq for WithHistory<G> {}
 
-impl<G: Base + Hash, H_> Hash for WithHistory<G, H_> {
+impl<G: Base + Hash> Hash for WithHistory<G> {
     fn hash<H: Hasher>(&self, state: &mut H) {
         self.state.hash(state)
     }
@@ -88,34 +70,34 @@ impl<G: Base + Hash, H_> Hash for WithHistory<G, H_> {
 /* GAME BUILDER */
 /// Builder for a game with history.
 #[derive(Clone, Copy)]
-pub struct WithHistoryGB<'a, GB, H>(&'a GB, PhantomData<H>);
+pub struct WithHistoryGB<GB>(GB, usize);
 
-impl<'a, GB, H> WithHistoryGB<'a, GB, H> {
+impl<GB> WithHistoryGB<GB> {
     /// Creates a game builder with history, given a correspond standard game builder.
-    pub fn new(gb: &'a GB) -> Self {
-        Self(gb, PhantomData)
+    pub fn new(gb: GB, history_len: usize) -> Self {
+        Self(gb, history_len)
     }
 }
 
 #[async_trait]
-impl<G, GB, H> GameBuilder<WithHistory<G, H>>
-for WithHistoryGB<'_, GB, H>
-where 
-G : Game + Clone + Sync + Send + 'static,
-GB: GameBuilder<G> + Send + Sync,
-H: Send + Sync
+impl<GB> GameBuilder for WithHistoryGB<GB>
+where
+    GB::G: Clone + Sync + Send + 'static,
+    GB: GameBuilder + Send + Sync,
 {
-    async fn create(&self, starting: G::Player) -> WithHistory<G, H> {
+    type G = WithHistory<GB::G>;
+
+    async fn create(&self, starting: <Self::G as Game>::Player) -> WithHistory<GB::G> {
         let state = self.0.create(starting).await;
         WithHistory {
             prec: None,
             state,
-            _h: PhantomData,
+            history_len: self.1,
         }
     }
 }
 
-impl<G: Features + Clone + Sync + Send, H: Unsigned> Features for WithHistory<G, H> {
+impl<G: Features + Clone + Sync + Send> Features for WithHistory<G> {
     // one dimension larger to store history
     type StateDim = <G::StateDim as Dimension>::Larger;
     type ActionDim = G::ActionDim;
@@ -128,7 +110,7 @@ impl<G: Features + Clone + Sync + Send, H: Unsigned> Features for WithHistory<G,
         let state_dimension = {
             let game_state_dimension = G::state_dimension(&ft);
             let mut new_dim = game_state_dimension.insert_axis(Axis(0));
-            new_dim[0] = H::to_usize();
+            new_dim[0] = self.history_len;
             new_dim
         };
 
@@ -145,7 +127,7 @@ impl<G: Features + Clone + Sync + Send, H: Unsigned> Features for WithHistory<G,
 
     fn state_to_feature(&self, pov: Self::Player) -> Array<f32, Self::StateDim> {
         let mut states_ref = vec![];
-        (0..H::to_usize()).fold(self, |current, _| {
+        (0..self.history_len).fold(self, |current, _| {
             states_ref.push(&current.state);
             let res: &Self = current.prec.as_ref().map(|b| b.as_ref()).unwrap_or(current);
             res
@@ -181,5 +163,61 @@ impl<G: Features + Clone + Sync + Send, H: Unsigned> Features for WithHistory<G,
 
     fn all_possible_moves(descr: &Self::Descriptor) -> Vec<Self::Move> {
         G::all_possible_moves(&descr.1)
+    }
+}
+
+/// Interface wrapper for WithHistory.
+pub struct IWithHistory<GV>
+where
+    GV: GameView,
+{
+    view: GV,
+}
+
+use cursive::direction::Direction;
+use cursive::event::{Event, EventResult};
+use cursive::Printer;
+use cursive::Vec2;
+
+impl<GV> IWithHistory<GV>
+where
+    GV: GameView,
+{
+    /// Wraps a game view for a with history game.
+    pub fn new(view: GV) -> Self {
+        Self { view }
+    }
+}
+
+impl<GV> cursive::view::View for IWithHistory<GV>
+where
+    GV: GameView,
+{
+    fn draw(&self, printer: &Printer) {
+        self.view.draw(printer)
+    }
+
+    fn take_focus(&mut self, d: Direction) -> bool {
+        self.view.take_focus(d)
+    }
+
+    fn on_event(&mut self, event: Event) -> EventResult {
+        self.view.on_event(event)
+    }
+
+    fn required_size(&mut self, v: Vec2) -> Vec2 {
+        self.view.required_size(v)
+    }
+}
+
+impl<GV> GameView for IWithHistory<GV>
+where
+    GV: GameView,
+    GV::G: Game + Clone,
+{
+    type G = WithHistory<GV::G>;
+
+    fn set_state(&mut self, state: Self::G) {
+        self.view.set_state(state.state)
     }
 }

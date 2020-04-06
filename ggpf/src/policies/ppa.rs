@@ -23,9 +23,9 @@ struct PPANodeInfo<G: Game> {
     moves: HashMap<G::Move, PPAMoveInfo>,
 }
 
-/**
- *  PPA policy instance.
- */
+///
+/// PPA policy instance.
+///
 pub struct PPAPolicy<G, M>
 where
     G: Game,
@@ -35,8 +35,6 @@ where
     s: PPA<G, M>,
     tree: HashMap<G, PPANodeInfo<G>>,
     playout_policy: HashMap<usize, f32>,
-
-    _m: PhantomData<M>,
 }
 
 impl<G, M> PPAPolicy<G, M>
@@ -62,7 +60,7 @@ where
 
         let mut history_playout = vec![];
 
-        while { !board.is_finished() } {
+        while !board.is_finished() {
             let chosen_move = self.next_move(&board);
             board.play(&chosen_move).await;
             history_playout.push(chosen_move);
@@ -103,7 +101,7 @@ where
             .playout_policy
             .entry(M::code(board, action))
             .or_insert(0.);
-        *node += self.s.alpha;
+        *node += self.s.config.alpha;
 
         let z: f32 = board
             .possible_moves()
@@ -119,7 +117,7 @@ where
         for m in board.possible_moves() {
             let move_node = self.playout_policy.entry(M::code(board, &m)).or_insert(0.);
             let v = move_node.exp();
-            *move_node -= self.s.alpha * v / z;
+            *move_node -= self.s.config.alpha * v / z;
         }
     }
 
@@ -173,7 +171,7 @@ where
                 let value = if v.N_a == 0. {
                     2.0
                 } else {
-                    v.Q + self.s.UCT_WEIGHT * (N.ln() / v.N_a).sqrt()
+                    v.Q + self.s.config.uct_weight * (N.ln() / v.N_a).sqrt()
                 };
                 if value >= max_value {
                     max_value = value;
@@ -189,7 +187,7 @@ where
                 let value = if v.N_a == 0. {
                     0.
                 } else {
-                    v.Q - self.s.UCT_WEIGHT * (N.ln() / v.N_a).sqrt()
+                    v.Q - self.s.config.uct_weight * (N.ln() / v.N_a).sqrt()
                 };
 
                 if value <= min_value {
@@ -221,7 +219,7 @@ where
     M: MoveCode<G>,
 {
     async fn play(self: &mut PPAPolicy<G, M>, board: &G) -> G::Move {
-        for _ in 0..self.s.N_PLAYOUTS {
+        for _ in 0..self.s.config.playouts {
             self.simulate(board).await
         }
 
@@ -242,24 +240,34 @@ where
 
 // POLICY BUILDER
 
-/**
- *  Playout Policy Adaptation policy builder.
- */
+///
+/// Playout Policy Adaptation policy builder.
+///
 pub struct PPA<G, M>
 where
     G: Game,
     M: MoveCode<G>,
 {
-    /// Weight for UCT formaula.
-    pub UCT_WEIGHT: f32,
-    /// Total number of playouts at each step.
-    pub N_PLAYOUTS: usize,
-    /// α value used in policy gradient.
-    pub alpha: f32,
+    /// PPA settings.
+    pub config: settings::PPA,
     /// PhantomData, storing move encoder type information.
     pub _m: PhantomData<fn() -> M>,
     /// PhantomData, storing game type information.
     pub _g: PhantomData<fn() -> G>,
+}
+impl<G, M> PPA<G, M>
+where
+    G: Game,
+    M: MoveCode<G>,
+{
+    /// Create a new PPA policy builder.
+    pub fn new(config: settings::PPA) -> Self {
+        Self {
+            config,
+            _m: PhantomData,
+            _g: PhantomData,
+        }
+    }
 }
 
 impl<G, M> Copy for PPA<G, M>
@@ -279,22 +287,6 @@ where
     }
 }
 
-impl<G, M> Default for PPA<G, M>
-where
-    G: Game,
-    M: MoveCode<G>,
-{
-    fn default() -> PPA<G, M> {
-        PPA::<G, M> {
-            alpha: 0.1,
-            UCT_WEIGHT: 0.4,
-            N_PLAYOUTS: settings::DEFAULT_N_PLAYOUTS,
-            _m: PhantomData,
-            _g: PhantomData,
-        }
-    }
-}
-
 impl<G, M> fmt::Display for PPA<G, M>
 where
     G: Game,
@@ -302,9 +294,9 @@ where
 {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         writeln!(f, "PPA")?;
-        writeln!(f, "|| ALPHA: {}", self.alpha)?;
-        writeln!(f, "|| UCT_WEIGHT: {}", self.UCT_WEIGHT)?;
-        writeln!(f, "|| N_PLAYOUTS: {}", self.N_PLAYOUTS)
+        writeln!(f, "|| ALPHA: {}", self.config.alpha)?;
+        writeln!(f, "|| UCT_WEIGHT: {}", self.config.uct_weight)?;
+        writeln!(f, "|| playouts: {}", self.config.playouts)
     }
 }
 
@@ -321,7 +313,6 @@ where
             s: *self,
             playout_policy: HashMap::new(),
             tree: HashMap::new(),
-            _m: PhantomData,
         }
     }
 }

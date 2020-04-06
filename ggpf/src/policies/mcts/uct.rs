@@ -31,7 +31,7 @@ pub struct UCTNodeInfo {
 /// UCT policy description.
 pub struct UCTPolicy_<G: Game> {
     color: G::Player,
-    UCT_WEIGHT: f32,
+    uct_weight: f32,
 }
 
 #[async_trait]
@@ -55,7 +55,7 @@ where
         let move_cb_multiplier = if board.turn() == self.color { 1. } else { -1. };
 
         let N = node_info.count;
-        let cb = self.UCT_WEIGHT * (N.ln() / (move_info.N_a + 1.)).sqrt();
+        let cb = self.uct_weight * (N.ln() / (move_info.N_a + 1.)).sqrt();
         let value = if exploration {
             move_info.Q + move_cb_multiplier * cb
         } else {
@@ -136,25 +136,13 @@ where
 pub type UCTPolicy<G> = WithMCTSPolicy<G, UCTPolicy_<G>>;
 
 /// UCT policy builder.
-pub struct UCT {
-    UCT_WEIGHT: f32,
-    N_PLAYOUTS: usize,
-}
-
-impl Default for UCT {
-    fn default() -> Self {
-        Self {
-            UCT_WEIGHT: 0.4,
-            N_PLAYOUTS: settings::DEFAULT_N_PLAYOUTS,
-        }
-    }
-}
+type UCT = settings::UCT;
 
 impl fmt::Display for UCT {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         writeln!(f, "UCT")?;
-        writeln!(f, "|| UCT_WEIGHT: {}", self.UCT_WEIGHT)?;
-        writeln!(f, "|| N_PLAYOUT: {}", self.N_PLAYOUTS)
+        writeln!(f, "|| uct_weight: {}", self.uct_weight)?;
+        writeln!(f, "|| N_PLAYOUT: {}", self.playouts)
     }
 }
 
@@ -170,9 +158,9 @@ where
         WithMCTSPolicy::new(
             UCTPolicy_ {
                 color,
-                UCT_WEIGHT: self.UCT_WEIGHT,
+                uct_weight: self.uct_weight,
             },
-            self.N_PLAYOUTS,
+            self.playouts,
         )
     }
 }

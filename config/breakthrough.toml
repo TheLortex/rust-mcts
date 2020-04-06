@@ -1,0 +1,42 @@
+[game]
+kind         = "Breakthrough"
+size         = 5
+history      = 2
+
+[self_play]
+batch_size   = 64
+evaluators   = 4
+generators   = 128
+
+[training]
+replay_buffer   = 5000
+epoch           = 25000
+batch           = 512
+n_epoch         = 10000
+save_replay_freq= 512
+checkpoint_freq = 250000
+weight_decay    = 1e-5
+
+[mcts]
+playouts        = 600
+
+[mu]
+reward_support  = 1
+repr_shape      = [5, 5, 16]
+unroll_steps    = 5
+td_steps        = 300
+
+[mu.puct]
+c_base          = 19652.0
+c_init          = 1.25
+root_dirichlet_alpha = 0.3
+root_exploration_fraction = 0.25
+discount        = 0.997
+value_support   = 1
+
+[alpha.puct]
+c_base          = 19652.0
+c_init          = 1.25
+root_dirichlet_alpha = 0.3
+root_exploration_fraction = 0.25
+discount        = 0.997

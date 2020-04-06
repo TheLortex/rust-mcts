@@ -1,34 +1,38 @@
+
+//!
+//! # Asynchronous evaluation functions.
+//!
+//! For each kind of evaluation there is an evaluator that can be
+//! provided to PUCT/Muz and an associated evaluator task that sends
+//! the request to the GPU while batching them.
+//!
+
+
 use crate::deep::evaluator::PredictionEvaluatorChannel;
-use crate::game;
 use crate::game::GameBuilder;
+use crate::game::*;
 use crate::policies::mcts::puct::PUCT;
 use crate::policies::mcts::{muz, puct};
-use crate::policies::{mcts::muz::{Muz, MuzPolicy}, MultiplayerPolicy, MultiplayerPolicyBuilder};
+use crate::policies::{
+    mcts::muz::{Muz, MuzPolicy},
+    MultiplayerPolicy, MultiplayerPolicyBuilder,
+};
 use crate::settings;
 
 use indicatif::{ProgressBar, ProgressStyle};
 use ndarray::{Array, Axis, Dimension, Ix1};
 use rand::seq::SliceRandom;
 use std::collections::HashMap;
-use std::hash::Hash;
 use std::iter::FromIterator;
 use std::sync::Arc;
 use tokio::sync::mpsc;
 
-/** TODO
- *  Asynchronous evaluation functions.
- *
- *  For each kind of evaluation there is an evaluator that can be
- *  provided to PUCT/Muz and an associated evaluator task that sends
- *  the request to the GPU while batching them.
- */
-
-/**
- *  Game history data generated from self-play
- */
+///
+/// Game history data generated from self-play
+///
 pub struct GameHistoryEntry<G>
 where
-    G: game::Features,
+    G: Features,
 {
     /// List of board states, except for the final state.
     pub state: Array<f32, <G::StateDim as Dimension>::Larger>,
@@ -54,38 +58,38 @@ where
 // |__/     |__/ \______/ |________/|________/|__/  |__/ \______/
 //
 
-use ndarray::Ix3;
-
 /*
  *  The game generator continuously generates self-play games using Muz policies.
  */
-async fn muzero_game_generator_task<G, GB, B, A>(
-    config: muz::MuZeroConfig<Ix3, B, A>,
+async fn muzero_game_generator_task<GB, B, A>(
+    config: muz::MuZeroConfig<B, A>,
     game_builder: GB,
     channels: muz::MuzEvaluatorChannels,
-    mut output_chan: mpsc::Sender<GameHistoryEntry<G>>,
+    mut output_chan: mpsc::Sender<GameHistoryEntry<GB::G>>,
     indicator_bar: Arc<Box<ProgressBar>>,
 ) where
-    G: game::Features + Send + Sync + 'static,
-    G::Move: Send + Sync,
-    G::Player: Send + Sync,
-    GB: GameBuilder<G>,
+    GB::G: Features + Send + Sync + 'static,
+    <GB::G as Base>::Move: Send + Sync,
+    <GB::G as Game>::Player: Send + Sync,
+    GB: GameBuilder,
     A: Dimension,
     B: Dimension,
 {
     let muz = Muz {
-        N_PLAYOUTS: settings::DEFAULT_N_PLAYOUTS,
-        puct: config.puct,
+        n_playouts: config.n_playouts,
+        muz: config.muz,
         channels,
-        repr_dimension: config.repr_board_shape,
     };
 
     loop {
-        let mut policies: HashMap<G::Player, MuzPolicy<G>> = HashMap::from_iter(G::players().iter().map(|i| (*i, muz.create(*i))));
+        let mut policies: HashMap<<GB::G as Game>::Player, MuzPolicy<GB::G>> = HashMap::from_iter(
+            <GB::G as Game>::players()
+                .iter()
+                .map(|i| (*i, muz.create(*i))),
+        );
 
-        let random_player = *G::players().choose(&mut rand::thread_rng()).unwrap();
-        let mut state: G =
-            game_builder.create(random_player).await;
+        let random_player = *GB::G::players().choose(&mut rand::thread_rng()).unwrap();
+        let mut state: GB::G = game_builder.create(random_player).await;
 
         let ft = state.get_features();
 
@@ -96,7 +100,7 @@ async fn muzero_game_generator_task<G, GB, B, A>(
         let mut history_reward = vec![];
         let mut history_turn = vec![];
 
-        while { !state.is_finished() } {
+        while !state.is_finished() {
             let policy = policies.get_mut(&state.turn()).unwrap();
             let action = policy.play(&state).await;
 
@@ -105,7 +109,7 @@ async fn muzero_game_generator_task<G, GB, B, A>(
             let game_node = mcts.root.as_ref().unwrap();
             let visit_count = game_node.read().unwrap().info.node.count;
 
-            let monte_carlo_distribution: HashMap<G::Move, f32> = HashMap::from_iter(
+            let monte_carlo_distribution: HashMap<<GB::G as Base>::Move, f32> = HashMap::from_iter(
                 game_node
                     .read()
                     .unwrap()
@@ -121,15 +125,18 @@ async fn muzero_game_generator_task<G, GB, B, A>(
                 .info
                 .moves
                 .iter()
-                .map(|(_, v)| (v.reward + config.puct.DISCOUNT * v.Q * v.N_a / visit_count))
+                .map(|(_, v)| (v.reward + config.muz.puct.discount * v.Q * v.N_a / visit_count))
                 .sum();
 
             history_turn.push(state.turn().into() as f32);
             history_state.push(state.state_to_feature(state.turn()).insert_axis(Axis(0)));
-            history_policy
-                .push(G::moves_to_feature(&ft, &monte_carlo_distribution).insert_axis(Axis(0)));
+            history_policy.push(
+                <GB::G as Features>::moves_to_feature(&ft, &monte_carlo_distribution)
+                    .insert_axis(Axis(0)),
+            );
             history_value.push(Array::from_elem(ndarray::Ix1(1), root_value));
-            history_action.push(G::move_to_feature(&ft, action).insert_axis(Axis(0)));
+            history_action
+                .push(<GB::G as Features>::move_to_feature(&ft, action).insert_axis(Axis(0)));
 
             let reward = state.play(&action).await;
             history_reward.push(Array::from_elem(ndarray::Ix1(1), reward));
@@ -158,35 +165,31 @@ async fn muzero_game_generator_task<G, GB, B, A>(
     }
 }
 
-/**
- *  MuZero self-play games generator
- *
- *  Spawn several tasks (number according to settings) that performs self-play games
- *  using the MuZero policy, sending them in the `output_chan` channel.
- *
- *  # Params
- *
- *  - `puct_settings`: configuration for PUCT policy and virtual state dimension.
- *  - `game_builder`: game builder.
- *  - `prediction_tensorflow`: interface for the prediction network.
- *  - `dynamics_tensorflow`: interface for the dynamics network.
- *  - `representation_tensorflow`: interface for the representation network.
- *  - `output_chan`: communication channel to emit the generated games.
- *
- *  # Panics
- *
- *  This function will panic if the evaluator shapes doesn't fit,
- *  or if the CUDA executor goes out of memory.
- */
-pub async fn muzero_game_generator<G, GB, B, A>(
-    config: muz::MuZeroConfig<Ix3, B, A>,
+///
+/// MuZero self-play games generator
+/// Spawn several tasks (number according to settings) that performs self-play games
+/// using the MuZero policy, sending them in the `output_chan` channel.
+/// # Params
+/// - `puct_settings`: configuration for PUCT policy and virtual state dimension.
+/// - `game_builder`: game builder.
+/// - `prediction_tensorflow`: interface for the prediction network.
+/// - `dynamics_tensorflow`: interface for the dynamics network.
+/// - `representation_tensorflow`: interface for the representation network.
+/// - `output_chan`: communication channel to emit the generated games.
+/// # Panics
+/// This function will panic if the evaluator shapes doesn't fit,
+/// or if the CUDA executor goes out of memory.
+///
+pub async fn muzero_game_generator<GB, B, A>(
+    config: muz::MuZeroConfig<B, A>,
+    config_selfplay: settings::SelfPlay,
     game_builder: GB,
-    output_chan: mpsc::Sender<GameHistoryEntry<G>>,
+    output_chan: mpsc::Sender<GameHistoryEntry<GB::G>>,
 ) where
-    G: game::Features + Send + Sync + 'static,
-    G::Move: Send + Sync,
-    G::Player: Send + Sync,
-    GB: GameBuilder<G> + Clone + Sync + Send + 'static,
+    GB::G: Features + Send + Sync + 'static,
+    <GB::G as Base>::Move: Send + Sync,
+    <GB::G as Game>::Player: Send + Sync,
+    GB: GameBuilder + Clone + Sync + Send + 'static,
     A: Dimension + 'static,
     B: Dimension + 'static,
 {
@@ -200,10 +203,10 @@ pub async fn muzero_game_generator<G, GB, B, A>(
 
     let mut muzero_evaluators = muz::MuzEvaluators::new(config.clone(), false);
 
-    for _ in 0..settings::GPU_N_EVALUATORS {
+    for _ in 0..config_selfplay.evaluators {
         muzero_evaluators = muzero_evaluators.clone();
 
-        for _ in 0..settings::GPU_N_GENERATORS {
+        for _ in 0..config_selfplay.generators {
             tokio::spawn(muzero_game_generator_task(
                 config.clone(),
                 game_builder.clone(),
@@ -228,33 +231,34 @@ pub async fn muzero_game_generator<G, GB, B, A>(
 /*
  *  The game generator continuously generates self-play games using PUCT policies.
  */
-async fn alphazero_game_generator_task<G, GB, A, B>(
+async fn alphazero_game_generator_task<GB, A, B>(
     config: puct::AlphaZeroConfig<A, B>,
     game_builder: GB,
     prediction_channel: mpsc::Sender<PredictionEvaluatorChannel>,
-    mut output_chan: mpsc::Sender<GameHistoryEntry<G>>,
+    mut output_chan: mpsc::Sender<GameHistoryEntry<GB::G>>,
     indicator_bar: Arc<Box<ProgressBar>>,
 ) where
-    G: game::Features + game::SingleWinner + Clone + Send + Sync + 'static,
-    G::Move: Send + Sync,
-    G::Player: Send + Sync,
-    GB: GameBuilder<G>,
+    GB::G: Features + Clone + Send + Sync + 'static,
+    <GB::G as Base>::Move: Send + Sync,
+    <GB::G as Game>::Player: Send + Sync,
+    GB: GameBuilder,
     A: Dimension,
     B: Dimension,
 {
     let puct = PUCT {
         config: config.puct,
-        N_PLAYOUTS: settings::DEFAULT_N_PLAYOUTS,
+        n_playouts: config.n_playouts,
         prediction_channel,
     };
 
     // Generate games indefinitely.
     loop {
-        let mut p1 = puct.create(G::players()[0]);
-        let mut p2 = puct.create(G::players()[1]);
-        let random_player = *G::players().choose(&mut rand::thread_rng()).unwrap();
-        let mut state: G =
-            game_builder.create(random_player).await;
+        let mut p1 = puct.create(<GB::G as Game>::players()[0]);
+        let mut p2 = puct.create(<GB::G as Game>::players()[1]);
+        let random_player = *<GB::G as Game>::players()
+            .choose(&mut rand::thread_rng())
+            .unwrap();
+        let mut state: GB::G = game_builder.create(random_player).await;
 
         let ft = state.get_features();
 
@@ -265,8 +269,8 @@ async fn alphazero_game_generator_task<G, GB, A, B>(
         let mut history_reward = vec![];
         let mut history_turn = vec![];
 
-        while { !state.is_finished() } {
-            let policy = if state.turn() == G::players()[0] {
+        while !state.is_finished() {
+            let policy = if state.turn() == <GB::G as Game>::players()[0] {
                 &mut p1
             } else {
                 &mut p2
@@ -277,7 +281,7 @@ async fn alphazero_game_generator_task<G, GB, A, B>(
             let game_node = policy.root.as_ref().unwrap();
             let visit_count = game_node.read().unwrap().info.node.count;
 
-            let monte_carlo_distribution: HashMap<G::Move, f32> = HashMap::from_iter(
+            let monte_carlo_distribution: HashMap<<GB::G as Base>::Move, f32> = HashMap::from_iter(
                 game_node
                     .read()
                     .unwrap()
@@ -293,15 +297,18 @@ async fn alphazero_game_generator_task<G, GB, A, B>(
                 .info
                 .moves
                 .iter()
-                .map(|(_, v)| ((v.reward + config.puct.DISCOUNT * v.Q) * v.N_a / visit_count))
+                .map(|(_, v)| ((v.reward + config.puct.discount * v.Q) * v.N_a / visit_count))
                 .sum();
 
             history_turn.push(state.turn().into() as f32);
             history_state.push(state.state_to_feature(state.turn()).insert_axis(Axis(0)));
-            history_policy
-                .push(G::moves_to_feature(&ft, &monte_carlo_distribution).insert_axis(Axis(0)));
+            history_policy.push(
+                <GB::G as Features>::moves_to_feature(&ft, &monte_carlo_distribution)
+                    .insert_axis(Axis(0)),
+            );
             history_value.push(Array::from_elem(ndarray::Ix1(1), root_value));
-            history_action.push(G::move_to_feature(&ft, action).insert_axis(Axis(0)));
+            history_action
+                .push(<GB::G as Features>::move_to_feature(&ft, action).insert_axis(Axis(0)));
 
             let reward = state.play(&action).await;
             history_reward.push(Array::from_elem(ndarray::Ix1(1), reward));
@@ -348,15 +355,16 @@ async fn alphazero_game_generator_task<G, GB, A, B>(
 ///  This function will panic if the evaluator shapes doesn't fit,
 ///  or if the CUDA executor goes out of memory.
 ///
-pub async fn alphazero_game_generator<G, GB, A, B>(
+pub async fn alphazero_game_generator<GB, A, B>(
     config: puct::AlphaZeroConfig<A, B>,
+    config_selfplay: settings::SelfPlay,
     game_builder: GB,
-    output_chan: mpsc::Sender<GameHistoryEntry<G>>,
+    output_chan: mpsc::Sender<GameHistoryEntry<GB::G>>,
 ) where
-    G: game::Features + game::SingleWinner + Send + Sync + Clone + Hash + Eq + 'static,
-    G::Move: Send + Sync,
-    G::Player: Send + Sync,
-    GB: GameBuilder<G> + Clone + Sync + Send + 'static,
+    GB::G: Features + Clone + Send + Sync + 'static,
+    <GB::G as Base>::Move: Send + Sync,
+    <GB::G as Game>::Player: Send + Sync,
+    GB: GameBuilder + Clone + Sync + Send + 'static,
     A: Dimension + 'static,
     B: Dimension + 'static,
 {
@@ -370,11 +378,11 @@ pub async fn alphazero_game_generator<G, GB, A, B>(
 
     let mut az = puct::AlphaZeroEvaluators::new(config.clone(), false);
 
-    for _ in 0..settings::GPU_N_EVALUATORS {
+    for _ in 0..config_selfplay.evaluators {
         // spawn new workers.
         az = az.clone();
 
-        for _ in 0..settings::GPU_N_GENERATORS {
+        for _ in 0..config_selfplay.generators {
             tokio::spawn(alphazero_game_generator_task(
                 config.clone(),
                 game_builder.clone(),

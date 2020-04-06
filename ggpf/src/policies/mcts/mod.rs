@@ -132,6 +132,7 @@ where
     G: MCTSGame,
     MCTS: BaseMCTSPolicy<G>,
 {
+    /// Structure that handle MCTS business logic.
     pub base_mcts: MCTS,
     N_PLAYOUTS: usize,
     /// Root node from the last exploration. Can be taken to gather exploration statistics.
@@ -244,9 +245,9 @@ where
             .backpropagate(created_node, &history, playout);
     }
 
-    /**
-     *  Instanciate a new MCTS policy, given a BaseMCTS instance.
-     */
+    ///
+    /// Instanciate a new MCTS policy, given a BaseMCTS instance.
+    ///
     pub fn new(p: MCTS, N_PLAYOUTS: usize) -> Self {
         WithMCTSPolicy {
             base_mcts: p,

@@ -1,14 +1,10 @@
 // CODE TAKEN AND MODIFIED FROM https://raw.githubusercontent.com/MrRobb/gym-rs/master/src/lib.rs under MIT License
 
-#[macro_use]
-use failure;
-use ndarray;
-use rand;
 use pyo3::prelude::*;
 
 use failure::Fail;
-use serde::{Serialize, Deserialize};
 use rand::Rng;
+use serde::{Deserialize, Serialize};
 
 type DiscreteType = usize;
 type VectorType<T> = ndarray::Array1<T>;
@@ -50,8 +46,7 @@ pub enum SpaceTemplate {
     },
 }
 
-#[derive(Debug, Clone)]
-#[derive(Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum SpaceData {
     DISCRETE(DiscreteType),
     BOX(VectorType<f64>),
@@ -288,7 +283,7 @@ impl Environment {
                     .call_method(py, "step", (vv,), None)
                     .map_err(|_| GymError::InvalidAction)?
             }
-            Action::TUPLE(spaces) => {
+            Action::TUPLE(_) => {
                 unimplemented!("Tuple is not supported.");
                 /*
                 let vpyo = spaces
@@ -378,7 +373,10 @@ impl Default for GymClient {
             .expect("Unable to call gym.__version__");
 
         log::debug!("Gym version: {}", version);
-        GymClient { gym: Py::from(gym), version }
+        GymClient {
+            gym: Py::from(gym),
+            version,
+        }
     }
 }
 

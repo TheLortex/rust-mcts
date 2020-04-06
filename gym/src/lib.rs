@@ -1,24 +1,17 @@
-
 #![feature(type_alias_impl_trait)]
 
 pub mod gym;
 
 use self::gym::*;
 
-use std::future::Future;
-use tarpc::{
-    client, context,
-    server::{BaseChannel, Channel},
-};
-use tokio::stream::StreamExt;
-use serde::{Serialize, Deserialize};
+use serde::{Deserialize, Serialize};
 use tokio_serde::*;
 
 pub struct BinCodec;
 
-impl<T> Serializer<T> for BinCodec 
-where 
-    T: Serialize
+impl<T> Serializer<T> for BinCodec
+where
+    T: Serialize,
 {
     type Error = std::io::Error;
 
@@ -32,13 +25,16 @@ where
     }
 }
 
-impl<T> Deserializer<T> for BinCodec 
-where 
-    T: for<'de> Deserialize<'de>
+impl<T> Deserializer<T> for BinCodec
+where
+    T: for<'de> Deserialize<'de>,
 {
     type Error = std::io::Error;
 
-    fn deserialize(self: std::pin::Pin<&mut Self>, bytes: &bytes::BytesMut) -> Result<T, Self::Error> {
+    fn deserialize(
+        self: std::pin::Pin<&mut Self>,
+        bytes: &bytes::BytesMut,
+    ) -> Result<T, Self::Error> {
         bincode::deserialize(bytes).map_err(|x| match *x {
             bincode::ErrorKind::Io(io) => io,
             _ => std::io::Error::new(std::io::ErrorKind::Other, "non-io error."),

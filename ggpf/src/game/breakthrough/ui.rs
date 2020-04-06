@@ -69,7 +69,7 @@ impl IBreakthrough {
                                 x: m.x,
                                 y: m.y,
                             })
-                            .filter(|m| m.is_valid(&self.game.content).is_some())
+                            .filter(|m| m.is_valid(self.game.content.view()).is_some())
                             .filter(|m2| {
                                 let m2_t = m2.target();
                                 let m_t = m.target();
@@ -105,25 +105,28 @@ impl cursive::view::View for IBreakthrough {
             theme::Color::TerminalDefault,
         );
         // print letters
-        for x in 0..K {
+        for x in 0..self.game.K {
             printer.print(
                 (2 + 3 * x, 0),
                 &(('a' as usize + x) as u8 as char).to_string(),
             );
             printer.print((0, 2 + 2 * x), &format!("{}", 1 + x));
         }
-        printer.print((1, 1), &format!("╔{}══╗", "══╤".repeat(K - 1)));
-        for y in 0..K {
+        printer.print((1, 1), &format!("╔{}══╗", "══╤".repeat(self.game.K - 1)));
+        for y in 0..self.game.K {
             if y != 0 {
-                printer.print((1, 1 + 2 * y), &format!("╟{}──╢", "──┼".repeat(K - 1)));
+                printer.print(
+                    (1, 1 + 2 * y),
+                    &format!("╟{}──╢", "──┼".repeat(self.game.K - 1)),
+                );
             }
             printer.print((1, 2 + 2 * y), "║");
-            for x in 0..K {
+            for x in 0..self.game.K {
                 if x != 0 {
                     printer.print((1 + 3 * x, 2 + 2 * y), "│")
                 };
 
-                match self.game.content[x][y] {
+                match self.game.content[[x, y]] {
                     Cell::Empty => (),
                     Cell::C(Color::Black) => printer.with_color(black_color, |printer| {
                         printer.print((2 + 3 * x, 2 + 2 * y), "▓▓")
@@ -133,9 +136,12 @@ impl cursive::view::View for IBreakthrough {
                     }),
                 }
             }
-            printer.print((1 + 3 * K, 2 + 2 * y), "║");
+            printer.print((1 + 3 * self.game.K, 2 + 2 * y), "║");
         }
-        printer.print((1, 1 + 2 * K), &format!("╚{}══╝", "══╧".repeat(K - 1)));
+        printer.print(
+            (1, 1 + 2 * self.game.K),
+            &format!("╚{}══╝", "══╧".repeat(self.game.K - 1)),
+        );
 
         let select_color = ColorStyle::new(
             theme::Color::RgbLowRes(1, 1, 1),
@@ -166,7 +172,7 @@ impl cursive::view::View for IBreakthrough {
                         y,
                         direction: *direction,
                     };
-                    match m.is_valid(&self.game.content) {
+                    match m.is_valid(self.game.content.view()) {
                         None => (),
                         Some((px, py)) => {
                             let (px, py, color) = if *direction == mv.direction {
@@ -242,8 +248,8 @@ impl cursive::view::View for IBreakthrough {
 
     fn required_size(&mut self, _: Vec2) -> Vec2 {
         Vec2 {
-            x: K * 3 + 3,
-            y: K * 2 + 3,
+            x: self.game.K * 3 + 3,
+            y: self.game.K * 2 + 3,
         }
     }
 }

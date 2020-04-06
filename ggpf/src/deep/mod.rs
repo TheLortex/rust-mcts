@@ -1,4 +1,3 @@
-
 /// Neural networks evaluators.
 pub mod evaluator;
 /// File output channel.

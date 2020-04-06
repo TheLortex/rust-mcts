@@ -16,11 +16,16 @@ impl fmt::Debug for MisereBreakthrough {
     }
 }
 
+#[derive(Clone)]
+struct Misere(BreakthroughBuilder);
+
 #[async_trait]
-impl GameBuilder<MisereBreakthrough> for BreakthroughBuilder {
+impl GameBuilder for Misere {
+    type G = MisereBreakthrough;
+
     async fn create(&self, turn: Color) -> MisereBreakthrough {
         MisereBreakthrough {
-            game: self.create(turn).await,
+            game: self.0.create(turn).await,
         }
     }
 }

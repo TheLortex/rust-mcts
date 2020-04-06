@@ -1,4 +1,4 @@
-use super::puct::{PUCTPolicy, PUCTSettings, PUCT};
+use super::puct::{PUCTPolicy, PUCT};
 use crate::deep::evaluator::{dynamics_task, prediction_task, representation_task};
 use crate::deep::evaluator::{
     representation, DynamicsEvaluatorChannel, PredictionEvaluatorChannel,
@@ -13,7 +13,6 @@ use crate::settings;
 
 use async_trait::async_trait;
 use ndarray::Dimension;
-use ndarray::Ix3;
 use std::fmt;
 use std::sync::Arc;
 use std::sync::{atomic::AtomicBool, RwLock};
@@ -38,7 +37,7 @@ where
     async fn play(&mut self, board: &G) -> G::Move {
         let net_output = representation(
             self.config.channels.representation.clone(),
-            self.config.repr_dimension,
+            self.config.muz.repr_shape,
             &board.state_to_feature(self.player),
         )
         .await;
@@ -49,15 +48,16 @@ where
             board.get_features(),
             board.possible_moves(),
             self.config.channels.dynamics.clone(),
+            self.config.muz.reward_support.unwrap_or(0),
         );
 
         let mcts_policy_builder = PUCT {
             prediction_channel: self.config.channels.prediction.clone(),
-            config: self.config.puct,
-            N_PLAYOUTS: self.config.N_PLAYOUTS,
+            config: self.config.muz.puct,
+            n_playouts: self.config.n_playouts,
         };
 
-        let mut mcts_policy = mcts_policy_builder.create(self.player);
+        let mut mcts_policy: PUCTPolicy<Simulated<G>> = mcts_policy_builder.create(self.player);
 
         let action = mcts_policy.play(&simulator).await;
         self.mcts = Some(mcts_policy);
@@ -79,20 +79,19 @@ pub struct MuzEvaluatorChannels {
 /// MuZero policy builder.
 #[derive(Clone)]
 pub struct Muz {
-    /// PUCT settings.
-    pub puct: PUCTSettings,
     /// Number of PUCT playouts per move.
-    pub N_PLAYOUTS: usize,
+    pub n_playouts: usize,
+    /// Muz settings.
+    pub muz: settings::MuZero,
     /// Evaluation channels
     pub channels: MuzEvaluatorChannels,
-    /// Representation board dimension
-    pub repr_dimension: Ix3,
 }
 
 impl fmt::Display for Muz {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         writeln!(f, "MUZ")?;
-        writeln!(f, "||{:?}", self.puct)
+        writeln!(f, "||N_playouts: {:?}", self.n_playouts)?;
+        writeln!(f, "|| {:?}", self.muz)
     }
 }
 
@@ -113,13 +112,13 @@ where
 
 /// Global configuration for MuZero setup.
 #[derive(Clone)]
-pub struct MuZeroConfig<R, B, A> {
+pub struct MuZeroConfig<B, A> {
+    /// Number of playouts for search.
+    pub n_playouts: usize,
     /// Settings for PUCT search.
-    pub puct: PUCTSettings,
+    pub muz: settings::MuZero,
     /// Models base directory location.
     pub networks_path: String,
-    /// Virtual board shape dimensions.
-    pub repr_board_shape: R,
     /// Board space dimensions.
     pub board_shape: B,
     /// Action shape dimensions.
@@ -132,17 +131,16 @@ pub struct MuZeroConfig<R, B, A> {
 
 /// Structure that manages the tensorflow models and
 /// the batched evaluator tasks.
-pub struct MuzEvaluators<R, B, A> {
-    config: MuZeroConfig<R, B, A>,
+pub struct MuzEvaluators<B, A> {
+    config: MuZeroConfig<B, A>,
     prediction_tensorflow: tf::ThreadSafeModel,
     dynamics_tensorflow: tf::ThreadSafeModel,
     representation_tensorflow: tf::ThreadSafeModel,
     channels: MuzEvaluatorChannels,
 }
 
-impl<R, B, A> Clone for MuzEvaluators<R, B, A>
+impl<B, A> Clone for MuzEvaluators<B, A>
 where
-    R: Dimension,
     B: Dimension,
     A: Dimension,
 {
@@ -170,9 +168,8 @@ where
     }
 }
 
-impl<R, B, A> MuzEvaluators<R, B, A>
+impl<B, A> MuzEvaluators<B, A>
 where
-    R: Dimension,
     B: Dimension,
     A: Dimension,
 {
@@ -180,7 +177,7 @@ where
     /// the files if necessary.
     /// If `spawn_tensorflow` is set, also spawn evaluators for the current
     /// channels.
-    pub fn new(config: MuZeroConfig<R, B, A>, spawn_tensorflow: bool) -> Self {
+    pub fn new(config: MuZeroConfig<B, A>, spawn_tensorflow: bool) -> MuzEvaluators<B, A> {
         let (muz_pred_tx, muz_pred_rx) =
             mpsc::channel::<PredictionEvaluatorChannel>(config.batch_size);
         let (muz_repr_tx, muz_repr_rx) =
@@ -251,17 +248,13 @@ where
     ) {
         let board_size = self.config.board_shape.size();
         let action_size = self.config.action_shape.size();
-        let repr_size = self.config.repr_board_shape.size();
+        let repr_size = self.config.muz.repr_shape.size();
 
         tokio::spawn(prediction_task(
             self.config.batch_size,
             repr_size,
             action_size,
-            if self.config.puct.DECODE_VALUE {
-                settings::SUPPORT_SHAPE as usize
-            } else {
-                1
-            },
+            2 * self.config.muz.puct.value_support.unwrap_or(0) + 1,
             self.prediction_tensorflow.clone(),
             muz_pred_rx,
             None,
@@ -279,11 +272,7 @@ where
             self.config.batch_size,
             repr_size,
             action_size,
-            if self.config.puct.DECODE_VALUE {
-                settings::SUPPORT_SHAPE as usize
-            } else {
-                1
-            },
+            2 * self.config.muz.reward_support.unwrap_or(0) + 1,
             self.dynamics_tensorflow.clone(),
             muz_dyn_rx,
         ));

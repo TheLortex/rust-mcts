@@ -59,7 +59,7 @@ impl<G: Singleplayer + Clone, M: MoveCode<G>> NRPAPolicy<G, M> {
                 let mut score = 0.;
 
                 let mut history = vec![];
-                while { !board.is_finished() } {
+                while !board.is_finished() {
                     let chosen_move = Self::next_move(&playout_policy, &board);
 
                     score += board.play(&chosen_move).await;

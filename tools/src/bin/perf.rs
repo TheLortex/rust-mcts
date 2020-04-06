@@ -1,3 +1,9 @@
+//! # PERF - benchmark game generation performance.
+//!
+//! Usage: `cargo run --release --bin perf`
+//!
+//! Performance is tested on 5x5 breakthrough/PUCT.
+
 #![allow(non_snake_case)]
 
 use ggpf::deep::evaluator::PredictionEvaluatorChannel;
@@ -5,7 +11,6 @@ use ggpf::deep::tf;
 use ggpf::game::breakthrough::{Breakthrough, BreakthroughBuilder};
 use ggpf::game::meta::with_history::*;
 use ggpf::game::*;
-use ggpf::settings;
 
 use ndarray::Dimension;
 use std::path::Path;
@@ -14,11 +19,12 @@ use std::sync::Arc;
 use std::sync::RwLock;
 use tokio::runtime;
 use tokio::sync::mpsc;
-use typenum::U2;
 
-const MODEL_PATH: &str = "models/alpha-breakthrough/";
-
-type G = WithHistory<Breakthrough, U2>;
+/// Model location.
+const MODEL_PATH: &str = "data/alpha-breakthrough-5/model/";
+/// Game type.
+type G = WithHistory<Breakthrough>;
+/// Entry point.
 fn main() {
     let mut threaded_rt = runtime::Builder::new()
         .threaded_scheduler()
@@ -32,6 +38,14 @@ fn main() {
 
 use indicatif::{ProgressBar, ProgressStyle};
 
+/// Batch size per evaluator.
+const GPU_BATCH_SIZE: usize = 128;
+/// Number of game generators per evaluator.
+const N_GENERATORS: usize = 256;
+/// Number of evaluators.
+const N_EVALUATORS: usize = 4;
+
+/// Run performance test with hardcoded configuration.
 async fn run() {
     flexi_logger::Logger::with_env().start().unwrap();
     log::info!("AlphaZero generate: starting!");
@@ -49,7 +63,7 @@ async fn run() {
     ));
 
     // Game builder.
-    let game_builder = WithHistoryGB::<_, U2>::new(&BreakthroughBuilder {});
+    let game_builder = WithHistoryGB::new(BreakthroughBuilder { size: 5 }, 2);
 
     let breakthrough: G = game_builder.create(Breakthrough::players()[0]).await;
 
@@ -68,11 +82,10 @@ async fn run() {
 
     let mut jh = vec![];
 
-    for _ in 0..4 {
-        let (pred_tx, pred_rx) =
-            mpsc::channel::<PredictionEvaluatorChannel>(2 * settings::GPU_BATCH_SIZE);
+    for _ in 0..N_EVALUATORS {
+        let (pred_tx, pred_rx) = mpsc::channel::<PredictionEvaluatorChannel>(2 * GPU_BATCH_SIZE);
 
-        for _ in 0..256 {
+        for _ in 0..N_GENERATORS {
             let ptx = pred_tx.clone();
             let bt = breakthrough.clone();
             tokio::spawn(async move {
@@ -81,7 +94,7 @@ async fn run() {
                         ptx.clone(),
                         Breakthrough::players()[0],
                         &bt,
-                        false,
+                        1,
                     )
                     .await;
                 }
@@ -93,7 +106,7 @@ async fn run() {
         let bb = bar_box.clone();
 
         jh.push(tokio::spawn(ggpf::deep::evaluator::prediction_task(
-            settings::GPU_BATCH_SIZE,
+            GPU_BATCH_SIZE,
             board_size,
             action_size,
             1,
@@ -107,26 +120,3 @@ async fn run() {
         i.await.unwrap()
     }
 }
-
-/*
-
-BATCH SIZE   -   N GENERATORS   - N EVALUATORS -   STEPS/10S
-    1                  1               1              9300 *
-    1                  1               2             18000 *
-    1                  1               4             27000 *
-    1                  1               6             27500 *
-    1                  4               1             15000 *
-    1                 16               1              40K  *
-    4                  4               1             19000 *
-    4                 16               1             30000 *
-   16                 16               1              2833 *
-   16                 64               1             100K  *
-   16                 64               4             216K  *
-   64                 16               1              10K  *
-   64                256               4             365K  *
-  256                256               4             422K  *
-  256               1024               4             2M
-  512               1024               4             415K  *
-  256               2048               2             380K  *
-  128                256               8             376K  *
-*/

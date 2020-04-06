@@ -1,0 +1,6 @@
+tqdm
+numpy
+tensorflow-addons
+munch
+toml
+gym

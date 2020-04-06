@@ -60,7 +60,7 @@ impl<G: Singleplayer + Clone> SingleplayerPolicyBuilder<G> for Random {
 /// Flat Monte Carlo policy
 pub struct FlatMonteCarloPolicy<G: Game> {
     color: G::Player,
-    N_PLAYOUTS: usize,
+    playouts: usize,
 }
 
 #[async_trait]
@@ -68,7 +68,7 @@ impl<G: Game + SingleWinner + Clone> MultiplayerPolicy<G> for FlatMonteCarloPoli
     async fn play(self: &mut FlatMonteCarloPolicy<G>, board: &G) -> G::Move {
         let moves = board.possible_moves();
 
-        let n_playouts_per_move = self.N_PLAYOUTS / moves.len();
+        let n_playouts_per_move = self.playouts / moves.len();
 
         let mut best_move = None;
         let mut best_score = 0;
@@ -94,17 +94,7 @@ impl<G: Game + SingleWinner + Clone> MultiplayerPolicy<G> for FlatMonteCarloPoli
 }
 
 /// Flat Monte Carlo policy builder
-pub struct FlatMonteCarlo {
-    N_PLAYOUTS: usize,
-}
-
-impl Default for FlatMonteCarlo {
-    fn default() -> Self {
-        Self {
-            N_PLAYOUTS: settings::DEFAULT_N_PLAYOUTS,
-        }
-    }
-}
+type FlatMonteCarlo = settings::FlatMonteCarlo;
 
 impl fmt::Display for FlatMonteCarlo {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -118,7 +108,7 @@ impl<G: Game + SingleWinner + Clone> MultiplayerPolicyBuilder<G> for FlatMonteCa
     fn create(&self, color: G::Player) -> Self::P {
         FlatMonteCarloPolicy {
             color,
-            N_PLAYOUTS: self.N_PLAYOUTS,
+            playouts: self.playouts,
         }
     }
 }
@@ -126,8 +116,8 @@ impl<G: Game + SingleWinner + Clone> MultiplayerPolicyBuilder<G> for FlatMonteCa
 /// Flat Monte Carlo with UCB policy
 pub struct FlatUCBMonteCarloPolicy<G: Game> {
     color: G::Player,
-    N_PLAYOUTS: usize,
-    UCB_WEIGHT: f32,
+    playouts: usize,
+    ucb_weight: f32,
 }
 
 #[async_trait]
@@ -152,7 +142,7 @@ impl<G: Game + SingleWinner + Clone> MultiplayerPolicy<G> for FlatUCBMonteCarloP
             move_board.insert(m, b_after_move);
         }
 
-        for i in 0..(self.N_PLAYOUTS - n_moves) {
+        for i in 0..(self.playouts - n_moves) {
             let mut max_ucb = 0f32;
             let mut max_move = None;
 
@@ -160,7 +150,7 @@ impl<G: Game + SingleWinner + Clone> MultiplayerPolicy<G> for FlatUCBMonteCarloP
                 let count = *move_count.get(&m).unwrap() as f32;
                 let succ = *move_success.get(&m).unwrap() as f32;
                 let mean = succ / count;
-                let ucb = mean + self.UCB_WEIGHT * (((n_moves + i) as f32).ln() / count).sqrt();
+                let ucb = mean + self.ucb_weight * (((n_moves + i) as f32).ln() / count).sqrt();
 
                 if ucb >= max_ucb {
                     max_move = Some(m);
@@ -200,19 +190,8 @@ impl<G: Game + SingleWinner + Clone> MultiplayerPolicy<G> for FlatUCBMonteCarloP
 }
 
 /// Flat Monte Carlo with UCB policy builder
-pub struct FlatUCBMonteCarlo {
-    N_PLAYOUTS: usize,
-    UCB_WEIGHT: f32,
-}
 
-impl Default for FlatUCBMonteCarlo {
-    fn default() -> Self {
-        Self {
-            N_PLAYOUTS: settings::DEFAULT_N_PLAYOUTS,
-            UCB_WEIGHT: 0.4,
-        }
-    }
-}
+type FlatUCBMonteCarlo = settings::FlatUCBMonteCarlo;
 
 impl fmt::Display for FlatUCBMonteCarlo {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -226,8 +205,8 @@ impl<G: Game + SingleWinner + Clone> MultiplayerPolicyBuilder<G> for FlatUCBMont
     fn create(&self, color: G::Player) -> Self::P {
         FlatUCBMonteCarloPolicy {
             color,
-            N_PLAYOUTS: self.N_PLAYOUTS,
-            UCB_WEIGHT: self.UCB_WEIGHT,
+            playouts: self.playouts,
+            ucb_weight: self.ucb_weight,
         }
     }
 }

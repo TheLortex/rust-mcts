@@ -1,62 +1,63 @@
 use crate::game::{Game, NoFeatures};
+use crate::settings;
 
 use async_trait::async_trait;
 use std::fmt::Display;
 
-/**
- *  Policies that doesn't perform any tree search.
- */
+///
+/// Policies that doesn't perform any tree search.
+///
 pub mod flat;
-/**
- *  Monte-Carlo Tree Search (MCTS) based policies.
- */
+///
+/// Monte-Carlo Tree Search (MCTS) based policies.
+///
 pub mod mcts;
-/**
- *  Nested Monte-Carlo Search policy.
- */
+///
+/// Nested Monte-Carlo Search policy.
+///
 pub mod nmcs;
-/**
- *  Nested Rollout Policy Adaptation.
- */
+///
+/// Nested Rollout Policy Adaptation.
+///
 pub mod nrpa;
-/**
- *  Playout Policy Adaptation.
- */
+///
+/// Playout Policy Adaptation.
+///
 pub mod ppa;
 
 /* MULTIPLAYER POLICY TRAITS */
 
-/**
- * A static policy.
- */
+///
+///A static policy.
+///
 #[async_trait]
 pub trait MultiplayerPolicy<T: Game> {
-    /**
-     *  Chooses the next action given the current game state.
-     */
+    ///
+    /// Chooses the next action given the current game state.
+    ///
     async fn play(&mut self, board: &T) -> T::Move;
 }
-/**
- * A static policy builder.
- */
+///
+///A static policy builder.
+///
 pub trait MultiplayerPolicyBuilder<T: Game>: Display {
-    /**
-     *  Created policy type.
-     */
+    ///
+    /// Created policy type.
+    ///
     type P: MultiplayerPolicy<T>;
 
-    /**
-     *  Initializes a new policy instance for player `color`.
-     */
+    ///
+    /// Initializes a new policy instance for player `color`.
+    ///
     fn create(&self, color: T::Player) -> Self::P;
 }
-/**
- * A dynamic policy builder.
- */
+///
+///A dynamic policy builder.
+///
 pub trait DynMultiplayerPolicyBuilder<'a, T: Game>: Display {
-    /**
-     *  Initializes a new policy instance for player `color`, but *dynamically*.
-     */
+    ///
+    /// Initializes a new policy instance for player `color`, but *dynamically*.
+    ///
     fn create(&self, color: T::Player) -> Box<dyn MultiplayerPolicy<T> + Send + Sync + 'a>;
 }
 
@@ -93,6 +94,7 @@ pub trait SingleplayerPolicy<T: Game> {
 use super::game;
 /// Dynamically map policy names to policy builder instances.
 pub fn get_multi<'a, G>(
+    config: settings::Config,
     name: &str,
 ) -> Box<dyn DynMultiplayerPolicyBuilder<'a, G> + Sync + Send + 'a>
 where
@@ -100,15 +102,13 @@ where
     G::Move: Send,
 {
     match name {
-        "rand" => Box::new(flat::Random::default()),
-        "flat" => Box::new(flat::FlatMonteCarlo::default()),
-        "flat_ucb" => Box::new(flat::FlatUCBMonteCarlo::default()),
-        "uct" => Box::new(mcts::uct::UCT::default()),
-        "rave" => Box::new(mcts::rave::RAVE::default()),
-        "ppa" => Box::new(ppa::PPA::<_, NoFeatures>::default()),
+        "rand" => Box::new(flat::Random {}),
+        "flat" => Box::new(config.policies.flat),
+        "flat_ucb" => Box::new(config.policies.flat_ucb),
+        "uct" => Box::new(config.policies.uct),
+        "rave" => Box::new(config.policies.rave),
+        "ppa" => Box::new(ppa::PPA::<_, NoFeatures>::new(config.policies.ppa)),
         "nmcs" => Box::new(nmcs::MultiNMCS::default()),
         _ => panic!("Policy '{}' not found.", name),
     }
 }
-
-/* SINGLEPLAYER POLICIES: TODO */

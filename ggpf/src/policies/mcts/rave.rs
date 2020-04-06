@@ -28,7 +28,7 @@ pub struct RAVENodeInfo {
 /// RAVE policy description.
 pub struct RAVEPolicy_<G: Game> {
     color: G::Player,
-    UCT_WEIGHT: f32,
+    uct_weight: f32,
 }
 
 #[async_trait]
@@ -165,7 +165,7 @@ impl<G: super::MCTSGame> RAVEPolicy_<G> {
     ) -> f32 {
         let multiplier = if optimistic { 1. } else { -1. };
         let v_mean =
-            v.wins + multiplier * self.UCT_WEIGHT * (node_info.count.ln() / (1. + v.count)).sqrt();
+            v.wins + multiplier * self.uct_weight * (node_info.count.ln() / (1. + v.count)).sqrt();
         let v_AMAF = v.wins_AMAF;
 
         let beta = Self::beta(v);
@@ -177,25 +177,13 @@ impl<G: super::MCTSGame> RAVEPolicy_<G> {
 pub type RAVEPolicy<G> = WithMCTSPolicy<G, RAVEPolicy_<G>>;
 
 /// RAVE builder.
-pub struct RAVE {
-    UCT_WEIGHT: f32,
-    N_PLAYOUTS: usize,
-}
-
-impl Default for RAVE {
-    fn default() -> RAVE {
-        RAVE {
-            UCT_WEIGHT: 0.4,
-            N_PLAYOUTS: settings::DEFAULT_N_PLAYOUTS,
-        }
-    }
-}
+type RAVE = settings::RAVE;
 
 impl fmt::Display for RAVE {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         writeln!(f, "RAVE")?;
-        writeln!(f, "|| UCT_WEIGHT: {}", self.UCT_WEIGHT)?;
-        writeln!(f, "|| N_PLAYOUT: {}", self.N_PLAYOUTS)
+        writeln!(f, "|| uct_weight: {}", self.uct_weight)?;
+        writeln!(f, "|| N_PLAYOUT: {}", self.playouts)
     }
 }
 
@@ -211,9 +199,9 @@ where
         WithMCTSPolicy::new(
             RAVEPolicy_ {
                 color,
-                UCT_WEIGHT: self.UCT_WEIGHT,
+                uct_weight: self.uct_weight,
             },
-            self.N_PLAYOUTS,
+            self.playouts,
         )
     }
 }

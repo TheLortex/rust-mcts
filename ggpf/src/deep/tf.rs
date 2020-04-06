@@ -1,10 +1,6 @@
-
-use crate::settings::{SUPPORT_SHAPE, SUPPORT_SIZE};
-
+use std::path::Path;
 use std::sync::{atomic::AtomicBool, Arc, RwLock};
 use tensorflow::{Graph, Session, SessionOptions, SessionRunArgs, Tensor};
-use std::path::Path;
-
 
 /// Access to a TF model behind Arc and RwLock
 /// the AtomicBool is here to indicate the file loader's intention
@@ -23,20 +19,23 @@ fn sign(x: f32) -> f32 {
 }
 
 /// Converts a suport encoding of scalar to the corresponding value.
-pub fn support_to_value(support: &Tensor<f32>, batch_size: usize) -> Tensor<f32> {
+pub fn support_to_value(
+    support: &Tensor<f32>,
+    batch_size: usize,
+    support_size: usize,
+) -> Tensor<f32> {
     let mut res = Tensor::new(&[batch_size as u64]);
 
     for i in 0..batch_size {
-        let value: f32 = (-SUPPORT_SIZE..SUPPORT_SIZE + 1)
+        let value: f32 = (-(support_size as isize)..(support_size as isize + 1))
             .enumerate()
-            .map(|(j, v)| support[(SUPPORT_SHAPE as usize) * i + j] * (v as f32))
+            .map(|(j, v)| support[(2 * support_size + 1) * i + j] * (v as f32))
             .sum();
         let value: f32 = sign(value)
             * ((((1. + 4. * 0.001 * (value.abs() + 1. + 0.001)).sqrt() - 1.) / (2. * 0.001))
                 .powi(2)
                 - 1.);
 
-            
         res[i] = value;
     }
     res
@@ -47,22 +46,22 @@ mod tests {
     use super::*;
     #[test]
     fn test_support_to_value() {
-        let mut support = Tensor::new(&[1,3]);
+        let mut support = Tensor::new(&[1, 3]);
 
         support[0] = 1.0;
         support[1] = 0.;
         support[2] = 0.;
-        println!("=> {:?}", support_to_value(&support, 1).to_vec());
-        
+        println!("=> {:?}", support_to_value(&support, 1, 1).to_vec());
+
         support[0] = 0.;
         support[1] = 1.;
         support[2] = 0.;
-        println!("=> {:?}", support_to_value(&support, 1).to_vec());
+        println!("=> {:?}", support_to_value(&support, 1, 1).to_vec());
 
         support[0] = 0.;
         support[1] = 0.;
         support[2] = 1.;
-        println!("=> {:?}", support_to_value(&support, 1).to_vec());
+        println!("=> {:?}", support_to_value(&support, 1, 1).to_vec());
     }
 }
 

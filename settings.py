@@ -1,4 +1,74 @@
 
+def dir_name(config, method):
+    if config.game.kind == "Breakthrough":
+        return "{}-breakthrough-{}".format(method, config.game.size)
+    elif config.game.kind == "Gym":
+        return "{}-gym-{}".format(method, config.game.name)
+    else:
+        print("Unknown game in config file.")
+        exit(-1)
+
+def get_board_shape(config):
+    if config.game.kind == "Breakthrough":
+        return (config.game.history, config.game.size, config.game.size, 3)
+    elif config.game.kind == "Gym":
+        if config.game.name == "Breakout-v0":
+            return (config.game.history, 96, 96, 3)
+        else:
+            print("Gym not implemented for this game.")
+            exit(-1)
+    else:
+        print("Unknown game in config file.")
+        exit(-1)
+
+def get_action_shape(config):
+    if config.game.kind == "Breakthrough":
+        return (config.game.size, config.game.size, 3)
+    elif config.game.kind == "Gym":
+        if config.game.name == "Breakout-v0":
+            return (4,)
+        else:
+            print("Gym not implemented for this game.")
+            exit(-1)
+    else:
+        print("Unknown game in config file.")
+        exit(-1)
+
+    
+import numpy as np
+# scalar to categorical transformation.
+def value_to_support(v, support_size):
+    # invertible transformation
+    scaled = np.sign(v) * ((np.sqrt(np.abs(v)+1)-1)) + 0.001*v
+    # clamp to support
+    clamped = np.clip(scaled, -support_size, support_size)
+
+    v1 = np.floor(clamped)
+    p1 = 1 - (clamped - v1)
+    v2 = v1 + 1
+    p2 = 1 - p1
+
+    result = np.zeros(shape=(support_size*2+1,))
+    result[int(v1) + support_size] = p1
+    if int(v2) + support_size < support_size*2+1:
+        result[int(v2) + support_size] = p2
+    return result
+                                                                                                                       
+from tensorflow.keras import losses
+def mu_loss_unrolled_cce(config):
+    def loss(y_true, y_pred):
+        policy_loss = 0.
+
+        for i in range(config.mu.unroll_steps):
+            policy_loss += losses.categorical_crossentropy(
+                y_true[:, i], y_pred[:, i]) / config.mu.unroll_steps
+
+        return policy_loss
+    return loss
+
+def get_support_shape(x):
+    return (x or 0)*2+1
+"""
 ## GAME SETTINGS, make sure this is coherent with the generator and evaluator
 GAME = "breakthrough"
 
@@ -38,90 +108,4 @@ N_EPOCH                   = 50000
 SAVE_REPLAY_BUFFER_FREQ   = 64            # backup replay buffer every _ games
 CHECKPOINT_FREQ           = 5*EPOCH_SIZE   # save model
 EVALUATION_FREQ           = 5*EPOCH_SIZE    # evaluate model
-
-class GameEntry:
-    def __init__(self, state, policy, value, action, reward, turn):
-        super().__init__()
-        self.state = state
-        self.policy = policy
-        self.value = value 
-        self.action = action
-        self.reward = reward
-        self.turn = turn
-
-class ReplayBuffer:
-    def __init__(self, states_count, max_index, index, games):
-        super().__init__()
-        self.states_count = states_count
-        self.max_index = max_index
-        self.index = index
-        self.games = games
-
-from threading import Thread, RLock
-import numpy as np
-import pickle
-from tqdm import tqdm
-
-class BufferThread(Thread):
-    def __init__(self, replay_buffer, training_data_path):
-        Thread.__init__(self)
-        self.f = None
-        self.replay_buffer = replay_buffer
-        self.training_data_path = training_data_path
-
-    def open_fifo(self):
-        print("| Waiting for game generator...", end="", flush=True)
-        self.f = open("./fifo", mode="rb")
-        print("done!")
-
-    def preload(self, limit):
-        if self.replay_buffer.index < limit:
-            print("| Booting up first games..")
-            self.run(limit=limit)
-            print("| Done!")
-
-    def run(self, limit=None):
-        self.continuer = True
-
-        if not(limit is None):
-            pbar = tqdm(total=limit)
-        else:
-            pbar = False
-
-        if not self.f:
-            self.open_fifo()
-
-        while self.continuer and ((limit is None) or (self.replay_buffer.index < limit)):
-            sz = int.from_bytes(self.f.read(8), byteorder="big")
-            # print(sz)
-            pickled = self.f.read(sz)
-            game = pickle.loads(pickled)
-            
-            new_state  = np.array(game["state"], dtype=float).reshape((-1,)+BOARD_SHAPE)
-            new_policy = np.array(game["policy"], dtype=float).reshape((-1,)+ACTION_SHAPE)
-            new_value  = np.array(game["value"], dtype=float).reshape((-1))
-            new_action = np.array(game["action"], dtype=float).reshape((-1,)+ACTION_SHAPE)
-            new_reward = np.array(game["reward"], dtype=float).reshape((-1,))
-            
-            self.replay_buffer.games[self.replay_buffer.index] = GameEntry(new_state, new_policy, new_value, new_action, new_reward, game["turn"])
-            self.replay_buffer.states_count += 1
-            self.replay_buffer.max_index = min(self.replay_buffer.max_index + 1, REPLAY_BUFFER_SIZE)
-            
-            self.replay_buffer.index += 1
-            if self.replay_buffer.index == REPLAY_BUFFER_SIZE:
-                self.replay_buffer.index = 0
-
-            if pbar:
-                pbar.update(1)
-
-            if self.replay_buffer.index % SAVE_REPLAY_BUFFER_FREQ == 0:
-                #print("Saving in training_data/")
-                f = open(self.training_data_path+"replay_buffer.pkl", "wb")
-                pickle.dump(self.replay_buffer, f)
-                f.close()
-
-        if pbar:
-            pbar.close()
-
-    def stop(self):
-        self.continuer = False
+"""
