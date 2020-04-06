@@ -1,0 +1,1 @@
+initSidebarItems({"enum":[["Cell","Game cell"],["Color","Players"],["MoveDirection","Move direction"]],"mod":[["ui","Breakthrough interactive interface."]],"struct":[["Breakthrough","Breakthrough game state instance"],["BreakthroughBuilder","Game builder for Breakthough."],["Move","Move"]]});

@@ -1,0 +1,1 @@
+initSidebarItems({"mod":[["evaluator","Neural networks evaluators."],["file_manager","File output channel."],["self_play","Self-play generation."],["tf","TensorFlow helpers."]]});

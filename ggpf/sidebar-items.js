@@ -1,0 +1,1 @@
+initSidebarItems({"mod":[["deep","Features for neural network-based policies."],["game","General game traits and implementations."],["policies","General policy traits and implementations."],["settings","General game and playout settings."]]});

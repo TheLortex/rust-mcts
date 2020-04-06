@@ -1,0 +1,1 @@
+initSidebarItems({"struct":[["MultiNMCS","Multiplayer NMCS policy builder."],["MultiNMCSPolicy","Multiplayer NMCS"],["NMCS","Nested Monte Carlo Search policy builder."],["NMCSPolicy","Nested Monte Carlo Search"]]});

@@ -1,0 +1,1 @@
+initSidebarItems({"struct":[["MuZeroConfig","Global configuration for MuZero setup."],["Muz","MuZero policy builder."],["MuzEvaluatorChannels","Channels that can be used to request inferences from tensorflow."],["MuzEvaluators","Structure that manages the tensorflow models and the batched evaluator tasks."],["MuzPolicy","MuZero policy"]]});

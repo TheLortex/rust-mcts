@@ -1,0 +1,1 @@
+initSidebarItems({"struct":[["RAVEMoveInfo","RAVE move statistics."],["RAVENodeInfo","RAVE node statistics."],["RAVEPolicy_","RAVE policy description."]],"type":[["RAVEPolicy","RAVE policy built from MCTS description."]]});

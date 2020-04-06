@@ -1,0 +1,1 @@
+initSidebarItems({"struct":[["IWithHistory","Interface wrapper for WithHistory."],["WithHistory","A game with its history."],["WithHistoryGB","Builder for a game with history."]]});

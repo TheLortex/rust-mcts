@@ -1,0 +1,1 @@
+initSidebarItems({"fn":[["watch_model","Watch a path for changes and reload the model when content has been modified."]],"struct":[["FileManager","File manager."]]});

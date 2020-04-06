@@ -1,0 +1,1 @@
+initSidebarItems({"enum":[["Move","Possible actions"]],"struct":[["Hashcode20","Hashcode 2020 Game"],["Hashcode20Settings","Hashcode 2020 game settings"]]});

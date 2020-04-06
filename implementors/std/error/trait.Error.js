@@ -1,0 +1,3 @@
+(function() {var implementors = {};
+implementors["ggpf"] = [{"text":"impl <a class=\"trait\" href=\"https://doc.rust-lang.org/nightly/std/error/trait.Error.html\" title=\"trait std::error::Error\">Error</a> for <a class=\"struct\" href=\"ggpf/settings/struct.StrError.html\" title=\"struct ggpf::settings::StrError\">StrError</a>","synthetic":false,"types":["ggpf::settings::StrError"]}];
+if (window.register_implementors) {window.register_implementors(implementors);} else {window.pending_implementors = implementors;}})()

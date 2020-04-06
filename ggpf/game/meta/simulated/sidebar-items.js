@@ -1,0 +1,1 @@
+initSidebarItems({"struct":[["DynamicsNetworkOutput","Output from the dynamics network."],["Simulated","Simulated game"]]});

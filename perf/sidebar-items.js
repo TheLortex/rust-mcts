@@ -1,0 +1,1 @@
+initSidebarItems({"constant":[["GPU_BATCH_SIZE","Batch size per evaluator."],["MODEL_PATH","Model location."],["N_EVALUATORS","Number of evaluators."],["N_GENERATORS","Number of game generators per evaluator."]],"fn":[["main","Entry point."],["run","Run performance test with hardcoded configuration."]],"type":[["G","Game type."]]});

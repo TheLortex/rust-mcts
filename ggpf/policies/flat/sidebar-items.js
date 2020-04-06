@@ -1,0 +1,1 @@
+initSidebarItems({"struct":[["FlatMonteCarloPolicy","Flat Monte Carlo policy"],["FlatUCBMonteCarloPolicy","Flat Monte Carlo with UCB policy"],["Random","Random policy builder."],["RandomPolicy","Random policy"]]});

@@ -1,0 +1,3 @@
+(function() {var implementors = {};
+implementors["ggpf_gym"] = [{"text":"impl&lt;T&gt; Serializer&lt;T&gt; for <a class=\"struct\" href=\"ggpf_gym/struct.BinCodec.html\" title=\"struct ggpf_gym::BinCodec\">BinCodec</a> <span class=\"where fmt-newline\">where<br>&nbsp;&nbsp;&nbsp;&nbsp;T: <a class=\"trait\" href=\"https://docs.rs/serde/1.0.106/serde/ser/trait.Serialize.html\" title=\"trait serde::ser::Serialize\">Serialize</a>,&nbsp;</span>","synthetic":false,"types":["ggpf_gym::BinCodec"]}];
+if (window.register_implementors) {window.register_implementors(implementors);} else {window.pending_implementors = implementors;}})()
